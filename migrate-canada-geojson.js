@@ -30,6 +30,26 @@ proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0
 // Define the projection for EPSG:4326 (WGS84 Geographic)
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
 
+// Helper to reproject a GeoJSON geometry object recursively
+const reprojectGeoJSONGeometry = (geom: any, fromProj: string, toProj: string): any => {
+  if (!geom || !geom.coordinates) return geom;
+
+  const transformCoords = (coords: any[]): any[] => {
+    if (typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+      // This is a single coordinate pair [x, y]
+      return proj4(fromProj, toProj, coords);
+    }
+    // This is an array of coordinates (e.g., LineString, Polygon ring, MultiPoint)
+    // or an array of arrays of coordinates (e.g., MultiLineString, MultiPolygon)
+    return coords.map(transformCoords);
+  };
+
+  // Deep copy the geometry to avoid modifying the original feature object
+  const newGeom = JSON.parse(JSON.stringify(geom));
+  newGeom.coordinates = transformCoords(newGeom.coordinates);
+  return newGeom;
+};
+
 // --- IMPORTANT ---
 // Please ensure this path points to your Canadian GeoJSON file.
 const geoJsonFilePath = path.resolve(__dirname, './src/data/canada-postal-codes.json');
@@ -66,22 +86,32 @@ async function migrateCanadaGeoJson() {
         continue;
       }
 
-      // Calculate centroid using Turf.js (will be in EPSG:3857 if input feature is in EPSG:3857)
-      const centroid = turf.centroid(feature);
-      const [projectedLng, projectedLat] = centroid.geometry.coordinates;
+      // Reproject the entire geometry to WGS84 (EPSG:4326) before stringifying
+      let reprojectedGeometry = null;
+      if (geometry) {
+        try {
+          reprojectedGeometry = reprojectGeoJSONGeometry(geometry, "EPSG:3857", "EPSG:4326");
+        } catch (e) {
+          console.error("Error reprojecting Canadian geometry for FSA", fsa, ":", e);
+          errorCount++;
+          continue;
+        }
+      }
 
-      // Transform projected centroid coordinates to geographic (WGS84)
+      // Calculate centroid from the *original* feature (EPSG:3857) and then transform it
+      const centroid = turf.centroid(feature); // This centroid is in EPSG:3857
+      const [projectedLng, projectedLat] = centroid.geometry.coordinates;
       const [geographicLng, geographicLat] = proj4("EPSG:3857", "EPSG:4326", [projectedLng, projectedLat]);
 
-      const geometryJsonString = geometry ? JSON.stringify(geometry) : null;
+      const geometryJsonString = reprojectedGeometry ? JSON.stringify(reprojectedGeometry) : null;
 
       // Call the RPC function with the Canadian data and the new _is_canada flag
       const { error } = await supabase.rpc('upsert_zip_geometry', {
           _zip_code: fsa,
           _state_province: province,
-          _geometry_geojson_string: geometryJsonString,
-          _centroid_latitude: geographicLat, // Now geographic latitude
-          _centroid_longitude: geographicLng, // Now geographic longitude
+          _geometry_geojson_string: geometryJsonString, // Now this is WGS84 GeoJSON string
+          _centroid_latitude: geographicLat,
+          _centroid_longitude: geographicLng,
           _is_canada: true, // Indicate that this is Canadian data
       });
 
