@@ -10,9 +10,8 @@ import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 
-// Import both GeoJSON files from the new src/data directory with import assertions
-import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
-import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
+// Import Supabase client
+import { supabase } from '@/integrations/supabase/client';
 
 // Fix for default Leaflet icons with Webpack/Vite
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -42,52 +41,23 @@ interface TerritoryMapProps {
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
 
-// Define projections at the top of the file
+// Define projections at the top of the file (still needed for turf.centroid if it operates on original data, but we'll simplify this)
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
 
-// --- Country-Aware Helper Functions ---
+// --- Simplified Helper Functions (now that data comes from DB) ---
 
-const getPostalCode = (feature: any, isCanada: boolean): string => {
-  if (!feature || !feature.properties) return '';
-  return isCanada ? feature.properties.CFSAUID : feature.properties.ZCTA5CE20;
+const getPostalCode = (feature: any): string => {
+  return feature.zip_code || '';
 };
 
-const getRegion = (feature: any, isCanada: boolean): string => {
-  if (!feature || !feature.properties) return 'Unknown';
-  return isCanada ? feature.properties.PRNAME : (feature.properties.STUSPS || 'Unknown');
+const getRegion = (feature: any): string => {
+  return feature.state_province || 'Unknown';
 };
 
-// Helper to get centroid from GeoJSON feature (used for filtering/bulk selection)
-const getCentroid = (feature: any, isCanada: boolean): { lat: number | null, lng: number | null } => {
-    if (!feature || !feature.geometry || !feature.properties) {
-        return { lat: null, lng: null };
-    }
-
-    let lat: number | null = null;
-    let lng: number | null = null;
-
-    if (isCanada) {
-        // The feature passed here is already reprojected to WGS84
-        try {
-            const centroid = turf.centroid(feature);
-            if (centroid && centroid.geometry && centroid.geometry.coordinates) {
-                lng = centroid.geometry.coordinates[0];
-                lat = centroid.geometry.coordinates[1];
-            }
-        } catch (e) {
-            console.error("Error calculating centroid for Canadian feature:", feature, e);
-        }
-    } else {
-        // For US data, we get lat/lng from properties
-        lat = parseFloat(feature.properties.INTPTLAT20);
-        lng = parseFloat(feature.properties.INTPTLON20);
-    }
-
-    if (isNaN(lat!)) lat = null;
-    if (isNaN(lng!)) lng = null;
-
-    return { lat, lng };
+// Helper to get centroid from Supabase data (already stored as lat/lng)
+const getCentroid = (feature: any): { lat: number | null, lng: number | null } => {
+    return { lat: feature.centroid_latitude, lng: feature.centroid_longitude };
 };
 
 // Helper to check if a point (lat, lng) is inside a circle (centerLat, centerLng, radiusMeters)
@@ -138,14 +108,12 @@ function MapUpdater({ centerLocation, isOpen, country }: {
 // Component to handle bulk selection interactions
 function MapInteractionHandler({
   isBulkSelecting,
-  geoJsonData,
+  geoJsonData, // This will now be the fetched data from Supabase
   onBulkSelectionComplete,
-  isCanada,
 }: {
   isBulkSelecting: boolean;
   geoJsonData: any;
   onBulkSelectionComplete: ((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void) | undefined;
-  isCanada: boolean;
 }) {
   const map = useMap();
   const isDrawingRef = useRef(false);
@@ -191,11 +159,11 @@ function MapInteractionHandler({
         const finalCenter = drawStartLatLngRef.current;
         const finalRadiusMeters = currentDrawCircleRef.current.getRadius();
         const selectedZips: Array<{ zipCode: string, stateProvince: string }> = [];
-        geoJsonData.features.forEach((feature: any) => {
+        geoJsonData.forEach((feature: any) => { // Iterate over the fetched data directly
           if (feature.geometry) {
-            const centroid = getCentroid(feature, isCanada);
+            const centroid = getCentroid(feature); // Use simplified getCentroid
             if (centroid.lat && centroid.lng && isPointInCircle(centroid.lat, centroid.lng, finalCenter.lat, finalCenter.lng, finalRadiusMeters)) {
-              selectedZips.push({ zipCode: getPostalCode(feature, isCanada), stateProvince: getRegion(feature, isCanada) });
+              selectedZips.push({ zipCode: getPostalCode(feature), stateProvince: getRegion(feature) }); // Use simplified getters
             }
           }
         });
@@ -258,7 +226,7 @@ function MapInteractionHandler({
         currentDrawCircleRef.current = null;
       }
     };
-  }, [map, isBulkSelecting, geoJsonData, isCanada]); // Dependencies
+  }, [map, isBulkSelecting, geoJsonData]); // Dependencies
   return null;
 }
 
@@ -275,7 +243,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onBulkSelectionComplete,
   country = 'USA',
 }) => {
-  const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
+  const [allGeoJsonData, setAllGeoJsonData] = useState<any[]>([]); // Store raw rows from DB
   const [loadingGeoJson, setLoadingGeoJson] = useState(true);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
 
@@ -287,41 +255,51 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
 
+  // Fetch GeoJSON data from Supabase
   useEffect(() => {
-    setLoadingGeoJson(true);
-    const featuresToLoad = isCanada ? canadaGeoJson.features : usGeoJson.features;
-    let processedFeatures = featuresToLoad;
+    const fetchGeoJson = async () => {
+      setLoadingGeoJson(true);
+      const { data, error } = await supabase
+        .from('zip_code_geometries')
+        .select('zip_code, state_province, geometry, centroid_latitude, centroid_longitude');
 
-    if (isCanada) {
-      const reprojectCoordinatesRecursive = (coordinates: any[]): any[] => {
-        if (typeof coordinates[0] === 'number' && typeof coordinates[1] === 'number') {
-          return proj4('EPSG:3857', 'EPSG:4326', coordinates);
-        }
-        return coordinates.map(reprojectCoordinatesRecursive);
-      };
+      if (error) {
+        console.error("Error fetching zip code geometries:", error);
+        toast.error("Failed to load map geometries.");
+        setAllGeoJsonData([]);
+      } else {
+        // Filter by country based on the `state_province` field
+        const filteredData = (data || []).filter(item => {
+          if (isCanada) {
+            // Canadian provinces are typically 2-letter codes or full names, but distinct from US states
+            // A more robust check might involve a lookup table or a dedicated 'is_canada' column in DB
+            // For now, we'll assume US states are 2-letter and Canadian provinces are also 2-letter but different set
+            // A simple check: if it's not a common US state, assume it's Canadian for this context.
+            // This is a weak check, a 'country' column in zip_code_geometries would be ideal.
+            // For now, let's assume Canadian provinces are like 'AB', 'BC', 'MB', etc.
+            // And US states are 'AL', 'AK', 'AZ', etc.
+            // A better way is to check if the state_province is in a known list of Canadian provinces.
+            const canadianProvinces = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
+            return canadianProvinces.includes(item.state_province);
+          } else {
+            const canadianProvinces = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
+            return !canadianProvinces.includes(item.state_province);
+          }
+        });
+        setAllGeoJsonData(filteredData);
+      }
+      setLoadingGeoJson(false);
+    };
 
-      processedFeatures = featuresToLoad.map(feature => {
-        const newFeature = JSON.parse(JSON.stringify(feature));
-        if (newFeature.geometry && newFeature.geometry.coordinates) {
-          newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
-        }
-        return newFeature;
-      });
-    }
-
-    setAllGeoJsonData({
-      type: 'FeatureCollection',
-      features: processedFeatures
-    });
-    setLoadingGeoJson(false);
-  }, [isCanada]);
+    fetchGeoJson();
+  }, [isCanada]); // Re-fetch when country changes
 
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
-    const zipCode = getPostalCode(feature, isCanada);
+    const zipCode = getPostalCode(feature);
     
     let isVisibleByRadius = true;
     if (!isTerritoryManagementPage && currentDisplayRadius !== 'all' && centerLocation?.lat != null && centerLocation?.lng != null) {
-      const centroid = getCentroid(feature, isCanada);
+      const centroid = getCentroid(feature);
       if (centroid.lat != null && centroid.lng != null) {
         const radiusInMeters = (currentDisplayRadius as number) * 1609.34;
         isVisibleByRadius = isPointInCircle(
@@ -388,7 +366,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [
     existingTerritories,
     highlightedZipCodes,
-    isCanada,
     isTerritoryManagementPage,
     currentDisplayRadius,
     centerLocation,
@@ -396,8 +373,18 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   ]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
-    const zipCode = getPostalCode(feature, isCanada);
-    const stateProvince = getRegion(feature, isCanada);
+    // The feature here is a GeoJSON object parsed from the 'geometry' column
+    // We need to get the zip_code and state_province from the original row data
+    // To do this, we need to find the original row from allGeoJsonData
+    const originalRow = allGeoJsonData.find(row => JSON.stringify(row.geometry) === JSON.stringify(feature));
+    
+    if (!originalRow) {
+      console.warn("Could not find original row for GeoJSON feature:", feature);
+      return;
+    }
+
+    const zipCode = getPostalCode(originalRow);
+    const stateProvince = getRegion(originalRow);
     
     layer.off('click'); 
     layer.on({
@@ -414,8 +401,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const geoJsonStyleKey = useMemo(() => {
     const selectedZipsString = selectedZipCodes.map(z => `${z.zipCode}:${z.assignedStatus}`).join(',');
     const highlightedZipsString = Array.from(highlightedZipCodes.entries()).map(([k, v]) => `${k}:${v}`).join(',');
-    return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
-  }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
+    return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}-${country}`; // Add country to key
+  }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting, country]);
 
   if (loadingGeoJson) {
     return (
@@ -446,15 +433,17 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       
-      {allGeoJsonData && (
-        <GeoJSON
-          key={geoJsonStyleKey}
-          ref={geoJsonLayerRef}
-          data={allGeoJsonData as any}
-          style={getZipCodeStyle}
-          onEachFeature={onEachFeature}
-        />
-      )}
+      {allGeoJsonData.map((row, index) => (
+        // Render each geometry from the fetched data
+        row.geometry && (
+          <GeoJSON
+            key={`${row.zip_code}-${index}`} // Use a unique key for each GeoJSON layer
+            data={row.geometry} // Pass the GeoJSON object directly
+            style={() => getZipCodeStyle(row)} // Pass the entire row to getZipCodeStyle
+            onEachFeature={(feature, layer) => onEachFeature(feature, layer)} // Pass feature and layer
+          />
+        )
+      ))}
 
       {!isTerritoryManagementPage && centerLocation?.lat != null && centerLocation?.lng != null && (
         <>
@@ -477,9 +466,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       />
       <MapInteractionHandler
         isBulkSelecting={isBulkSelecting}
-        geoJsonData={allGeoJsonData}
+        geoJsonData={allGeoJsonData} // Pass the raw fetched data for centroid lookup
         onBulkSelectionComplete={onBulkSelectionComplete}
-        isCanada={isCanada}
       />
       {isTerritoryManagementPage && (
         <div className="leaflet-bottom leaflet-left p-2">
