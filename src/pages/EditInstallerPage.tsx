@@ -21,6 +21,12 @@ import { cn } from "@/lib/utils";
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
 import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
 import * as turf from '@turf/turf'; // Import turf for centroid calculation
+import proj4 from 'proj4'; // Import proj4 for coordinate transformation
+
+// Define the projection for EPSG:3857 (Web Mercator)
+proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
+// Define the projection for EPSG:4326 (WGS84 Geographic)
+proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
 
 // Helper to convert Supabase boolean-like values to actual booleans
 const toBoolean = (value: any): boolean => {
@@ -169,9 +175,13 @@ const EditInstallerPage: React.FC = () => {
           zipCode = feature.properties.CFSAUID;
           state = feature.properties.PRNAME;
           try {
+            // Calculate centroid from the original feature (which is in EPSG:3857 for Canada)
             const centroid = turf.centroid(feature);
             if (centroid && centroid.geometry && centroid.geometry.coordinates) {
-                [lng, lat] = centroid.geometry.coordinates;
+                // Reproject centroid coordinates from EPSG:3857 to EPSG:4326
+                const reprojectedCoords = proj4('EPSG:3857', 'EPSG:4326', centroid.geometry.coordinates);
+                lng = reprojectedCoords[0];
+                lat = reprojectedCoords[1];
             }
           } catch (e) {
             console.warn("Error calculating centroid for Canadian feature:", feature, e);
