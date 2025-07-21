@@ -57,49 +57,59 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [mapCenter, setMapCenter] = useState<L.LatLngExpression>([39.8283, -98.5795]); // Default to US center
   const [mapZoom, setMapZoom] = useState(4); // Default zoom for US
 
-  // Helper to recursively reproject coordinates
-  const reprojectCoordinatesRecursive = useCallback((coords: any, fromProj: string, toProj: string): any => {
+  // Helper to recursively reproject and optionally flip coordinates
+  const processCoordinatesRecursive = useCallback((coords: any, fromProj: string | null, toProj: string, flip: boolean): any => {
     if (Array.isArray(coords[0])) {
       // If it's an array of arrays (e.g., MultiPolygon, Polygon)
-      return coords.map(c => reprojectCoordinatesRecursive(c, fromProj, toProj));
+      return coords.map(c => processCoordinatesRecursive(c, fromProj, toProj, flip));
     } else {
-      // If it's a single coordinate pair [lng, lat]
-      // proj4 expects [x, y] which is [lng, lat] for geographic coordinates
-      const reprojected = proj4(fromProj, toProj, coords);
-      return reprojected;
+      let processedCoords = coords;
+      if (fromProj && fromProj !== toProj) {
+        processedCoords = proj4(fromProj, toProj, coords);
+      }
+      if (flip) {
+        // Flip [lng, lat] to [lat, lng] or vice-versa
+        return [processedCoords[1], processedCoords[0]];
+      }
+      return processedCoords;
     }
   }, []);
 
   const allGeoJsonData = useMemo(() => {
     let data = null;
+    let needsFlip = false; // Flag to indicate if coordinates need flipping
     if (country === 'Canada') {
       data = canadaGeoJson;
-    } else {
+      // Canadian data is EPSG:3857, needs reprojection to EPSG:4326.
+      // Assuming original EPSG:3857 is [easting, northing] which maps to [lng, lat] after reprojection.
+      // So, no flip needed after reprojection.
+      needsFlip = false; 
+    } else { // USA
       data = usGeoJson;
+      // US data is already EPSG:4326.
+      // Based on migrate-geojson.js using ST_FlipCoordinates, it implies original US GeoJSON is [lat, lng].
+      // So, it needs to be flipped to [lng, lat] for Leaflet.
+      needsFlip = true; 
     }
 
     if (data && data.features) {
-      // Deep clone to avoid modifying original imported data
       const clonedData = JSON.parse(JSON.stringify(data));
 
-      // Reproject Canadian GeoJSON features from EPSG:3857 to EPSG:4326
-      // US GeoJSON is already in EPSG:4326
-      if (country === 'Canada') {
-        clonedData.features = clonedData.features.map((feature: any) => {
-          if (feature.geometry && feature.geometry.coordinates) {
-            feature.geometry.coordinates = reprojectCoordinatesRecursive(
-              feature.geometry.coordinates,
-              'EPSG:3857',
-              'EPSG:4326'
-            );
-          }
-          return feature;
-        });
-      }
+      clonedData.features = clonedData.features.map((feature: any) => {
+        if (feature.geometry && feature.geometry.coordinates) {
+          feature.geometry.coordinates = processCoordinatesRecursive(
+            feature.geometry.coordinates,
+            country === 'Canada' ? 'EPSG:3857' : null, // Only reproject if Canada
+            'EPSG:4326',
+            needsFlip // Apply flip based on country
+          );
+        }
+        return feature;
+      });
       return clonedData;
     }
     return null;
-  }, [country, reprojectCoordinatesRecursive]);
+  }, [country, processCoordinatesRecursive]);
 
   useEffect(() => {
     if (country === 'Canada') {
@@ -222,11 +232,19 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
               const stateProvince = country === 'Canada' ? feature.properties.PRNAME : feature.properties.STUSPS;
 
               // Use turf.booleanIntersects for more robust intersection check
-              const featurePolygon = turf.polygon(feature.geometry.coordinates);
-              const boundsPolygon = turf.bboxPolygon([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]);
-
-              if (turf.booleanIntersects(featurePolygon, boundsPolygon)) {
-                selectedZips.push({ zipCode, stateProvince });
+              // Ensure the feature geometry is valid for turf operations
+              let featureGeometry = feature.geometry;
+              if (featureGeometry && featureGeometry.coordinates && featureGeometry.type) {
+                try {
+                  const featurePolygon = turf.polygon(featureGeometry.coordinates);
+                  const boundsPolygon = turf.bboxPolygon([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]);
+    
+                  if (turf.booleanIntersects(featurePolygon, boundsPolygon)) {
+                    selectedZips.push({ zipCode, stateProvince });
+                  }
+                } catch (e) {
+                  console.warn(`Skipping intersection check for invalid feature geometry (ZIP: ${zipCode}):`, e);
+                }
               }
             });
           }
