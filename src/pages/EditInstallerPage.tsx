@@ -8,7 +8,6 @@ import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, D
 import { Installer, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { useCountrySettings } from "@/hooks/useCountrySettings";
 import TerritoryMap from "@/components/TerritoryMap";
 import { supabase } from "@/integrations/supabase/client";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -145,7 +144,6 @@ const EditInstallerPage: React.FC = () => {
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
 
-  const { postalCodeLabel } = useCountrySettings();
   const { profile, loading: sessionLoading } = useSession();
 
   const installerCountry = useMemo(() => {
@@ -193,7 +191,7 @@ const EditInstallerPage: React.FC = () => {
     return map;
   }, [installerCountry]);
 
-  const columnDisplayNames: { [key: string]: string } = {
+  const columnDisplayNames: { [key: string]: string } = useMemo(() => ({
     name: "Name",
     email: "Email",
     primary_phone: "Phone",
@@ -202,7 +200,7 @@ const EditInstallerPage: React.FC = () => {
     add2: "Address Line 2",
     city: "City",
     state: "State",
-    postalcode: postalCodeLabel,
+    postalcode: installerCountry === 'Canada' ? 'Postal Code' : 'Zip Code', // Dynamic label
     Country: "Country",
     Hunter_Douglas: "Hunter Douglas",
     Alta: "Alta",
@@ -230,7 +228,7 @@ const EditInstallerPage: React.FC = () => {
     specialnote: "Special Note",
     comments: "Comments",
     Sales_Org: "Sales Org",
-  };
+  }), [installerCountry]);
 
   const requiredFields = [
     "name", "email", "primary_phone", "address1", "city", "state", "postalcode"
