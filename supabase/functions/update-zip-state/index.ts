@@ -14,10 +14,6 @@ serve(async (req) => {
   }
 
   try {
-    // Read and parse the local JSON file. This is a more robust way to include data.
-    const jsonText = await Deno.readTextFile(new URL('./zip-data.json', import.meta.url).pathname);
-    const jsonData = JSON.parse(jsonText);
-
     // Initialize the Supabase admin client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -25,7 +21,20 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
 
-    // Prepare the data for upserting from the imported JSON file
+    // 1. Download the file from storage
+    const filePath = 'zip-data.json';
+    const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+      .from('migrations')
+      .download(filePath);
+
+    if (downloadError) {
+      throw new Error(`Failed to download data file from storage: ${downloadError.message}`);
+    }
+
+    const jsonText = await fileData.text();
+    const jsonData = JSON.parse(jsonText);
+
+    // Prepare the data for upserting from the downloaded JSON file
     if (!Array.isArray(jsonData)) {
       throw new Error('Invalid JSON data format: Expected an array of records.');
     }
@@ -36,7 +45,7 @@ serve(async (req) => {
     })).filter(item => item.zip_code && item.state_province);
 
     if (updates.length === 0) {
-      return new Response(JSON.stringify({ message: "No valid records to update." }), {
+      return new Response(JSON.stringify({ message: "No valid records to update from file." }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });
