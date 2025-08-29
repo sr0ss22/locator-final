@@ -283,12 +283,13 @@ const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, r
   const displayRadius = distanceUnit === 'km' ? (radiusMiles * 1.60934).toFixed(0) : radiusMiles.toFixed(0);
   const labelText = `${displayRadius} ${distanceUnit}`;
 
-  // The text color should match the circle's color
-  const textColor = pathOptions.color as string;
+  // The text color should be a darker gray, background light gray, no border
+  const textColor = '#333333'; // Darker gray for text
+  const badgeBgColor = '#F0F0F0'; // Light gray background
 
   const labelIcon = L.divIcon({
-    html: `<div class="flex items-center justify-center" style="color: ${textColor};">
-            <span class="text-xs font-semibold whitespace-nowrap">
+    html: `<div class="flex items-center justify-center">
+            <span style="background-color: ${badgeBgColor}; color: ${textColor};" class="text-xs font-semibold px-2.5 py-0.5 rounded-full shadow-sm whitespace-nowrap">
               ${labelText}
             </span>
           </div>`,
