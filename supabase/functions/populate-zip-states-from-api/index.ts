@@ -29,7 +29,14 @@ serve(async (req) => {
 
     while (hasMore) {
       const apiUrl = `${API_BASE_URL}?select=stusps_code%2Czip_code&limit=${limit}&offset=${offset}`;
-      const response = await fetch(apiUrl);
+      
+      // Add a User-Agent header to mimic a browser request
+      const response = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+
       if (!response.ok) {
         throw new Error(`API request failed with status ${response.status}`);
       }
