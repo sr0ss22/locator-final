@@ -301,7 +301,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       weight = 0.5;          // Thinner border
     }
 
-    return { fillColor, weight, opacity: 1, color, fillOpacity, interactive: true }; // Always interactive
+    return { fillColor, weight, opacity: 1, color, fillOpacity }; // Removed interactive from here
   }, [
     existingTerritories,
     highlightedZipCodes,
@@ -316,9 +316,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
     
-    // Explicitly set interactive to true for the layer
-    layer.options.interactive = true; 
-    console.log(`[DEBUG] Polygon ${zipCode}: isBulkSelecting = ${isBulkSelecting}, layer interactive = ${layer.options.interactive}`);
+    console.log(`[DEBUG] onEachFeature called for ${zipCode}. isBulkSelecting: ${isBulkSelecting}`);
+    console.log(`[DEBUG] Polygon ${zipCode}: isBulkSelecting = ${isBulkSelecting}, layer interactive (before handlers) = ${layer.options.interactive}`); // Check initial state
 
     // Ensure previous event listeners and tooltips are removed before adding new ones
     layer.off('click');
@@ -355,6 +354,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     });
     layer.bindTooltip(`${isCanada ? 'FSA' : 'ZIP'}: ${zipCode} (${stateProvince})`, { permanent: false, direction: 'auto' });
+    console.log(`[DEBUG] Polygon ${zipCode}: isBulkSelecting = ${isBulkSelecting}, layer interactive (after handlers) = ${layer.options.interactive}`); // Check final state
   }, [isCanada, isBulkSelecting]); // Dependencies: isCanada and isBulkSelecting. onZipCodeClickRef is a ref, so its .current is always fresh.
 
   const geoJsonStyleKey = useMemo(() => {
@@ -404,6 +404,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           data={allGeoJsonData as any}
           style={getZipCodeStyle}
           onEachFeature={onEachFeature}
+          interactive={true} // Explicitly set interactive for the entire GeoJSON layer
         />
       )}
 
