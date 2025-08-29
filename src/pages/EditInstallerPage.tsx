@@ -229,7 +229,7 @@ const EditInstallerPage: React.FC = () => {
         }
       });
       const updatedList = Array.from(newSelectedMap.values());
-      toast.success(`Bulk selected ${selectedZips.length} ZIP codes.`);
+      toast.success(`Selected ${selectedZips.length} ZIP codes.`); // Changed toast message
       setBulkActionType(null);
       return updatedList;
     });
@@ -347,8 +347,8 @@ const EditInstallerPage: React.FC = () => {
 
   const handleToggleBulkSelect = (action: 'approve' | 'needs_approval') => {
     setBulkActionType(prev => {
-      if (prev === action) { toast.info("Bulk selection mode deactivated."); return null; }
-      else { toast.info(`Bulk ${action === 'approve' ? 'approval' : 'needs approval'} mode activated. Click and drag on the map.`); return action; }
+      if (prev === action) { toast.info("Individual selection mode activated."); return null; } // Changed toast message
+      else { toast.info(`${action === 'approve' ? 'Approve' : 'Needs Approval'} bulk selection mode activated. Click and drag on the map.`); return action; } // Changed toast message
     });
   };
 
@@ -534,8 +534,8 @@ const EditInstallerPage: React.FC = () => {
                   <Button onClick={handleExportInstallerTerritories} disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 mr-2" />} Export Territories</Button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Approve" : "Bulk Approve"}</Button>
-                  <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Needs Approval" : "Bulk Needs Approval"}</Button>
+                  <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Approve" : "Approve"}</Button>
+                  <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Needs Approval" : "Needs Approval"}</Button>
                   <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
                 </div>
               </div>
