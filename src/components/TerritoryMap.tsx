@@ -159,6 +159,7 @@ function MapInteractionHandler({
 
   useEffect(() => {
     const handleMouseDown = (e: L.LeafletMouseEvent) => {
+      if (!isBulkSelecting) return; // Only draw if bulk selecting is active
       isDrawingRef.current = true;
       drawStartLatLngRef.current = e.latlng;
       // Ensure any previous circle is removed before starting a new draw
@@ -169,7 +170,7 @@ function MapInteractionHandler({
     };
 
     const handleMouseMove = (e: L.LeafletMouseEvent) => {
-      if (isDrawingRef.current && drawStartLatLngRef.current) {
+      if (isDrawingRef.current && drawStartLatLngRef.current && isBulkSelecting) {
         const distanceMeters = drawStartLatLngRef.current.distanceTo(e.latlng);
         if (currentDrawCircleRef.current) {
           currentDrawCircleRef.current.setRadius(distanceMeters);
@@ -187,7 +188,7 @@ function MapInteractionHandler({
     };
 
     const handleMouseUp = () => {
-      if (isDrawingRef.current && drawStartLatLngRef.current && currentDrawCircleRef.current && geoJsonData && onBulkSelectionCompleteRef.current) {
+      if (isDrawingRef.current && drawStartLatLngRef.current && currentDrawCircleRef.current && geoJsonData && onBulkSelectionCompleteRef.current && isBulkSelecting) {
         const finalCenter = drawStartLatLngRef.current;
         const finalRadiusMeters = currentDrawCircleRef.current.getRadius();
         const selectedZips: Array<{ zipCode: string, stateProvince: string }> = [];
@@ -211,28 +212,22 @@ function MapInteractionHandler({
       drawStartLatLngRef.current = null;
     };
 
+    // Always attach/detach drawing listeners based on isBulkSelecting
     if (isBulkSelecting) {
       map.on('mousedown', handleMouseDown);
       map.on('mousemove', handleMouseMove);
       map.on('mouseup', handleMouseUp);
-      // Disable default map interactions during bulk selection
-      map.dragging.disable();
-      map.doubleClickZoom.disable();
-      map.scrollWheelZoom.disable();
     } else {
-      // When not in bulk select mode:
-      // 1. Remove event listeners for drawing
       map.off('mousedown', handleMouseDown);
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
       
-      // 2. Crucially, remove any lingering draw circle if bulk select mode was active
-      // and then turned off without a mouseup event (e.g., by clicking the button again)
+      // Ensure any lingering draw circle is removed when bulk select mode is turned off
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
         currentDrawCircleRef.current = null;
-        isDrawingRef.current = false; // Reset drawing state
-        drawStartLatLngRef.current = null; // Reset start point
+        isDrawingRef.current = false;
+        drawStartLatLngRef.current = null;
       }
     }
 
@@ -241,8 +236,6 @@ function MapInteractionHandler({
       map.off('mousedown', handleMouseDown);
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
-      // Ensure map interactions are re-enabled on component unmount or re-render
-      // This is handled by the new useEffect in TerritoryMap directly
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
         currentDrawCircleRef.current = null;
@@ -459,19 +452,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
   }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
 
-  // New effect to explicitly ensure map interactions are enabled when not in bulk select mode
-  useEffect(() => {
-    if (!isBulkSelecting && geoJsonLayerRef.current) {
-      const map = geoJsonLayerRef.current.getEvents().layer.getMap();
-      if (map) {
-        map.dragging.enable();
-        map.doubleClickZoom.enable();
-        map.scrollWheelZoom.enable();
-        console.log("TerritoryMap: Explicitly re-enabled map interactions outside of bulk select.");
-      }
-    }
-  }, [isBulkSelecting, geoJsonLayerRef.current]); // Depend on isBulkSelecting and geoJsonLayerRef.current
-
   if (loadingGeoJson) {
     return (
       <div className="h-full w-full flex items-center justify-center text-gray-500">
@@ -494,8 +474,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       maxZoom={18}
       scrollWheelZoom={true}
       zoomControl={true}
-      dragging={true}
-      doubleClickZoom={true}
+      dragging={true} // Always enable dragging
+      doubleClickZoom={true} // Always enable double click zoom
       className="h-full w-full rounded-lg overflow-hidden shadow-sm"
     >
       <TileLayer

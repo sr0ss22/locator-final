@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download } from "lucide-react";
+import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, MousePointer2 } from "lucide-react"; // Added MousePointer2
 import { Installer, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -534,8 +534,16 @@ const EditInstallerPage: React.FC = () => {
                   <Button onClick={handleExportInstallerTerritories} disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 mr-2" />} Export Territories</Button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Approve" : "Approve"}</Button>
-                  <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Needs Approval" : "Needs Approval"}</Button>
+                  {/* New Individual Selection Button */}
+                  <Button variant="outline" className={cn(bulkActionType === null ? "bg-blue-600 text-white hover:bg-blue-700" : "border-blue-600 text-blue-600 hover:bg-blue-100")} onClick={() => setBulkActionType(null)} disabled={loading}>
+                    <MousePointer2 className="mr-2 h-4 w-4" /> Individual Selection
+                  </Button>
+                  <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}>
+                    <MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Approve" : "Approve"}
+                  </Button>
+                  <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}>
+                    <MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Needs Approval" : "Needs Approval"}
+                  </Button>
                   <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
                 </div>
               </div>
