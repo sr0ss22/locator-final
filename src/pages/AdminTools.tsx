@@ -6,21 +6,26 @@ import { toast } from 'sonner';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Progress } from "@/components/ui/progress";
+import stateUpdateData from '@/data/georef-united-states-of-america-zc-point@public.json' with { type: 'json' };
 
 const AdminToolsPage: React.FC = () => {
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [progressMessage, setProgressMessage] = useState("");
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState(0);
+  const [enrichProgressMessage, setEnrichProgressMessage] = useState("");
+  
+  const [stateUpdateLoading, setStateUpdateLoading] = useState(false);
+  const [stateUpdateProgress, setStateUpdateProgress] = useState(0);
+  const [stateUpdateProgressMessage, setStateUpdateProgressMessage] = useState("");
+
   const navigate = useNavigate();
 
   const handleEnrichZips = async () => {
-    setLoading(true);
-    setProgress(0);
-    setProgressMessage("Fetching list of ZIP codes to enrich...");
+    setEnrichLoading(true);
+    setEnrichProgress(0);
+    setEnrichProgressMessage("Fetching list of ZIP codes to enrich...");
     toast.info('Starting ZIP code enrichment process...');
 
     try {
-      // 1. Fetch all zips that need enrichment
       const { data: allZips, error: fetchError } = await supabase
         .from('zip_code_geometries')
         .select('zip_code, centroid_latitude, centroid_longitude, state_province')
@@ -30,66 +35,120 @@ const AdminToolsPage: React.FC = () => {
 
       if (!allZips || allZips.length === 0) {
         toast.success('No ZIP codes needed enrichment.');
-        setProgressMessage("All ZIP codes are up to date.");
-        setLoading(false);
+        setEnrichProgressMessage("All ZIP codes are up to date.");
+        setEnrichLoading(false);
         return;
       }
       
-      // Filter for US zips in the client
       const zipsToProcess = allZips.filter(zip => zip.zip_code && /^\d{5}$/.test(zip.zip_code));
 
       if (zipsToProcess.length === 0) {
         toast.success('No US ZIP codes needed enrichment.');
-        setProgressMessage("All US ZIP codes are up to date.");
-        setLoading(false);
+        setEnrichProgressMessage("All US ZIP codes are up to date.");
+        setEnrichLoading(false);
         return;
       }
 
       const totalZips = zipsToProcess.length;
-      setProgressMessage(`Found ${totalZips} US ZIP codes to process.`);
+      setEnrichProgressMessage(`Found ${totalZips} US ZIP codes to process.`);
 
-      // 2. Process in batches
       const batchSize = 10;
 
       for (let i = 0; i < totalZips; i += batchSize) {
         const batch = zipsToProcess.slice(i, i + batchSize);
         const currentProgress = i + batch.length;
-        setProgressMessage(`Processing batch ${Math.ceil(currentProgress / batchSize)} of ${Math.ceil(totalZips / batchSize)}... (${currentProgress}/${totalZips})`);
+        setEnrichProgressMessage(`Processing batch ${Math.ceil(currentProgress / batchSize)} of ${Math.ceil(totalZips / batchSize)}... (${currentProgress}/${totalZips})`);
         
-        const { data, error } = await supabase.functions.invoke('enrich-zip-codes', {
+        const { error } = await supabase.functions.invoke('enrich-zip-codes', {
           body: { zipsToProcess: batch },
         });
 
         if (error) {
           let detailedError = error.message;
-          // Attempt to parse a more specific error message from the function's response
           if (error.context && typeof error.context.json === 'function') {
             try {
               const errorJson = await error.context.json();
-              if (errorJson.error) {
-                detailedError = errorJson.error;
-              }
+              if (errorJson.error) detailedError = errorJson.error;
             } catch (e) {
-              // Ignore if parsing fails, stick with the original message
               console.error("Could not parse JSON from function error response", e);
             }
           }
           throw new Error(`Error processing batch: ${detailedError}`);
         }
         
-        setProgress((currentProgress / totalZips) * 100);
+        setEnrichProgress((currentProgress / totalZips) * 100);
       }
 
-      setProgress(100);
-      setProgressMessage(`Enrichment complete. Processed ${totalZips} ZIP codes.`);
+      setEnrichProgress(100);
+      setEnrichProgressMessage(`Enrichment complete. Processed ${totalZips} ZIP codes.`);
       toast.success('Enrichment process completed successfully!');
 
     } catch (error: any) {
       console.error('Error during enrichment process:', error);
-      setProgressMessage(`Error: ${error.message}`);
+      setEnrichProgressMessage(`Error: ${error.message}`);
       toast.error(`Enrichment failed: ${error.message}`);
     } finally {
-      setLoading(false);
+      setEnrichLoading(false);
+    }
+  };
+
+  const handleUpdateStates = async () => {
+    setStateUpdateLoading(true);
+    setStateUpdateProgress(0);
+    setStateUpdateProgressMessage("Preparing to update state codes...");
+    toast.info('Starting state code update process...');
+
+    try {
+      const updates = stateUpdateData.map((record: any) => ({
+        zip_code: record.fields.zip_code,
+        state_province: record.fields.stusps_code,
+      })).filter(item => item.zip_code && item.state_province);
+
+      if (updates.length === 0) {
+        toast.info("No valid records found in the provided file.");
+        setStateUpdateLoading(false);
+        return;
+      }
+
+      const totalUpdates = updates.length;
+      setStateUpdateProgressMessage(`Found ${totalUpdates} records to process.`);
+      
+      const batchSize = 500;
+      for (let i = 0; i < totalUpdates; i += batchSize) {
+        const batch = updates.slice(i, i + batchSize);
+        const currentProgress = i + batch.length;
+        setStateUpdateProgressMessage(`Processing batch ${Math.ceil(currentProgress / batchSize)} of ${Math.ceil(totalUpdates / batchSize)}... (${currentProgress}/${totalUpdates})`);
+
+        const { error } = await supabase.functions.invoke('update-state-codes', {
+          body: { updates: batch },
+        });
+
+        if (error) {
+          let detailedError = error.message;
+          if (error.context && typeof error.context.json === 'function') {
+            try {
+              const errorJson = await error.context.json();
+              if (errorJson.error) detailedError = errorJson.error;
+            } catch (e) {
+              console.error("Could not parse JSON from function error response", e);
+            }
+          }
+          throw new Error(`Error processing batch: ${detailedError}`);
+        }
+
+        setStateUpdateProgress((currentProgress / totalUpdates) * 100);
+      }
+
+      setStateUpdateProgress(100);
+      setStateUpdateProgressMessage(`Update complete. Processed ${totalUpdates} records.`);
+      toast.success('State code update completed successfully!');
+
+    } catch (error: any) {
+      console.error('Error during state update process:', error);
+      setStateUpdateProgressMessage(`Error: ${error.message}`);
+      toast.error(`State update failed: ${error.message}`);
+    } finally {
+      setStateUpdateLoading(false);
     }
   };
 
@@ -101,25 +160,47 @@ const AdminToolsPage: React.FC = () => {
         </Button>
         <h1 className="text-2xl font-bold text-gray-700">Admin Tools</h1>
       </div>
-      <div className="grid gap-6">
+      <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Enrich ZIP Code Data</CardTitle>
+            <CardTitle>Update State Codes from File</CardTitle>
             <CardDescription>
-              This tool will scan the US ZIP codes in the database and attempt to fill in missing state abbreviations using a reverse geocoding service. This is useful if the initial data import was missing state information. This process can take a long time depending on the number of ZIP codes that need updating.
+              Update the `state_province` for all US ZIP codes using the `georef-united-states-of-america-zc-point@public.json` file. This will process all records from the file in batches.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {loading && (
+            {stateUpdateLoading && (
               <div className="space-y-2">
-                <Progress value={progress} className="w-full" />
-                <p className="text-sm text-muted-foreground">{progressMessage}</p>
+                <Progress value={stateUpdateProgress} className="w-full" />
+                <p className="text-sm text-muted-foreground">{stateUpdateProgressMessage}</p>
               </div>
             )}
           </CardContent>
           <CardFooter>
-            <Button onClick={handleEnrichZips} disabled={loading}>
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button onClick={handleUpdateStates} disabled={stateUpdateLoading}>
+              {stateUpdateLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Start State Update
+            </Button>
+          </CardFooter>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Enrich ZIP Code Data</CardTitle>
+            <CardDescription>
+              This tool will scan US ZIP codes with missing state info and use a geocoding service to fill them in. This process can be slow due to API rate limits.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {enrichLoading && (
+              <div className="space-y-2">
+                <Progress value={enrichProgress} className="w-full" />
+                <p className="text-sm text-muted-foreground">{enrichProgressMessage}</p>
+              </div>
+            )}
+          </CardContent>
+          <CardFooter>
+            <Button onClick={handleEnrichZips} disabled={enrichLoading}>
+              {enrichLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Start Enrichment
             </Button>
           </CardFooter>
