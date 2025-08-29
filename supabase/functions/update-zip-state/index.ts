@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import jsonData from './georef-united-states-of-america-zc-point@public.json' assert { type: 'json' };
+// Import from the new, simpler filename
+import jsonData from './zip-data.json' assert { type: 'json' };
 
 // Standard CORS headers for Supabase Edge Functions
 const corsHeaders = {
