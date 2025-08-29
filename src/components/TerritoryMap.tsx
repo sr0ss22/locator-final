@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
 import { Star, Loader2 } from 'lucide-react';
@@ -278,6 +278,41 @@ const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, r
   );
 };
 
+// New component to manage the GeoJSON layer and its interactions
+const GeoJsonLayerManager: React.FC<{
+  allGeoJsonData: any;
+  getZipCodeStyle: (feature: any) => L.PathOptions;
+  onEachFeature: (feature: any, layer: L.Layer) => void;
+}> = ({ allGeoJsonData, getZipCodeStyle, onEachFeature }) => {
+  const map = useMap();
+  const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
+
+  useEffect(() => {
+    if (map && allGeoJsonData) {
+      if (geoJsonLayerRef.current) {
+        map.removeLayer(geoJsonLayerRef.current);
+      }
+
+      const newGeoJsonLayer = L.geoJSON(allGeoJsonData, {
+        style: getZipCodeStyle,
+        onEachFeature: onEachFeature,
+      });
+
+      newGeoJsonLayer.addTo(map);
+      geoJsonLayerRef.current = newGeoJsonLayer;
+
+      return () => {
+        if (geoJsonLayerRef.current) {
+          map.removeLayer(geoJsonLayerRef.current);
+          geoJsonLayerRef.current = null;
+        }
+      };
+    }
+  }, [map, allGeoJsonData, getZipCodeStyle, onEachFeature]);
+
+  return null;
+};
+
 
 const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onZipCodeClick,
@@ -294,9 +329,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 }) => {
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [loadingGeoJson, setLoadingGeoJson] = useState(true);
-  const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   const { distanceUnit } = useCountrySettings();
-  const map = useMap(); // Get map instance here
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
@@ -418,7 +451,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
     
-    // Ensure previous event listeners and tooltips are removed before adding new ones
     layer.off('click');
     if (layer.getTooltip()) {
       layer.unbindTooltip();
@@ -427,7 +459,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     layer.on({
       click: (e) => {
         L.DomEvent.stopPropagation(e);
-        // Only allow clicks if not in bulk selecting mode
         if (!isBulkSelecting) {
           onZipCodeClickRef.current(zipCode, stateProvince); 
         }
@@ -435,42 +466,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     });
     layer.bindTooltip(`${isCanada ? 'FSA' : 'ZIP'}: ${zipCode} (${stateProvince})`, { permanent: false, direction: 'auto' });
   }, [isCanada, isBulkSelecting]);
-
-  // This key is for React's internal diffing of the GeoJSON component
-  const reactGeoJsonKey = useMemo(() => {
-    const selectedZipsString = selectedZipCodes.map(z => `${z.zipCode}:${z.assignedStatus}`).join(',');
-    const highlightedZipsString = Array.from(highlightedZipCodes.entries()).map(([k, v]) => `${k}:${v}`).join(',');
-    return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
-  }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
-
-  // This useEffect will handle the explicit re-creation of the Leaflet GeoJSON layer
-  // to ensure event handlers and styles are correctly applied on initial load and updates.
-  useEffect(() => {
-    if (map && allGeoJsonData) {
-      // If a previous GeoJSON layer exists, remove it
-      if (geoJsonLayerRef.current) {
-        map.removeLayer(geoJsonLayerRef.current);
-      }
-
-      // Create a new Leaflet GeoJSON layer
-      const newGeoJsonLayer = L.geoJSON(allGeoJsonData, {
-        style: getZipCodeStyle,
-        onEachFeature: onEachFeature,
-      });
-
-      // Add the new layer to the map and store its reference
-      newGeoJsonLayer.addTo(map);
-      geoJsonLayerRef.current = newGeoJsonLayer;
-
-      // Cleanup function: remove the layer when component unmounts or dependencies change
-      return () => {
-        if (geoJsonLayerRef.current) {
-          map.removeLayer(geoJsonLayerRef.current);
-          geoJsonLayerRef.current = null;
-        }
-      };
-    }
-  }, [map, allGeoJsonData, getZipCodeStyle, onEachFeature]); // Dependencies for this effect
 
   if (loadingGeoJson) {
     return (
@@ -502,16 +497,14 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       
-      {/* The GeoJSON component is now managed by the useEffect hook, so we remove it from here */}
-      {/* {allGeoJsonData && (
-        <GeoJSON
-          key={reactGeoJsonKey}
-          ref={geoJsonLayerRef}
-          data={allGeoJsonData as any}
-          style={getZipCodeStyle}
+      {/* The GeoJSON layer is now managed by the dedicated GeoJsonLayerManager component */}
+      {allGeoJsonData && (
+        <GeoJsonLayerManager
+          allGeoJsonData={allGeoJsonData}
+          getZipCodeStyle={getZipCodeStyle}
           onEachFeature={onEachFeature}
         />
-      )} */}
+      )}
 
       {!isTerritoryManagementPage && centerLocation?.lat != null && centerLocation?.lng != null && (
         <>
