@@ -226,11 +226,10 @@ function MapInteractionHandler({
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
       
-      // 2. Ensure map interactions are enabled (revert to default behavior)
-      // These are already set to true in MapContainer props, so no need to explicitly enable here.
-      // map.dragging.enable();
-      // map.doubleClickZoom.enable();
-      // map.scrollWheelZoom.enable();
+      // 2. Explicitly re-enable map interactions
+      map.dragging.enable();
+      map.doubleClickZoom.enable();
+      map.scrollWheelZoom.enable();
 
       // 3. Crucially, remove any lingering draw circle if bulk select mode was active
       // and then turned off without a mouseup event (e.g., by clicking the button again)
@@ -248,10 +247,9 @@ function MapInteractionHandler({
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
       // Ensure map interactions are re-enabled on component unmount or re-render
-      // These are already set to true in MapContainer props, so no need to explicitly enable here.
-      // if (map.dragging && !map.dragging.enabled()) map.dragging.enable();
-      // if (map.doubleClickZoom && !map.doubleClickZoom.enabled()) map.doubleClickZoom.enable();
-      // if (map.scrollWheelZoom && !map.scrollWheelZoom.enabled()) map.scrollWheelZoom.enable();
+      map.dragging.enable();
+      map.doubleClickZoom.enable();
+      map.scrollWheelZoom.enable();
       // Ensure the circle is removed on cleanup
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
@@ -441,21 +439,27 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     selectedZipCodes,
   ]);
 
-  const onEachFeature = (feature: any, layer: L.Layer) => {
+  const onEachFeature = useCallback((feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
     
-    layer.off('click'); 
+    // Ensure previous event listeners and tooltips are removed before adding new ones
+    layer.off('click');
+    if (layer.getTooltip()) {
+      layer.unbindTooltip();
+    }
+
     layer.on({
       click: (e) => {
         L.DomEvent.stopPropagation(e);
+        // Only allow clicks if not in bulk selecting mode
         if (!isBulkSelecting) {
           onZipCodeClickRef.current(zipCode, stateProvince); 
         }
       },
     });
     layer.bindTooltip(`${isCanada ? 'FSA' : 'ZIP'}: ${zipCode} (${stateProvince})`, { permanent: false, direction: 'auto' });
-  };
+  }, [isCanada, isBulkSelecting]); // Dependencies: isCanada and isBulkSelecting. onZipCodeClickRef is a ref, so its .current is always fresh.
 
   const geoJsonStyleKey = useMemo(() => {
     const selectedZipsString = selectedZipCodes.map(z => `${z.zipCode}:${z.assignedStatus}`).join(',');
