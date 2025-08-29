@@ -4,15 +4,15 @@ import { Phone, MapPin } from "lucide-react";
 import { Installer } from "@/types/installer";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { useCountrySettings } from "@/hooks/useCountrySettings"; // Import the hook
+import { useCountrySettings } from "@/hooks/useCountrySettings";
 
 interface InstallerCardComponentProps {
   installer: Installer;
-  distance?: number; // This distance is always in miles
+  distance?: number;
   pinNumber?: number;
   isSelected: boolean;
   onClick: () => void;
-  isPublicView?: boolean; // New prop to control public view display
+  isPublicView?: boolean;
 }
 
 const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ installer, distance, pinNumber, isSelected, onClick, isPublicView = false }) => {
@@ -24,7 +24,6 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
 
   const formattedDistance = displayDistance ? `${displayDistance} ${distanceUnit}` : undefined;
 
-  // Determine the address to display based on isPublicView
   const addressToDisplay = isPublicView
     ? `${installer.rawSupabaseData?.city || ''}, ${installer.rawSupabaseData?.state || ''} ${installer.zipCode || ''}`.trim()
     : installer.address;
@@ -59,7 +58,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
           <MapPin className="h-4 w-4 mr-2 text-gray-500" />
           <span>{addressToDisplay}</span>
         </div>
-        {!isPublicView && ( // Conditionally hide phone for public view
+        {!isPublicView && (
           <div className="flex items-center text-gray-600">
             <Phone className="h-4 w-4 mr-2 text-gray-500" />
             <span>{installer.phone}</span>
@@ -70,13 +69,11 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
             Distance: {formattedDistance}
           </div>
         )}
-        {!isPublicView && installer.installerVendorId && ( // Conditionally hide installerVendorId for public view
+        {!isPublicView && installer.installerVendorId && (
           <div className="text-gray-700">
             <span className="font-medium">Installer Vendor Id:</span> {installer.installerVendorId}
           </div>
         )}
-
-        {/* Brands Section */}
         {installer.brands && installer.brands.length > 0 && (
           <div>
             <h4 className="font-semibold text-base mb-2">Brands:</h4>
@@ -87,8 +84,6 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
             </div>
           </div>
         )}
-
-        {/* Skills Section - now using the processed 'skills' array from the installer object */}
         {installer.skills && installer.skills.length > 0 && (
           <div>
             <h4 className="font-semibold text-base mb-2">Product Skills:</h4>
@@ -99,7 +94,6 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
             </div>
           </div>
         )}
-
         {installer.acceptsShipments !== undefined && (
           <div className="text-gray-700">
             <span className="font-medium">Accepts Shipments :</span> {installer.acceptsShipments ? "Yes" : "No"}

@@ -16,28 +16,28 @@ export interface Installer {
   longitude?: number;
   installerVendorId?: string;
   acceptsShipments?: boolean;
-  // Raw fields for specific column display as requested by user
-  Blinds_and_Shades_Raw?: number; // Corresponds to 'Blinds and Shades'
-  PIP_Certification_Level_Raw?: string; // Corresponds to 'PIP Certification'
-  PowerView_Raw?: string; // Corresponds to 'PowerView' (from DB)
-  Powerview_Certification_Raw?: string; // Corresponds to 'Power View Certification'
-  Draperies_Raw?: number; // Corresponds to 'Draperies'
-  Draperies_Certification_Level_Raw?: string; // Corresponds to 'Draperies Certification'
-  Shutters_Raw?: number; // Corresponds to 'Shutters'
-  Shutter_Certification_Level_Raw?: string; // Corresponds to 'Shutter Certification Level'
-  Alta_Raw?: number; // Corresponds to 'Alta'
-  alta_motorization_Raw?: number; // Corresponds to 'Alta Motorization'
+  // Raw fields for specific column display as requested by user, now in snake_case
+  blinds_and_shades_raw?: number;
+  pip_certification_level_raw?: string;
+  power_view_raw?: string;
+  powerview_certification_raw?: string;
+  draperies_raw?: number;
+  draperies_certification_level_raw?: string;
+  shutters_raw?: number;
+  shutter_certification_level_raw?: string;
+  alta_raw?: number;
+  alta_motorization_raw?: number;
   // New raw fields for Brands
-  Hunter_Douglas_Raw?: number;
-  Carole_Raw?: number;
-  Architectural_Raw?: number;
-  Levolor_Raw?: number;
-  Three_Day_Blinds_Raw?: number;
+  hunter_douglas_raw?: number;
+  carole_raw?: number;
+  architectural_raw?: number;
+  levolor_raw?: number;
+  three_day_blinds_raw?: number;
   // New raw fields for Product Skills
-  Tall_Window_Raw?: number;
-  Fixture_Displays_Raw?: number;
-  Outdoor_Raw?: number;
-  High_Voltage_Hardwired_Raw?: number;
+  tall_window_raw?: number;
+  fixture_displays_raw?: number;
+  outdoor_raw?: number;
+  high_voltage_hardwired_raw?: number;
   // Keep rawSupabaseData for other fields not explicitly mapped or for full raw access
   rawSupabaseData?: any;
 }

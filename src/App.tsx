@@ -11,7 +11,8 @@ import EditInstallerPage from "./pages/EditInstallerPage";
 import { CountrySettingsProvider } from "./hooks/useCountrySettings";
 import Login from "./pages/Login";
 import { SessionContextProvider } from "./components/SessionContextProvider";
-import PublicLocator from "./pages/PublicLocator"; // Import the new PublicLocator component
+import PublicLocator from "./pages/PublicLocator";
+import ProtectedRoute from "./components/ProtectedRoute"; // Import the new component
 
 const queryClient = new QueryClient();
 
@@ -24,15 +25,20 @@ const App = () => (
         <CountrySettingsProvider>
           <SessionContextProvider>
             <Routes>
-              <Route path="/" element={<Locator />} />
-              <Route path="/locator" element={<Locator />} />
-              <Route path="/installers" element={<InstallerManagement />} />
-              <Route path="/installers/edit/:installerId" element={<EditInstallerPage />} />
-              <Route path="/territories" element={<TerritoryManagement />} />
+              {/* Public Routes */}
               <Route path="/login" element={<Login />} />
-              {/* Add the new public route here */}
               <Route path="/public-locator" element={<PublicLocator />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+
+              {/* Protected Routes */}
+              <Route element={<ProtectedRoute />}>
+                <Route path="/" element={<Locator />} />
+                <Route path="/locator" element={<Locator />} />
+                <Route path="/installers" element={<InstallerManagement />} />
+                <Route path="/installers/edit/:installerId" element={<EditInstallerPage />} />
+                <Route path="/territories" element={<TerritoryManagement />} />
+              </Route>
+
+              {/* Catch-all Not Found Route */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </SessionContextProvider>

@@ -11,7 +11,8 @@ function Login() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        // User is signed in, redirect to the installers page
+        // After sign-in, the ProtectedRoute component will handle the redirection
+        // based on the user's role. We just need to navigate to a protected area.
         navigate('/installers');
       }
     });
