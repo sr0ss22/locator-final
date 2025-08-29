@@ -5,39 +5,91 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, ArrowLeft, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Progress } from '@/components/ui/progress';
+
+// Import the local GeoJSON files
+import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
+import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
+
+// We need these for Canadian coordinate reprojection
+import * as turf from '@turf/turf';
+import proj4 from 'proj4';
+
+// Define projections
+proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
+proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
 
 const AdminToolsPage: React.FC = () => {
-  const [populateLoading, setPopulateLoading] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [total, setTotal] = useState(0);
   const navigate = useNavigate();
 
-  const handlePopulateFromApi = async () => {
-    setPopulateLoading(true);
-    const loadingToastId = toast.loading('Starting data population from API... This may take a few minutes.');
+  const handleProcessGeoJson = async (country: 'USA' | 'Canada') => {
+    setProcessing(true);
+    setProgress(0);
+    const loadingToastId = toast.loading(`Starting to process ${country} GeoJSON data... This may take a while.`);
 
-    try {
-      const { data, error } = await supabase.functions.invoke('populate-zip-states-from-api');
+    const isCanada = country === 'Canada';
+    const geoJson = isCanada ? canadaGeoJson : usGeoJson;
+    const features = geoJson.features;
+    setTotal(features.length);
 
-      if (error) {
-        let detailedError = error.message;
-        // Try to get a more specific error message from the function's response
-        if (error.context && typeof error.context.json === 'function') {
-            try {
-                const errorJson = await error.context.json();
-                if (errorJson.error) detailedError = errorJson.error;
-            } catch (e) {
-                console.error("Could not parse JSON from function error response", e);
-            }
+    const batchSize = 100;
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < features.length; i += batchSize) {
+      const batch = features.slice(i, i + batchSize);
+      
+      const rpcCalls = batch.map(feature => {
+        const { properties, geometry } = feature;
+        const zipCode = isCanada ? properties.CFSAUID : properties.ZCTA5CE20;
+        const stateProvince = isCanada ? properties.PRNAME : (properties.STUSPS || 'Unknown');
+        
+        let centroidLatitude: number | null = null;
+        let centroidLongitude: number | null = null;
+
+        if (isCanada) {
+          const centroid = turf.centroid(feature);
+          const [projectedLng, projectedLat] = centroid.geometry.coordinates;
+          const [geographicLng, geographicLat] = proj4("EPSG:3857", "EPSG:4326", [projectedLng, projectedLat]);
+          centroidLatitude = geographicLat;
+          centroidLongitude = geographicLng;
+        } else {
+          centroidLatitude = parseFloat(properties.INTPTLAT20);
+          centroidLongitude = parseFloat(properties.INTPTLON20);
         }
-        throw new Error(detailedError);
-      }
 
-      toast.success(data.message || 'Data populated successfully!', { id: loadingToastId, duration: 8000 });
-    } catch (error: any) {
-      console.error('Error during API population process:', error);
-      toast.error(`Population failed: ${error.message}`, { id: loadingToastId, duration: 8000 });
-    } finally {
-      setPopulateLoading(false);
+        const geometryJsonString = geometry ? JSON.stringify(geometry) : null;
+
+        return supabase.rpc('upsert_zip_geometry', {
+          _zip_code: zipCode,
+          _state_province: stateProvince,
+          _geometry_geojson_string: geometryJsonString,
+          _centroid_latitude: isNaN(centroidLatitude) ? null : centroidLatitude,
+          _centroid_longitude: isNaN(centroidLongitude) ? null : centroidLongitude,
+          _is_canada: isCanada,
+        });
+      });
+
+      const results = await Promise.allSettled(rpcCalls);
+
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && !result.value.error) {
+          successCount++;
+        } else {
+          errorCount++;
+          console.error("Error in batch:", result.status === 'rejected' ? result.reason : result.value.error);
+        }
+      });
+
+      setProgress(i + batch.length);
+      toast.loading(`Processing ${country}... ${i + batch.length} of ${features.length}`, { id: loadingToastId });
     }
+
+    toast.success(`Processing complete for ${country}. Success: ${successCount}, Failed: ${errorCount}`, { id: loadingToastId, duration: 8000 });
+    setProcessing(false);
   };
 
   return (
@@ -51,20 +103,30 @@ const AdminToolsPage: React.FC = () => {
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Populate ZIP/State Data from API</CardTitle>
+            <CardTitle>Populate Geometries from Local Files</CardTitle>
             <CardDescription>
-              Fetch the latest ZIP code and state code data from the public OpenDataSoft API and update the database. This will overwrite existing state codes for matching ZIPs.
+              Process the local GeoJSON files (US and Canada) and upsert the data into your database. This runs in your browser.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <p className="text-sm text-gray-600">
-              This process can take several minutes as it fetches and processes over 33,000 records. Please do not navigate away from the page while it's running.
+              This process can take several minutes. Please keep this browser tab open until it completes.
             </p>
+            {processing && (
+              <div>
+                <Progress value={(progress / total) * 100} className="w-full" />
+                <p className="text-sm text-center mt-2">{progress} / {total} records processed</p>
+              </div>
+            )}
           </CardContent>
-          <CardFooter>
-            <Button onClick={handlePopulateFromApi} disabled={populateLoading}>
-              {populateLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-              Start Population
+          <CardFooter className="flex gap-4">
+            <Button onClick={() => handleProcessGeoJson('USA')} disabled={processing}>
+              {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+              Process US Data
+            </Button>
+            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={processing}>
+              {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+              Process Canada Data
             </Button>
           </CardFooter>
         </Card>
