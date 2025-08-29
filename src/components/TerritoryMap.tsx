@@ -450,7 +450,14 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         }
       },
     });
-    layer.bindTooltip(`${isCanada ? 'FSA' : 'ZIP'}: ${zipCode} (${stateProvince})`, { permanent: false, direction: 'auto' });
+
+    const label = isCanada ? 'FSA' : 'ZIP';
+    let tooltipText = `${label}: ${zipCode}`;
+    if (stateProvince && stateProvince !== 'Unknown') {
+      tooltipText += ` (${stateProvince})`;
+    }
+    
+    layer.bindTooltip(tooltipText, { permanent: false, direction: 'auto' });
   };
 
   const geoJsonStyleKey = useMemo(() => {
