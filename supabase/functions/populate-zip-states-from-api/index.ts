@@ -22,15 +22,15 @@ serve(async (req) => {
 
     let allRecords: any[] = [];
     let offset = 0;
-    const limit = 100; // Max limit for this API
+    const limit = 100;
     let hasMore = true;
 
     console.log("Starting to fetch data from OpenDataSoft API...");
 
     while (hasMore) {
-      const apiUrl = `${API_BASE_URL}?select=stusps_code%2Czip_code&limit=${limit}&offset=${offset}`;
+      // Corrected the select parameter to include a space after the comma (%2C%20)
+      const apiUrl = `${API_BASE_URL}?select=stusps_code%2C%20zip_code&limit=${limit}&offset=${offset}`;
       
-      // Add a User-Agent header to mimic a browser request
       const response = await fetch(apiUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -38,6 +38,9 @@ serve(async (req) => {
       });
 
       if (!response.ok) {
+        // Added more detailed error logging to see the response body
+        const errorBody = await response.text();
+        console.error(`API request failed with status ${response.status}. URL: ${apiUrl}. Body: ${errorBody}`);
         throw new Error(`API request failed with status ${response.status}`);
       }
       const data = await response.json();
