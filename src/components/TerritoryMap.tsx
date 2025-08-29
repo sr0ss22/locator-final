@@ -301,7 +301,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       weight = 0.5;          // Thinner border
     }
 
-    return { fillColor, weight, opacity: 1, color, fillOpacity }; // Removed interactive from here
+    return { fillColor, weight, opacity: 1, color, fillOpacity };
   }, [
     existingTerritories,
     highlightedZipCodes,
@@ -316,8 +316,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
     
-    console.log(`[DEBUG] onEachFeature called for ${zipCode}. isBulkSelecting: ${isBulkSelecting}`);
-    console.log(`[DEBUG] Polygon ${zipCode}: isBulkSelecting = ${isBulkSelecting}, layer interactive (before handlers) = ${layer.options.interactive}`); // Check initial state
+    // Explicitly set interactive to true for the layer
+    layer.options.interactive = true; 
 
     // Ensure previous event listeners and tooltips are removed before adding new ones
     layer.off('click');
@@ -328,7 +328,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     layer.on({
       click: (e) => {
         L.DomEvent.stopPropagation(e);
-        console.log(`[DEBUG] Clicked polygon ${zipCode}. isBulkSelecting: ${isBulkSelecting}`);
         // Only allow clicks if not in bulk selecting mode
         if (!isBulkSelecting) { 
           onZipCodeClickRef.current(zipCode, stateProvince); 
@@ -354,7 +353,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     });
     layer.bindTooltip(`${isCanada ? 'FSA' : 'ZIP'}: ${zipCode} (${stateProvince})`, { permanent: false, direction: 'auto' });
-    console.log(`[DEBUG] Polygon ${zipCode}: isBulkSelecting = ${isBulkSelecting}, layer interactive (after handlers) = ${layer.options.interactive}`); // Check final state
   }, [isCanada, isBulkSelecting]); // Dependencies: isCanada and isBulkSelecting. onZipCodeClickRef is a ref, so its .current is always fresh.
 
   const geoJsonStyleKey = useMemo(() => {
