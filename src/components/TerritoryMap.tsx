@@ -388,17 +388,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     }
 
-    if (!isVisibleByRadius) {
-      return {
-        fillColor: '#F0F0F0',
-        weight: 0.5,
-        opacity: 0.5,
-        color: '#B0B0B0',
-        fillOpacity: 0.1,
-        interactive: false,
-      };
-    }
-
     const highlightState = highlightedZipCodes.get(zipCode);
     let fillColor = '#F0F0F0';
     let color = '#60A5FA';
@@ -436,7 +425,15 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     }
 
-    return { fillColor, weight, opacity: 1, color, fillOpacity, interactive: true };
+    // If not visible by radius, make it less prominent but still interactive
+    if (!isVisibleByRadius) {
+      fillColor = '#F0F0F0'; // Light gray
+      color = '#B0B0B0';     // Darker gray border
+      fillOpacity = 0.1;     // Very transparent
+      weight = 0.5;          // Thinner border
+    }
+
+    return { fillColor, weight, opacity: 1, color, fillOpacity, interactive: true }; // Always interactive
   }, [
     existingTerritories,
     highlightedZipCodes,
