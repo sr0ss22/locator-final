@@ -1,76 +1,41 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { parse } from "https://deno.land/std@0.190.0/csv/mod.ts";
 
-// Standard CORS headers for Supabase Edge Functions
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
 serve(async (req) => {
-  // Handle the preflight OPTIONS request
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Initialize the Supabase admin client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { persistSession: false } }
     );
 
-    // 1. Download the CSV file from storage
-    const filePath = 'zip-data.csv';
-    const { data: fileData, error: downloadError } = await supabaseAdmin.storage
-      .from('migrations')
-      .download(filePath);
+    // 1. Get records from the request body
+    const { records } = await req.json();
 
-    if (downloadError) {
-      throw new Error(`Failed to download data file from storage: ${downloadError.message}`);
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      throw new Error("No records provided in the request body.");
     }
 
-    const csvText = await fileData.text();
-    
-    // 2. Parse the CSV content
-    const records = parse(csvText, {
-      header: true, // Treat the first row as headers
-      skipFirstRow: true,
-    });
+    // 2. Upsert the batch of records
+    const { error } = await supabaseAdmin
+      .from('zip_code_geometries')
+      .upsert(records, { onConflict: 'zip_code' });
 
-    // 3. Prepare the data for upserting
-    const updates = records.map((record: any) => ({
-      zip_code: record.zip_code,
-      state_province: record.stusps_code,
-    })).filter(item => item.zip_code && item.state_province);
-
-    if (updates.length === 0) {
-      return new Response(JSON.stringify({ message: "No valid records to update from the CSV file." }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
+    if (error) {
+      throw new Error(`Error upserting batch: ${error.message}`);
     }
 
-    // 4. Process in batches
-    const batchSize = 500;
-    let successCount = 0;
-
-    for (let i = 0; i < updates.length; i += batchSize) {
-      const batch = updates.slice(i, i + batchSize);
-      const { error } = await supabaseAdmin
-        .from('zip_code_geometries')
-        .upsert(batch, { onConflict: 'zip_code' });
-
-      if (error) {
-        throw new Error(`Error processing batch: ${error.message}`);
-      }
-      successCount += batch.length;
-    }
-
-    // Return a success response
-    return new Response(JSON.stringify({ message: `State code migration complete. Successfully processed: ${successCount}` }), {
+    // 3. Return a success response
+    return new Response(JSON.stringify({ message: `Successfully processed ${records.length} records.` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

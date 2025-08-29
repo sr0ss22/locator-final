@@ -7,6 +7,7 @@ import { Loader2, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import Papa from 'papaparse';
 
 const AdminToolsPage: React.FC = () => {
   const [updateStateLoading, setUpdateStateLoading] = useState(false);
@@ -29,43 +30,62 @@ const AdminToolsPage: React.FC = () => {
     }
 
     setUpdateStateLoading(true);
-    const loadingToastId = toast.loading('Uploading data file...');
+    const loadingToastId = toast.loading('Parsing CSV file...');
 
     try {
-      const filePath = `zip-data.csv`; // Changed to .csv
-      const { error: uploadError } = await supabase.storage
-        .from('migrations')
-        .upload(filePath, selectedFile, {
-          cacheControl: '3600',
-          upsert: true,
-        });
+      Papa.parse(selectedFile, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async (results) => {
+          toast.info(`CSV parsed. Found ${results.data.length} records. Starting update process...`, { id: loadingToastId });
 
-      if (uploadError) {
-        throw new Error(`Failed to upload file: ${uploadError.message}`);
-      }
-      toast.success('File uploaded successfully. Starting update process...', { id: loadingToastId });
+          const updates = (results.data as any[])
+            .map((record: any) => ({
+              zip_code: record.zip_code,
+              state_province: record.stusps_code,
+            }))
+            .filter(item => item.zip_code && item.state_province);
 
-      const { data, error: invokeError } = await supabase.functions.invoke('update-zip-state');
+          if (updates.length === 0) {
+            toast.error("No valid records with 'zip_code' and 'stusps_code' found in the file.", { id: loadingToastId });
+            setUpdateStateLoading(false);
+            return;
+          }
 
-      if (invokeError) {
-        // Try to parse a more specific error message from the function response
-        let detailedError = invokeError.message;
-        if (invokeError.context && typeof invokeError.context.json === 'function') {
-            try {
-                const errorJson = await invokeError.context.json();
-                if (errorJson.error) detailedError = errorJson.error;
-            } catch (e) {
-                console.error("Could not parse JSON from function error response", e);
+          const batchSize = 500;
+          let successCount = 0;
+          let errorCount = 0;
+
+          for (let i = 0; i < updates.length; i += batchSize) {
+            const batch = updates.slice(i, i + batchSize);
+            toast.info(`Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(updates.length / batchSize)}...`, { id: loadingToastId });
+
+            const { error: invokeError } = await supabase.functions.invoke('update-zip-state', {
+              body: { records: batch },
+            });
+
+            if (invokeError) {
+              errorCount += batch.length;
+              console.error(`Error processing batch ${i / batchSize + 1}:`, invokeError);
+              // Stop on first error to avoid cascading failures
+              throw new Error(`Error processing batch: ${invokeError.message}`);
+            } else {
+              successCount += batch.length;
             }
-        }
-        throw new Error(detailedError);
-      }
+          }
 
-      toast.success(data.message || 'State codes updated successfully!', { id: loadingToastId });
+          toast.success(`Update complete! Successfully processed: ${successCount}. Failed: ${errorCount}`, { id: loadingToastId });
+          setUpdateStateLoading(false);
+        },
+        error: (error: any) => {
+          console.error('CSV parsing error:', error);
+          toast.error(`Failed to parse CSV file: ${error.message}`, { id: loadingToastId });
+          setUpdateStateLoading(false);
+        }
+      });
     } catch (error: any) {
       console.error('Error during update process:', error);
       toast.error(`Update failed: ${error.message}`, { id: loadingToastId });
-    } finally {
       setUpdateStateLoading(false);
     }
   };
