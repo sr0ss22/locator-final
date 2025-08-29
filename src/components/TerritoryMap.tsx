@@ -451,7 +451,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
     
-    // Console log to check interactivity state when feature is processed
+    // Explicitly set interactive to true for the layer
+    layer.options.interactive = true; 
     console.log(`[DEBUG] Polygon ${zipCode}: isBulkSelecting = ${isBulkSelecting}, layer interactive = ${layer.options.interactive}`);
 
     // Ensure previous event listeners and tooltips are removed before adding new ones
@@ -464,11 +465,29 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       click: (e) => {
         L.DomEvent.stopPropagation(e);
         console.log(`[DEBUG] Clicked polygon ${zipCode}. isBulkSelecting: ${isBulkSelecting}`);
-        // Temporarily removed conditional check for debugging purposes
-        // if (!isBulkSelecting) { 
+        // Only allow clicks if not in bulk selecting mode
+        if (!isBulkSelecting) { 
           onZipCodeClickRef.current(zipCode, stateProvince); 
-        // }
+        }
       },
+      mouseover: (e) => {
+        if (!isBulkSelecting) { // Only show hover effect in individual selection mode
+          const l = e.target;
+          l.setStyle({
+            weight: 3,
+            color: '#666',
+            dashArray: '',
+            fillOpacity: 0.7
+          });
+          l.bringToFront();
+        }
+      },
+      mouseout: (e) => {
+        if (!isBulkSelecting) { // Only reset hover effect in individual selection mode
+          // Reset to original style, which is determined by getZipCodeStyle
+          geoJsonLayerRef.current?.resetStyle(e.target);
+        }
+      }
     });
     layer.bindTooltip(`${isCanada ? 'FSA' : 'ZIP'}: ${zipCode} (${stateProvince})`, { permanent: false, direction: 'auto' });
   }, [isCanada, isBulkSelecting]); // Dependencies: isCanada and isBulkSelecting. onZipCodeClickRef is a ref, so its .current is always fresh.
@@ -499,10 +518,10 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       zoom={isCanada ? 3 : 4}
       minZoom={3}
       maxZoom={18}
-      scrollWheelZoom={false} // Controlled by MapInteractionHandler
+      scrollWheelZoom={true} // Enabled by default
       zoomControl={true}
-      dragging={false} // Controlled by MapInteractionHandler
-      doubleClickZoom={false} // Controlled by MapInteractionHandler
+      dragging={true} // Enabled by default
+      doubleClickZoom={true} // Enabled by default
       className="h-full w-full rounded-lg overflow-hidden shadow-sm"
     >
       <TileLayer
