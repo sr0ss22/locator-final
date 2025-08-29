@@ -270,6 +270,9 @@ const EditInstallerPage: React.FC = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  const isAdmin = profile?.role === 'admin';
+  const canEdit = isAdmin || (profile?.role === 'installer' && currentInstaller?.rawSupabaseData.account_id === profile.id);
+
   const handleSubmit = async () => {
     if (!validateForm()) { toast.error("Please fill in all required fields."); return; }
     if (!currentInstaller?.id) { toast.error("Installer ID is missing. Cannot save changes."); return; }
@@ -316,7 +319,7 @@ const EditInstallerPage: React.FC = () => {
       const { error: updateInstallerError } = await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
       if (updateInstallerError) throw new Error(`Supabase Update Error: ${updateInstallerError.message}`);
       
-      if (profile?.role === 'admin') {
+      if (canEdit) {
         const { data: currentAssignmentsData, error: fetchAssignmentsError } = await supabase.from('installer_zip_codes').select('zip_code, field_ops_rep_id, field_service_manager_id').eq('installer_id', currentInstaller.id);
         if (fetchAssignmentsError) throw new Error(`Failed to fetch current assignments: ${fetchAssignmentsError.message}`);
         const currentAssignmentsMap = new Map((currentAssignmentsData || []).map(item => [item.zip_code, item]));
@@ -363,7 +366,7 @@ const EditInstallerPage: React.FC = () => {
     const loadingToastId = toast.loading(`Importing territories from ${file.name} in ${mode} mode...`);
     let importedCount = 0, skippedCount = 0;
     try {
-      if (profile?.role !== 'admin') {
+      if (!canEdit) {
         toast.error("You do not have permission to import territories.", { id: loadingToastId });
         setLoading(false); return;
       }
@@ -447,9 +450,6 @@ const EditInstallerPage: React.FC = () => {
     return <div className="min-h-screen flex flex-col items-center justify-center text-gray-500"><p className="text-xl mb-4">Installer not found or an error occurred.</p><Button onClick={() => navigate("/installers")}>Go back to Installers</Button></div>;
   }
 
-  const isAdmin = profile?.role === 'admin';
-  const canEdit = isAdmin || (profile?.role === 'installer' && currentInstaller.rawSupabaseData.account_id === profile.id);
-
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="flex items-center gap-4 mb-8">
@@ -524,7 +524,7 @@ const EditInstallerPage: React.FC = () => {
             </div>
           ))}
         </div>
-        {isAdmin ? (
+        {canEdit ? (
           currentInstaller?.latitude != null && currentInstaller?.longitude != null ? (
             <div className="col-span-full mt-6">
               <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
