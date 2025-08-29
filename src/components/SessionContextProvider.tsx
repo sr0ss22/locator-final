@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
-import { UserProfile } from '@/types/territory'; // Assuming UserProfile is defined here
+// Removed useLocation and useNavigate as redirects are now handled by ProtectedRoute
+// Removed toast import as ProtectedRoute will handle user experience for auth issues
+import { UserProfile } from '@/types/territory';
 
 interface SessionContextType {
   session: Session | null;
@@ -20,8 +20,6 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-  const location = useLocation();
 
   useEffect(() => {
     const fetchSessionAndProfile = async () => {
@@ -38,7 +36,7 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
 
         if (profileError) {
           console.error("Error fetching user profile:", profileError);
-          toast.error("Failed to load user profile.");
+          // Let ProtectedRoute handle user experience for profile loading issues
           setProfile(null);
         } else {
           setProfile(profileData as UserProfile);
@@ -66,7 +64,7 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
           .then(({ data: profileData, error: profileError }) => {
             if (profileError) {
               console.error("Error fetching user profile on auth state change:", profileError);
-              toast.error("Failed to load user profile.");
+              // Let ProtectedRoute handle user experience for profile loading issues
               setProfile(null);
             } else {
               setProfile(profileData as UserProfile);
@@ -82,30 +80,7 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
     return () => subscription.unsubscribe();
   }, []);
 
-  // Handle redirects based on authentication state and current path
-  useEffect(() => {
-    const protectedRoutes = ['/installers', '/territories', '/installers/edit']; // Add any other protected routes
-    const isProtectedRoute = protectedRoutes.some(route => location.pathname.startsWith(route));
-    const isLoginPage = location.pathname === '/login';
-
-    if (loading) {
-      // Still loading session, do nothing yet
-      return;
-    }
-
-    if (session && user) {
-      // User is authenticated
-      if (isLoginPage) {
-        navigate('/'); // Redirect authenticated users away from login page
-      }
-    } else {
-      // User is NOT authenticated
-      if (isProtectedRoute) {
-        toast.info("Please log in to access this page.");
-        navigate('/login'); // Redirect unauthenticated users to login page
-      }
-    }
-  }, [session, user, loading, location.pathname, navigate]);
+  // Removed the useEffect for redirects. ProtectedRoute will handle this.
 
   const value = { session, user, profile, loading, supabase };
 

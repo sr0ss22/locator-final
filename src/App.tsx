@@ -12,8 +12,8 @@ import { CountrySettingsProvider } from "./hooks/useCountrySettings";
 import Login from "./pages/Login";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 import PublicLocator from "./pages/PublicLocator";
-import ProtectedRoute from "./components/ProtectedRoute"; // Import the new component
-import UpdatePassword from "./pages/UpdatePassword"; // Import the new page
+import ProtectedRoute from "./components/ProtectedRoute";
+import UpdatePassword from "./pages/UpdatePassword";
 
 const queryClient = new QueryClient();
 
@@ -27,13 +27,14 @@ const App = () => (
           <SessionContextProvider>
             <Routes>
               {/* Public Routes */}
+              <Route path="/" element={<PublicLocator />} /> {/* Default for all users */}
               <Route path="/login" element={<Login />} />
               <Route path="/public-locator" element={<PublicLocator />} />
               <Route path="/update-password" element={<UpdatePassword />} />
 
-              {/* Protected Routes */}
+              {/* Protected Routes - All routes within this element require authentication and role check */}
               <Route element={<ProtectedRoute />}>
-                <Route path="/" element={<Locator />} />
+                {/* These are the actual protected routes */}
                 <Route path="/locator" element={<Locator />} />
                 <Route path="/installers" element={<InstallerManagement />} />
                 <Route path="/installers/edit/:installerId" element={<EditInstallerPage />} />
