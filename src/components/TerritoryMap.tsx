@@ -161,7 +161,6 @@ function MapInteractionHandler({
     const handleMouseDown = (e: L.LeafletMouseEvent) => {
       isDrawingRef.current = true;
       drawStartLatLngRef.current = e.latlng;
-      // Ensure any previous circle is removed before starting a new draw
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
         currentDrawCircleRef.current = null;
@@ -180,7 +179,7 @@ function MapInteractionHandler({
             fillColor: '#BFDBFE',
             fillOpacity: 0.3,
             weight: 2,
-            interactive: false, // Crucial: this circle should not block underlying map interactions
+            interactive: false,
           }).addTo(map);
         }
       }
@@ -202,7 +201,6 @@ function MapInteractionHandler({
         onBulkSelectionCompleteRef.current(selectedZips);
       }
 
-      // Always remove the circle on mouse up
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
         currentDrawCircleRef.current = null;
@@ -215,50 +213,51 @@ function MapInteractionHandler({
       map.on('mousedown', handleMouseDown);
       map.on('mousemove', handleMouseMove);
       map.on('mouseup', handleMouseUp);
-      // Disable default map interactions during bulk selection
       map.dragging.disable();
       map.doubleClickZoom.disable();
       map.scrollWheelZoom.disable();
+      map.touchZoom.disable();
+      map.boxZoom.disable();
+      map.keyboard.disable();
     } else {
-      // When not in bulk select mode:
-      // 1. Remove event listeners for drawing
       map.off('mousedown', handleMouseDown);
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
       
-      // 2. Ensure map interactions are enabled (revert to default behavior)
-      // These are already set to true in MapContainer props, so no need to explicitly enable here.
-      // map.dragging.enable();
-      // map.doubleClickZoom.enable();
-      // map.scrollWheelZoom.enable();
+      map.dragging.enable();
+      map.doubleClickZoom.enable();
+      map.scrollWheelZoom.enable();
+      map.touchZoom.enable();
+      map.boxZoom.enable();
+      map.keyboard.enable();
 
-      // 3. Crucially, remove any lingering draw circle if bulk select mode was active
-      // and then turned off without a mouseup event (e.g., by clicking the button again)
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
         currentDrawCircleRef.current = null;
-        isDrawingRef.current = false; // Reset drawing state
-        drawStartLatLngRef.current = null; // Reset start point
+        isDrawingRef.current = false;
+        drawStartLatLngRef.current = null;
       }
     }
 
-    // Cleanup function for the effect
     return () => {
       map.off('mousedown', handleMouseDown);
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
-      // Ensure map interactions are re-enabled on component unmount or re-render
-      // These are already set to true in MapContainer props, so no need to explicitly enable here.
-      // if (map.dragging && !map.dragging.enabled()) map.dragging.enable();
-      // if (map.doubleClickZoom && !map.doubleClickZoom.enabled()) map.doubleClickZoom.enable();
-      // if (map.scrollWheelZoom && !map.scrollWheelZoom.enabled()) map.scrollWheelZoom.enable();
-      // Ensure the circle is removed on cleanup
+      
+      if (map.dragging && !map.dragging.enabled()) map.dragging.enable();
+      if (map.doubleClickZoom && !map.doubleClickZoom.enabled()) map.doubleClickZoom.enable();
+      if (map.scrollWheelZoom && !map.scrollWheelZoom.enabled()) map.scrollWheelZoom.enable();
+      if (map.touchZoom && !map.touchZoom.enabled()) map.touchZoom.enable();
+      if (map.boxZoom && !map.boxZoom.enabled()) map.boxZoom.enable();
+      if (map.keyboard && !map.keyboard.enabled()) map.keyboard.enable();
+
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
         currentDrawCircleRef.current = null;
       }
     };
-  }, [map, isBulkSelecting, geoJsonData, isCanada]); // Dependencies
+  }, [map, isBulkSelecting, geoJsonData, isCanada]);
+
   return null;
 }
 
