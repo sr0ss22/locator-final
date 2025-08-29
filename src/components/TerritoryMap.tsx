@@ -2,8 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
-import { Star } from 'lucide-react';
-import { Loader2 } from "react-loader-spinner"; // Corrected import for Loader2
+import { Star, Loader2 } from 'lucide-react'; // Corrected import for Loader2
 import { calculateDistance } from '@/utils/distance';
 import { InstallerZipAssignment, TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
