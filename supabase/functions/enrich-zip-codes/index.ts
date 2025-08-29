@@ -24,19 +24,27 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     )
 
-    // Fetch US zip codes that need enrichment (numeric zip codes)
-    // where state is 'Unknown' or null.
-    const { data: zips, error: fetchError } = await supabaseAdmin
+    // Fetch all zip codes that need enrichment where state is 'Unknown' or null.
+    const { data: allZips, error: fetchError } = await supabaseAdmin
       .from('zip_code_geometries')
       .select('zip_code, centroid_latitude, centroid_longitude, state_province')
-      .or('state_province.eq.Unknown,state_province.is.null')
-      .filter('zip_code', 'not.ilike', '%[A-Z]%'); // Exclude non-numeric (Canadian) postal codes
+      .or('state_province.eq.Unknown,state_province.is.null');
 
     if (fetchError) {
       throw fetchError
     }
 
-    if (!zips || zips.length === 0) {
+    if (!allZips || allZips.length === 0) {
+      return new Response(JSON.stringify({ message: 'No zip codes to enrich.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      })
+    }
+
+    // Filter for valid, 5-digit US zip codes in the function itself.
+    const usZipsToProcess = allZips.filter(zip => zip.zip_code && /^\d{5}$/.test(zip.zip_code));
+
+    if (usZipsToProcess.length === 0) {
       return new Response(JSON.stringify({ message: 'No US zip codes to enrich.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
@@ -45,7 +53,7 @@ serve(async (req) => {
 
     const updates = [];
 
-    for (const zip of zips) {
+    for (const zip of usZipsToProcess) {
       if (zip.centroid_latitude && zip.centroid_longitude) {
         const url = `https://api.opencagedata.com/geocode/v1/json?q=${zip.centroid_latitude}+${zip.centroid_longitude}&key=${OPENCAGE_API_KEY}&no_annotations=1&language=en`;
         const response = await fetch(url);
@@ -78,7 +86,7 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ message: `Enrichment complete. Updated ${updates.length} of ${zips.length} zip codes.` }), {
+    return new Response(JSON.stringify({ message: `Enrichment complete. Processed ${usZipsToProcess.length} zip codes and updated ${updates.length}.` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
