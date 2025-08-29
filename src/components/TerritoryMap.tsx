@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { useCountrySettings } from "@/hooks/useCountrySettings"; // Import useCountrySettings
+import BulkSelectionDrawer from './BulkSelectionDrawer'; // Import the new component
 
 // Import both GeoJSON files from the new src/data directory with import assertions
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
@@ -41,6 +42,7 @@ interface TerritoryMapProps {
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
+const MAX_LOADING_RADIUS_MILES = 150; // Only load polygons within this radius
 
 // Define projections at the top of the file
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
@@ -135,133 +137,6 @@ function MapUpdater({ centerLocation, isOpen, country }: {
   return null;
 }
 
-// Component to handle bulk selection interactions
-function MapInteractionHandler({
-  isBulkSelecting,
-  geoJsonData,
-  onBulkSelectionComplete,
-  isCanada,
-}: {
-  isBulkSelecting: boolean;
-  geoJsonData: any;
-  onBulkSelectionComplete: ((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void) | undefined;
-  isCanada: boolean;
-}) {
-  const map = useMap();
-  const isDrawingRef = useRef(false);
-  const drawStartLatLngRef = useRef<L.LatLng | null>(null);
-  const currentDrawCircleRef = useRef<L.Circle | null>(null);
-  const onBulkSelectionCompleteRef = useRef(onBulkSelectionComplete);
-
-  useEffect(() => {
-    onBulkSelectionCompleteRef.current = onBulkSelectionComplete;
-  }, [onBulkSelectionComplete]);
-
-  useEffect(() => {
-    const handleMouseDown = (e: L.LeafletMouseEvent) => {
-      isDrawingRef.current = true;
-      drawStartLatLngRef.current = e.latlng;
-      // Ensure any previous circle is removed before starting a new draw
-      if (currentDrawCircleRef.current) {
-        map.removeLayer(currentDrawCircleRef.current);
-        currentDrawCircleRef.current = null;
-      }
-    };
-
-    const handleMouseMove = (e: L.LeafletMouseEvent) => {
-      if (isDrawingRef.current && drawStartLatLngRef.current) {
-        const distanceMeters = drawStartLatLngRef.current.distanceTo(e.latlng);
-        if (currentDrawCircleRef.current) {
-          currentDrawCircleRef.current.setRadius(distanceMeters);
-        } else {
-          currentDrawCircleRef.current = L.circle(drawStartLatLngRef.current, {
-            radius: distanceMeters,
-            color: '#1D4ED8',
-            fillColor: '#BFDBFE',
-            fillOpacity: 0.3,
-            weight: 2,
-            interactive: false, // Crucial: this circle should not block underlying map interactions
-          }).addTo(map);
-        }
-      }
-    };
-
-    const handleMouseUp = () => {
-      if (isDrawingRef.current && drawStartLatLngRef.current && currentDrawCircleRef.current && geoJsonData && onBulkSelectionCompleteRef.current) {
-        const finalCenter = drawStartLatLngRef.current;
-        const finalRadiusMeters = currentDrawCircleRef.current.getRadius();
-        const selectedZips: Array<{ zipCode: string, stateProvince: string }> = [];
-        geoJsonData.features.forEach((feature: any) => {
-          if (feature.geometry) {
-            const centroid = getCentroid(feature, isCanada);
-            if (centroid.lat && centroid.lng && isPointInCircle(centroid.lat, centroid.lng, finalCenter.lat, finalCenter.lng, finalRadiusMeters)) {
-              selectedZips.push({ zipCode: getPostalCode(feature, isCanada), stateProvince: getRegion(feature, isCanada) });
-            }
-          }
-        });
-        onBulkSelectionCompleteRef.current(selectedZips);
-      }
-
-      // Always remove the circle on mouse up
-      if (currentDrawCircleRef.current) {
-        map.removeLayer(currentDrawCircleRef.current);
-        currentDrawCircleRef.current = null;
-      }
-      isDrawingRef.current = false;
-      drawStartLatLngRef.current = null;
-    };
-
-    if (isBulkSelecting) {
-      map.on('mousedown', handleMouseDown);
-      map.on('mousemove', handleMouseMove);
-      map.on('mouseup', handleMouseUp);
-      // Disable default map interactions during bulk selection
-      map.dragging.disable();
-      map.doubleClickZoom.disable();
-      map.scrollWheelZoom.disable();
-    } else {
-      // When not in bulk select mode:
-      // 1. Remove event listeners for drawing
-      map.off('mousedown', handleMouseDown);
-      map.off('mousemove', handleMouseMove);
-      map.off('mouseup', handleMouseUp);
-      
-      // 2. Ensure map interactions are enabled (revert to default behavior)
-      // These are already set to true in MapContainer props, so no need to explicitly enable here.
-      // map.dragging.enable();
-      // map.doubleClickZoom.enable();
-      // map.scrollWheelZoom.enable();
-
-      // 3. Crucially, remove any lingering draw circle if bulk select mode was active
-      // and then turned off without a mouseup event (e.g., by clicking the button again)
-      if (currentDrawCircleRef.current) {
-        map.removeLayer(currentDrawCircleRef.current);
-        currentDrawCircleRef.current = null;
-        isDrawingRef.current = false; // Reset drawing state
-        drawStartLatLngRef.current = null; // Reset start point
-      }
-    }
-
-    // Cleanup function for the effect
-    return () => {
-      map.off('mousedown', handleMouseDown);
-      map.off('mousemove', handleMouseMove);
-      map.off('mouseup', handleMouseUp);
-      // Ensure map interactions are re-enabled on component unmount or re-render
-      // These are already set to true in MapContainer props, so no need to explicitly enable here.
-      // if (map.dragging && !map.dragging.enabled()) map.dragging.enable();
-      // if (map.doubleClickZoom && !map.doubleClickZoom.enabled()) map.doubleClickZoom.enable();
-      // if (map.scrollWheelZoom && !map.scrollWheelZoom.enabled()) map.scrollWheelZoom.enable();
-      // Ensure the circle is removed on cleanup
-      if (currentDrawCircleRef.current) {
-        map.removeLayer(currentDrawCircleRef.current);
-        currentDrawCircleRef.current = null;
-      }
-    };
-  }, [map, isBulkSelecting, geoJsonData, isCanada]); // Dependencies
-  return null;
-}
-
 // New component for radius circles with labels
 interface RadiusCircleWithLabelProps {
   center: L.LatLngExpression;
@@ -335,8 +210,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   useEffect(() => {
     setLoadingGeoJson(true);
-    const featuresToLoad = isCanada ? canadaGeoJson.features : usGeoJson.features;
-    let processedFeatures = featuresToLoad;
+    const rawFeaturesToLoad = isCanada ? canadaGeoJson.features : usGeoJson.features;
+    let processedFeatures = rawFeaturesToLoad;
 
     if (isCanada) {
       const reprojectCoordinatesRecursive = (coordinates: any[]): any[] => {
@@ -346,7 +221,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         return coordinates.map(reprojectCoordinatesRecursive);
       };
 
-      processedFeatures = featuresToLoad.map(feature => {
+      processedFeatures = rawFeaturesToLoad.map(feature => {
         const newFeature = JSON.parse(JSON.stringify(feature));
         if (newFeature.geometry && newFeature.geometry.coordinates) {
           newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
@@ -355,12 +230,34 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       });
     }
 
+    // --- NEW FILTERING LOGIC: Only load features within MAX_LOADING_RADIUS_MILES ---
+    let filteredFeatures = processedFeatures;
+    if (centerLocation?.lat != null && centerLocation?.lng != null) {
+      const loadingRadiusMeters = MAX_LOADING_RADIUS_MILES * 1609.34; // Convert miles to meters
+      filteredFeatures = processedFeatures.filter(feature => {
+        if (feature.geometry) {
+          const centroid = getCentroid(feature, isCanada);
+          if (centroid.lat != null && centroid.lng != null) {
+            return isPointInCircle(
+              centroid.lat,
+              centroid.lng,
+              centerLocation.lat!,
+              centerLocation.lng!,
+              loadingRadiusMeters
+            );
+          }
+        }
+        return false; // Exclude features without valid geometry or centroid
+      });
+    }
+    // --- END NEW FILTERING LOGIC ---
+
     setAllGeoJsonData({
       type: 'FeatureCollection',
-      features: processedFeatures
+      features: filteredFeatures // Use filteredFeatures here
     });
     setLoadingGeoJson(false);
-  }, [isCanada]);
+  }, [isCanada, centerLocation]); // Add centerLocation to dependencies
 
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
     const zipCode = getPostalCode(feature, isCanada);
@@ -380,17 +277,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       } else {
         isVisibleByRadius = false;
       }
-    }
-
-    if (!isVisibleByRadius) {
-      return {
-        fillColor: '#F0F0F0',
-        weight: 0.5,
-        opacity: 0.5,
-        color: '#B0B0B0',
-        fillOpacity: 0.1,
-        interactive: false,
-      };
     }
 
     const highlightState = highlightedZipCodes.get(zipCode);
@@ -430,7 +316,15 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     }
 
-    return { fillColor, weight, opacity: 1, color, fillOpacity, interactive: true };
+    // If not visible by radius, make it less prominent but still interactive
+    if (!isVisibleByRadius) {
+      fillColor = '#F0F0F0'; // Light gray
+      color = '#B0B0B0';     // Darker gray border
+      fillOpacity = 0.1;     // Very transparent
+      weight = 0.5;          // Thinner border
+    }
+
+    return { fillColor, weight, opacity: 1, color, fillOpacity };
   }, [
     existingTerritories,
     highlightedZipCodes,
@@ -441,21 +335,48 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     selectedZipCodes,
   ]);
 
-  const onEachFeature = (feature: any, layer: L.Layer) => {
+  const onEachFeature = useCallback((feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
     
-    layer.off('click'); 
+    // Explicitly set interactive to true for the layer
+    layer.options.interactive = true; 
+
+    // Ensure previous event listeners and tooltips are removed before adding new ones
+    layer.off('click');
+    if (layer.getTooltip()) {
+      layer.unbindTooltip();
+    }
+
     layer.on({
       click: (e) => {
         L.DomEvent.stopPropagation(e);
-        if (!isBulkSelecting) {
+        // Only allow clicks if not in bulk selecting mode
+        if (!isBulkSelecting) { 
           onZipCodeClickRef.current(zipCode, stateProvince); 
         }
       },
+      mouseover: (e) => {
+        if (!isBulkSelecting) { // Only show hover effect in individual selection mode
+          const l = e.target;
+          l.setStyle({
+            weight: 3,
+            color: '#666',
+            dashArray: '',
+            fillOpacity: 0.7
+          });
+          l.bringToFront();
+        }
+      },
+      mouseout: (e) => {
+        if (!isBulkSelecting) { // Only reset hover effect in individual selection mode
+          // Reset to original style, which is determined by getZipCodeStyle
+          geoJsonLayerRef.current?.resetStyle(e.target);
+        }
+      }
     });
     layer.bindTooltip(`${isCanada ? 'FSA' : 'ZIP'}: ${zipCode} (${stateProvince})`, { permanent: false, direction: 'auto' });
-  };
+  }, [isCanada, isBulkSelecting]); // Dependencies: isCanada and isBulkSelecting. onZipCodeClickRef is a ref, so its .current is always fresh.
 
   const geoJsonStyleKey = useMemo(() => {
     const selectedZipsString = selectedZipCodes.map(z => `${z.zipCode}:${z.assignedStatus}`).join(',');
@@ -483,10 +404,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       zoom={isCanada ? 3 : 4}
       minZoom={3}
       maxZoom={18}
-      scrollWheelZoom={true}
+      scrollWheelZoom={!isBulkSelecting} // Control based on bulk selecting
       zoomControl={true}
-      dragging={true}
-      doubleClickZoom={true}
+      dragging={!isBulkSelecting} // Control based on bulk selecting
+      doubleClickZoom={!isBulkSelecting} // Control based on bulk selecting
+      touchZoom={!isBulkSelecting} // Control based on bulk selecting
+      boxZoom={!isBulkSelecting} // Control based on bulk selecting
+      keyboard={!isBulkSelecting} // Control based on bulk selecting
       className="h-full w-full rounded-lg overflow-hidden shadow-sm"
     >
       <TileLayer
@@ -501,6 +425,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           data={allGeoJsonData as any}
           style={getZipCodeStyle}
           onEachFeature={onEachFeature}
+          interactive={true} // Explicitly set interactive for the entire GeoJSON layer
         />
       )}
 
@@ -524,7 +449,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         isOpen={isOpen}
         country={country}
       />
-      <MapInteractionHandler
+      <BulkSelectionDrawer
         isBulkSelecting={isBulkSelecting}
         geoJsonData={allGeoJsonData}
         onBulkSelectionComplete={onBulkSelectionComplete}
