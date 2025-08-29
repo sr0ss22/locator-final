@@ -25,7 +25,7 @@ const PublicLocator: React.FC = () => {
   const [loadingLocation, setLoadingLocation] = useState<boolean>(false);
   const [installers, setInstallers] = useState<Installer[]>([]);
   const [loadingInstallers, setLoadingInstallers] = useState<boolean>(true);
-  const [installerDistancesMap, setInstallerDistancesMap] = new Map<string, number>();
+  const [installerDistancesMap, setInstallerDistancesMap] = useState<Map<string, number>>(new Map()); // Corrected this line
   const [loadingOrs, setLoadingOrs] = useState<boolean>(false);
   const [selectedInstallerId, setSelectedInstallerId] = useState<string | null>(null);
   const [searchRadius, setSearchRadius] = useState<number>(50);
