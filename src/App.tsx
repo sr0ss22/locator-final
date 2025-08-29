@@ -14,6 +14,7 @@ import { SessionContextProvider } from "./components/SessionContextProvider";
 import PublicLocator from "./pages/PublicLocator";
 import ProtectedRoute from "./components/ProtectedRoute";
 import UpdatePassword from "./pages/UpdatePassword";
+import ClaimProfilePage from "./pages/ClaimProfile";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +32,9 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/public-locator" element={<PublicLocator />} />
               <Route path="/update-password" element={<UpdatePassword />} />
+
+              {/* Special route for installers to claim their profile */}
+              <Route path="/claim-profile" element={<ClaimProfilePage />} />
 
               {/* Protected Routes - All routes within this element require authentication and role check */}
               <Route element={<ProtectedRoute />}>

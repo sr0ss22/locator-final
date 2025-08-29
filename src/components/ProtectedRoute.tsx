@@ -4,7 +4,6 @@ import { Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Button } from './ui/button'; // Ensure Button is imported
 
 const ProtectedRoute: React.FC = () => {
   const { user, profile, loading: sessionLoading } = useSession();
@@ -81,16 +80,8 @@ const ProtectedRoute: React.FC = () => {
   if (profile?.role === 'installer') {
     console.log("ProtectedRoute: User is installer.");
     if (!installerId) {
-      console.log("ProtectedRoute: Installer has no installerId, showing Account Pending.");
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-          <div className="text-center bg-white p-8 rounded-lg shadow-md">
-            <h1 className="text-2xl font-bold mb-4 text-gray-800">Account Pending</h1>
-            <p className="text-gray-600">Your account is not yet associated with an installer profile. Please contact an administrator for assistance.</p>
-            <Button onClick={() => supabase.auth.signOut()} className="mt-6">Log Out</Button>
-          </div>
-        </div>
-      );
+      console.log("ProtectedRoute: Installer has no installerId, redirecting to /claim-profile.");
+      return <Navigate to="/claim-profile" replace />;
     }
 
     // Installer has an installerId
