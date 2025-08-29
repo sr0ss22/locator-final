@@ -14,18 +14,48 @@ const ClaimProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState(user?.email || '');
   const [loading, setLoading] = useState(false);
+  const [checkingProfile, setCheckingProfile] = useState(true);
 
   useEffect(() => {
-    if (!sessionLoading) {
-      // If not logged in, go to login
+    const checkAndRedirect = async () => {
+      if (sessionLoading) {
+        return; // Wait for the session to finish loading
+      }
+
+      setCheckingProfile(true);
+
       if (!user) {
         navigate('/login');
+        return;
       }
-      // If user is an admin, they don't need to be here
-      else if (profile?.role === 'admin') {
+
+      if (profile?.role === 'admin') {
         navigate('/installers');
+        return;
       }
-    }
+
+      if (profile?.role === 'installer') {
+        // Check if the installer is already linked to a profile
+        const { data, error } = await supabase
+          .from('installers')
+          .select('id')
+          .eq('account_id', user.id)
+          .single();
+
+        if (error && error.code !== 'PGRST116') { // Ignore 'not found' errors
+          toast.error("Error checking your installer profile status.");
+        } else if (data?.id) {
+          // If they are linked, redirect them to their edit page
+          navigate(`/installers/edit/${data.id}`);
+          return;
+        }
+      }
+      
+      // If no redirect happened, it means they need to be on this page
+      setCheckingProfile(false);
+    };
+
+    checkAndRedirect();
   }, [user, profile, sessionLoading, navigate]);
 
   const handleClaimProfile = async () => {
@@ -70,7 +100,7 @@ const ClaimProfilePage: React.FC = () => {
     }
   };
 
-  if (sessionLoading) {
+  if (sessionLoading || checkingProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
