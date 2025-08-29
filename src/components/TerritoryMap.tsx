@@ -212,22 +212,38 @@ function MapInteractionHandler({
       drawStartLatLngRef.current = null;
     };
 
-    // Always attach/detach drawing listeners based on isBulkSelecting
     if (isBulkSelecting) {
       map.on('mousedown', handleMouseDown);
       map.on('mousemove', handleMouseMove);
       map.on('mouseup', handleMouseUp);
+      // Disable default map interactions during bulk selection
+      map.dragging.disable();
+      map.doubleClickZoom.disable();
+      map.scrollWheelZoom.disable();
+      map.touchZoom.disable(); // Also disable touch zoom for mobile
+      map.boxZoom.disable(); // Disable box zoom
+      map.keyboard.disable(); // Disable keyboard navigation
     } else {
+      // When not in bulk select mode:
+      // 1. Remove event listeners for drawing
       map.off('mousedown', handleMouseDown);
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
       
-      // Ensure any lingering draw circle is removed when bulk select mode is turned off
+      // 2. Re-enable default map interactions
+      map.dragging.enable();
+      map.doubleClickZoom.enable();
+      map.scrollWheelZoom.enable();
+      map.touchZoom.enable(); // Re-enable touch zoom
+      map.boxZoom.enable(); // Re-enable box zoom
+      map.keyboard.enable(); // Re-enable keyboard navigation
+
+      // 3. Ensure any lingering draw circle is removed
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
         currentDrawCircleRef.current = null;
-        isDrawingRef.current = false;
-        drawStartLatLngRef.current = null;
+        isDrawingRef.current = false; // Reset drawing state
+        drawStartLatLngRef.current = null; // Reset start point
       }
     }
 
@@ -240,6 +256,13 @@ function MapInteractionHandler({
         map.removeLayer(currentDrawCircleRef.current);
         currentDrawCircleRef.current = null;
       }
+      // Ensure interactions are re-enabled on unmount
+      map.dragging.enable();
+      map.doubleClickZoom.enable();
+      map.scrollWheelZoom.enable();
+      map.touchZoom.enable();
+      map.boxZoom.enable();
+      map.keyboard.enable();
     };
   }, [map, isBulkSelecting, geoJsonData, isCanada]); // Dependencies
   return null;
@@ -472,10 +495,10 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       zoom={isCanada ? 3 : 4}
       minZoom={3}
       maxZoom={18}
-      scrollWheelZoom={true}
+      scrollWheelZoom={false} // Controlled by MapInteractionHandler
       zoomControl={true}
-      dragging={true} // Always enable dragging
-      doubleClickZoom={true} // Always enable double click zoom
+      dragging={false} // Controlled by MapInteractionHandler
+      doubleClickZoom={false} // Controlled by MapInteractionHandler
       className="h-full w-full rounded-lg overflow-hidden shadow-sm"
     >
       <TileLayer
