@@ -2,14 +2,14 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
-import { Star, Loader2 } from 'lucide-react'; // Corrected import for Loader2
+import { Star, Loader2 } from 'lucide-react';
 import { calculateDistance } from '@/utils/distance';
 import { InstallerZipAssignment, TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
-import { useCountrySettings } from "@/hooks/useCountrySettings"; // Import useCountrySettings
-import BulkSelectionDrawer from './BulkSelectionDrawer'; // Import the new component
+import { useCountrySettings } from "@/hooks/useCountrySettings";
+import BulkSelectionDrawer from './BulkSelectionDrawer';
 
 // Import both GeoJSON files from the new src/data directory with import assertions
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
@@ -30,19 +30,19 @@ L.Icon.Default.mergeOptions({
 interface TerritoryMapProps {
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   centerLocation?: { lat: number | null; lng: number | null };
-  isOpen?: boolean; // True if used in a modal/drawer (e.g., EditInstallerPage), false for full page (e.g., TerritoryManagement)
-  existingTerritories: InstallerZipAssignment[]; // All territories for TerritoryManagement page
-  selectedZipCodes?: Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>; // Selected zips for current installer (EditInstallerPage)
-  currentDisplayRadius?: number | 'all'; // Radius for filtering displayed polygons (EditInstallerPage)
-  showRadiusCircles?: boolean; // Whether to show radius circles around centerLocation
-  highlightedZipCodes: Map<string, 'green' | 'orange'>; // Zips highlighted by user interaction (e.g., bulk select)
-  isBulkSelecting?: boolean; // Whether bulk selection mode is active
+  isOpen?: boolean;
+  existingTerritories: InstallerZipAssignment[];
+  selectedZipCodes?: Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>;
+  currentDisplayRadius?: number | 'all';
+  showRadiusCircles?: boolean;
+  highlightedZipCodes: Map<string, 'green' | 'orange'>;
+  isBulkSelecting?: boolean;
   onBulkSelectionComplete?: (selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void;
-  country?: 'USA' | 'Canada'; // New prop for country awareness
+  country?: 'USA' | 'Canada';
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
-const MAX_LOADING_RADIUS_MILES = 150; // Only load polygons within this radius
+// Removed MAX_LOADING_RADIUS_MILES as we will now load all polygons
 
 // Define projections at the top of the file
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
@@ -198,7 +198,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [loadingGeoJson, setLoadingGeoJson] = useState(true);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
-  const { distanceUnit } = useCountrySettings(); // Use useCountrySettings to get distance unit
+  const { distanceUnit } = useCountrySettings();
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
@@ -230,34 +230,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       });
     }
 
-    // --- NEW FILTERING LOGIC: Only load features within MAX_LOADING_RADIUS_MILES ---
-    let filteredFeatures = processedFeatures;
-    if (centerLocation?.lat != null && centerLocation?.lng != null) {
-      const loadingRadiusMeters = MAX_LOADING_RADIUS_MILES * 1609.34; // Convert miles to meters
-      filteredFeatures = processedFeatures.filter(feature => {
-        if (feature.geometry) {
-          const centroid = getCentroid(feature, isCanada);
-          if (centroid.lat != null && centroid.lng != null) {
-            return isPointInCircle(
-              centroid.lat,
-              centroid.lng,
-              centerLocation.lat!,
-              centerLocation.lng!,
-              loadingRadiusMeters
-            );
-          }
-        }
-        return false; // Exclude features without valid geometry or centroid
-      });
-    }
-    // --- END NEW FILTERING LOGIC ---
-
+    // Reverted filtering logic: Load all features into allGeoJsonData
     setAllGeoJsonData({
       type: 'FeatureCollection',
-      features: filteredFeatures // Use filteredFeatures here
+      features: processedFeatures
     });
     setLoadingGeoJson(false);
-  }, [isCanada, centerLocation]); // Add centerLocation to dependencies
+  }, [isCanada]); // Removed centerLocation from dependencies to ensure all data loads once per country change
 
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
     const zipCode = getPostalCode(feature, isCanada);
@@ -376,7 +355,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     });
     layer.bindTooltip(`${isCanada ? 'FSA' : 'ZIP'}: ${zipCode} (${stateProvince})`, { permanent: false, direction: 'auto' });
-  }, [isCanada, isBulkSelecting]); // Dependencies: isCanada and isBulkSelecting. onZipCodeClickRef is a ref, so its .current is always fresh.
+  }, [isCanada, isBulkSelecting]);
 
   const geoJsonStyleKey = useMemo(() => {
     const selectedZipsString = selectedZipCodes.map(z => `${z.zipCode}:${z.assignedStatus}`).join(',');
@@ -393,10 +372,10 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }
 
   // Define new path options for the circles
-  const greenCircleOptions = { color: '#22C55E', fillOpacity: 0, dashArray: '5, 5', weight: 2 }; // Green for 25 miles
-  const yellowCircleOptions = { color: '#FACC15', fillOpacity: 0, dashArray: '5, 5', weight: 2 }; // Yellow for 50 miles
-  const orangeCircleOptions = { color: '#F97316', fillOpacity: 0, dashArray: '5, 5', weight: 2 }; // Orange for 100 miles
-  const redCircleOptions = { color: '#EF4444', fillOpacity: 0, dashArray: '5, 5', weight: 2 };   // Red for 150 miles
+  const greenCircleOptions = { color: '#22C55E', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
+  const yellowCircleOptions = { color: '#FACC15', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
+  const orangeCircleOptions = { color: '#F97316', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
+  const redCircleOptions = { color: '#EF4444', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
 
   return (
     <MapContainer
@@ -404,13 +383,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       zoom={isCanada ? 3 : 4}
       minZoom={3}
       maxZoom={18}
-      scrollWheelZoom={!isBulkSelecting} // Control based on bulk selecting
+      scrollWheelZoom={!isBulkSelecting}
       zoomControl={true}
-      dragging={!isBulkSelecting} // Control based on bulk selecting
-      doubleClickZoom={!isBulkSelecting} // Control based on bulk selecting
-      touchZoom={!isBulkSelecting} // Control based on bulk selecting
-      boxZoom={!isBulkSelecting} // Control based on bulk selecting
-      keyboard={!isBulkSelecting} // Control based on bulk selecting
+      dragging={!isBulkSelecting}
+      doubleClickZoom={!isBulkSelecting}
+      touchZoom={!isBulkSelecting}
+      boxZoom={!isBulkSelecting}
+      keyboard={!isBulkSelecting}
       className="h-full w-full rounded-lg overflow-hidden shadow-sm"
     >
       <TileLayer
@@ -425,7 +404,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           data={allGeoJsonData as any}
           style={getZipCodeStyle}
           onEachFeature={onEachFeature}
-          interactive={true} // Explicitly set interactive for the entire GeoJSON layer
+          interactive={true}
         />
       )}
 
