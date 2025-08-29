@@ -56,13 +56,25 @@ const AdminToolsPage: React.FC = () => {
         const currentProgress = i + batch.length;
         setProgressMessage(`Processing batch ${Math.ceil(currentProgress / batchSize)} of ${Math.ceil(totalZips / batchSize)}... (${currentProgress}/${totalZips})`);
         
-        const { error } = await supabase.functions.invoke('enrich-zip-codes', {
+        const { data, error } = await supabase.functions.invoke('enrich-zip-codes', {
           body: { zipsToProcess: batch },
         });
 
         if (error) {
-          // Stop the process on the first error
-          throw new Error(`Error processing batch: ${error.message}`);
+          let detailedError = error.message;
+          // Attempt to parse a more specific error message from the function's response
+          if (error.context && typeof error.context.json === 'function') {
+            try {
+              const errorJson = await error.context.json();
+              if (errorJson.error) {
+                detailedError = errorJson.error;
+              }
+            } catch (e) {
+              // Ignore if parsing fails, stick with the original message
+              console.error("Could not parse JSON from function error response", e);
+            }
+          }
+          throw new Error(`Error processing batch: ${detailedError}`);
         }
         
         setProgress((currentProgress / totalZips) * 100);
