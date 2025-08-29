@@ -13,6 +13,7 @@ import Login from "./pages/Login";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 import PublicLocator from "./pages/PublicLocator";
 import ProtectedRoute from "./components/ProtectedRoute"; // Import the new component
+import UpdatePassword from "./pages/UpdatePassword"; // Import the new page
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,7 @@ const App = () => (
               {/* Public Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/public-locator" element={<PublicLocator />} />
+              <Route path="/update-password" element={<UpdatePassword />} />
 
               {/* Protected Routes */}
               <Route element={<ProtectedRoute />}>
