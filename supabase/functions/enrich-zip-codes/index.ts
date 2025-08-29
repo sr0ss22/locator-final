@@ -12,51 +12,34 @@ serve(async (req) => {
   }
 
   try {
+    const { zipsToProcess } = await req.json();
+    if (!zipsToProcess || !Array.isArray(zipsToProcess) || zipsToProcess.length === 0) {
+      throw new Error('An array of zip code data must be provided in the request body.');
+    }
+
     const OPENCAGE_API_KEY = Deno.env.get('OPENCAGE_API_KEY');
     if (!OPENCAGE_API_KEY) {
       throw new Error('OPENCAGE_API_KEY is not set in Supabase secrets.');
     }
 
-    // Create a Supabase client with the service role key
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { persistSession: false } }
     )
 
-    // Fetch all zip codes that need enrichment where state is 'Unknown' or null.
-    const { data: allZips, error: fetchError } = await supabaseAdmin
-      .from('zip_code_geometries')
-      .select('zip_code, centroid_latitude, centroid_longitude, state_province')
-      .or('state_province.eq.Unknown,state_province.is.null');
-
-    if (fetchError) {
-      throw fetchError
-    }
-
-    if (!allZips || allZips.length === 0) {
-      return new Response(JSON.stringify({ message: 'No zip codes to enrich.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      })
-    }
-
-    // Filter for valid, 5-digit US zip codes in the function itself.
-    const usZipsToProcess = allZips.filter(zip => zip.zip_code && /^\d{5}$/.test(zip.zip_code));
-
-    if (usZipsToProcess.length === 0) {
-      return new Response(JSON.stringify({ message: 'No US zip codes to enrich.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      })
-    }
-
     const updates = [];
 
-    for (const zip of usZipsToProcess) {
+    for (const zip of zipsToProcess) {
       if (zip.centroid_latitude && zip.centroid_longitude) {
         const url = `https://api.opencagedata.com/geocode/v1/json?q=${zip.centroid_latitude}+${zip.centroid_longitude}&key=${OPENCAGE_API_KEY}&no_annotations=1&language=en`;
         const response = await fetch(url);
+        
+        if (!response.ok) {
+          console.warn(`OpenCage API returned status ${response.status} for ZIP ${zip.zip_code}`);
+          continue; // Skip to the next zip code
+        }
+
         const data = await response.json();
 
         if (data.results && data.results.length > 0) {
@@ -86,7 +69,7 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ message: `Enrichment complete. Processed ${usZipsToProcess.length} zip codes and updated ${updates.length}.` }), {
+    return new Response(JSON.stringify({ message: `Batch processed. Updated ${updates.length} zip codes.` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })

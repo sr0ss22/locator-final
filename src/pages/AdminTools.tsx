@@ -5,26 +5,77 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Progress } from "@/components/ui/progress";
 
 const AdminToolsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState("");
   const navigate = useNavigate();
 
   const handleEnrichZips = async () => {
     setLoading(true);
-    const loadingToastId = toast.loading('Starting ZIP code enrichment process... This may take a while.');
+    setProgress(0);
+    setProgressMessage("Fetching list of ZIP codes to enrich...");
+    toast.info('Starting ZIP code enrichment process...');
 
     try {
-      const { data, error } = await supabase.functions.invoke('enrich-zip-codes');
+      // 1. Fetch all zips that need enrichment
+      const { data: allZips, error: fetchError } = await supabase
+        .from('zip_code_geometries')
+        .select('zip_code, centroid_latitude, centroid_longitude, state_province')
+        .or('state_province.eq.Unknown,state_province.is.null');
 
-      if (error) {
-        throw error;
+      if (fetchError) throw fetchError;
+
+      if (!allZips || allZips.length === 0) {
+        toast.success('No ZIP codes needed enrichment.');
+        setProgressMessage("All ZIP codes are up to date.");
+        setLoading(false);
+        return;
+      }
+      
+      // Filter for US zips in the client
+      const zipsToProcess = allZips.filter(zip => zip.zip_code && /^\d{5}$/.test(zip.zip_code));
+
+      if (zipsToProcess.length === 0) {
+        toast.success('No US ZIP codes needed enrichment.');
+        setProgressMessage("All US ZIP codes are up to date.");
+        setLoading(false);
+        return;
       }
 
-      toast.success(data.message || 'Enrichment process completed successfully!', { id: loadingToastId, duration: 10000 });
+      const totalZips = zipsToProcess.length;
+      setProgressMessage(`Found ${totalZips} US ZIP codes to process.`);
+
+      // 2. Process in batches
+      const batchSize = 10;
+
+      for (let i = 0; i < totalZips; i += batchSize) {
+        const batch = zipsToProcess.slice(i, i + batchSize);
+        const currentProgress = i + batch.length;
+        setProgressMessage(`Processing batch ${Math.ceil(currentProgress / batchSize)} of ${Math.ceil(totalZips / batchSize)}... (${currentProgress}/${totalZips})`);
+        
+        const { error } = await supabase.functions.invoke('enrich-zip-codes', {
+          body: { zipsToProcess: batch },
+        });
+
+        if (error) {
+          // Stop the process on the first error
+          throw new Error(`Error processing batch: ${error.message}`);
+        }
+        
+        setProgress((currentProgress / totalZips) * 100);
+      }
+
+      setProgress(100);
+      setProgressMessage(`Enrichment complete. Processed ${totalZips} ZIP codes.`);
+      toast.success('Enrichment process completed successfully!');
+
     } catch (error: any) {
-      console.error('Error invoking enrich-zip-codes function:', error);
-      toast.error(`Enrichment failed: ${error.message}`, { id: loadingToastId, duration: 10000 });
+      console.error('Error during enrichment process:', error);
+      setProgressMessage(`Error: ${error.message}`);
+      toast.error(`Enrichment failed: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -46,6 +97,14 @@ const AdminToolsPage: React.FC = () => {
               This tool will scan the US ZIP codes in the database and attempt to fill in missing state abbreviations using a reverse geocoding service. This is useful if the initial data import was missing state information. This process can take a long time depending on the number of ZIP codes that need updating.
             </CardDescription>
           </CardHeader>
+          <CardContent>
+            {loading && (
+              <div className="space-y-2">
+                <Progress value={progress} className="w-full" />
+                <p className="text-sm text-muted-foreground">{progressMessage}</p>
+              </div>
+            )}
+          </CardContent>
           <CardFooter>
             <Button onClick={handleEnrichZips} disabled={loading}>
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
