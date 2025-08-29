@@ -361,37 +361,36 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     setLoadingGeoJson(false);
   }, [isCanada]);
 
+  const filteredGeoJsonData = useMemo(() => {
+    if (!allGeoJsonData) return null;
+    if (isTerritoryManagementPage || currentDisplayRadius === 'all' || !centerLocation?.lat || !centerLocation?.lng) {
+      return allGeoJsonData;
+    }
+
+    const radiusInMeters = (currentDisplayRadius as number) * 1609.34;
+    const filteredFeatures = allGeoJsonData.features.filter((feature: any) => {
+      const centroid = getCentroid(feature, isCanada);
+      if (centroid.lat != null && centroid.lng != null) {
+        return isPointInCircle(
+          centroid.lat,
+          centroid.lng,
+          centerLocation.lat!,
+          centerLocation.lng!,
+          radiusInMeters
+        );
+      }
+      return false;
+    });
+
+    return {
+      ...allGeoJsonData,
+      features: filteredFeatures,
+    };
+  }, [allGeoJsonData, isTerritoryManagementPage, currentDisplayRadius, centerLocation, isCanada]);
+
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
     const zipCode = getPostalCode(feature, isCanada);
     
-    let isVisibleByRadius = true;
-    if (!isTerritoryManagementPage && currentDisplayRadius !== 'all' && centerLocation?.lat != null && centerLocation?.lng != null) {
-      const centroid = getCentroid(feature, isCanada);
-      if (centroid.lat != null && centroid.lng != null) {
-        const radiusInMeters = (currentDisplayRadius as number) * 1609.34;
-        isVisibleByRadius = isPointInCircle(
-          centroid.lat,
-          centroid.lng,
-          centerLocation.lat,
-          centerLocation.lng,
-          radiusInMeters
-        );
-      } else {
-        isVisibleByRadius = false;
-      }
-    }
-
-    if (!isVisibleByRadius) {
-      return {
-        fillColor: '#F0F0F0',
-        weight: 0.5,
-        opacity: 0.5,
-        color: '#B0B0B0',
-        fillOpacity: 0.1,
-        interactive: false,
-      };
-    }
-
     const highlightState = highlightedZipCodes.get(zipCode);
     let fillColor = '#F0F0F0';
     let color = '#60A5FA';
@@ -435,8 +434,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     highlightedZipCodes,
     isCanada,
     isTerritoryManagementPage,
-    currentDisplayRadius,
-    centerLocation,
     selectedZipCodes,
   ]);
 
@@ -493,11 +490,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       
-      {allGeoJsonData && (
+      {filteredGeoJsonData && (
         <GeoJSON
           key={geoJsonStyleKey}
           ref={geoJsonLayerRef}
-          data={allGeoJsonData as any}
+          data={filteredGeoJsonData as any}
           style={getZipCodeStyle}
           onEachFeature={onEachFeature}
         />
