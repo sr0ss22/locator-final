@@ -1,7 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-// Import from the new, simpler filename
-import jsonData from './zip-data.json' assert { type: 'json' };
 
 // Standard CORS headers for Supabase Edge Functions
 const corsHeaders = {
@@ -16,6 +14,10 @@ serve(async (req) => {
   }
 
   try {
+    // Read and parse the local JSON file. This is a more robust way to include data.
+    const jsonText = await Deno.readTextFile(new URL('./zip-data.json', import.meta.url).pathname);
+    const jsonData = JSON.parse(jsonText);
+
     // Initialize the Supabase admin client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
