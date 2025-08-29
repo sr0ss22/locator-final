@@ -12,6 +12,9 @@ import DistanceFilter from "@/components/DistanceFilter";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 import InstallerSummary from "@/components/InstallerSummary";
 import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
+import { useNavigate } from "react-router-dom"; // Import useNavigate
+import { useSession } from "@/components/SessionContextProvider"; // Import useSession
+import { Button } from "@/components/ui/button"; // Ensure Button is imported
 
 const PublicLocator: React.FC = () => {
   const [searchedZipCode, setSearchedZipCode] = useState<string>("");
@@ -22,11 +25,13 @@ const PublicLocator: React.FC = () => {
   const [loadingLocation, setLoadingLocation] = useState<boolean>(false);
   const [installers, setInstallers] = useState<Installer[]>([]);
   const [loadingInstallers, setLoadingInstallers] = useState<boolean>(true);
-  const [installerDistancesMap, setInstallerDistancesMap] = useState<Map<string, number>>(new Map());
+  const [installerDistancesMap, setInstallerDistancesMap] = new Map<string, number>();
   const [loadingOrs, setLoadingOrs] = useState<boolean>(false);
   const [selectedInstallerId, setSelectedInstallerId] = useState<string | null>(null);
   const [searchRadius, setSearchRadius] = useState<number>(50);
-  const { distanceUnit } = useCountrySettings();
+  const { isCanada, distanceUnit, toggleCountry } = useCountrySettings(); // Destructure toggleCountry
+  const navigate = useNavigate(); // Initialize useNavigate
+  const { user, loading: sessionLoading } = useSession(); // Get user and session loading state
   const OPENROUTESERVICE_API_KEY = '5b3ce3597851110001cf6248d8c27a7c67644fb391eaf7080c84c301';
 
   const toBoolean = (value: any): boolean => {
@@ -234,6 +239,14 @@ const PublicLocator: React.FC = () => {
           <div className="lg:col-span-2">
             <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
               <InstallerMapComponent userLocation={userSearchLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
+            </div>
+            <div className="flex justify-end mt-4 space-x-2">
+              <Button onClick={toggleCountry} variant="outline">Switch to {isCanada ? "US" : "Canada"} View</Button>
+              {!sessionLoading && user && (
+                <Button onClick={() => navigate("/installers")}>
+                  Installer Management
+                </Button>
+              )}
             </div>
             {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
               <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userSearchLocation} showAdditionalFilters={false} selectedStatesProvinces={[]} searchRadius={searchRadius} />
