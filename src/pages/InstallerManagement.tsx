@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PlusCircle, Edit, Trash2, Download, Eye, Upload, Search, Loader2, ArrowUp, ArrowDown, ArrowLeft, Filter } from "lucide-react";
+import { PlusCircle, Edit, Trash2, Download, Eye, Upload, Search, Loader2, ArrowUp, ArrowDown, ArrowLeft, Filter, Settings } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { toast } from "sonner";
@@ -615,6 +615,12 @@ const InstallerManagement: React.FC = () => {
           </div>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
+          <Button 
+            onClick={() => navigate("/admin-tools")}
+            variant="outline"
+          >
+            <Settings className="h-4 w-4 mr-2" /> Admin Tools
+          </Button>
           <Button variant="outline" onClick={() => setIsFilterModalOpen(true)}><Filter className="h-4 w-4 mr-2" /> Filter</Button>
           <Button variant="outline" onClick={() => setIsImportModalOpen(true)}><Upload className="h-4 w-4 mr-2" /> Import</Button>
           <Button onClick={handleExportInstallers} disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 mr-2" />} Export</Button>

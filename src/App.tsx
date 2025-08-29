@@ -15,6 +15,7 @@ import PublicLocator from "./pages/PublicLocator";
 import ProtectedRoute from "./components/ProtectedRoute";
 import UpdatePassword from "./pages/UpdatePassword";
 import ClaimProfilePage from "./pages/ClaimProfile";
+import AdminToolsPage from "./pages/AdminTools";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +44,7 @@ const App = () => (
                 <Route path="/installers" element={<InstallerManagement />} />
                 <Route path="/installers/edit/:installerId" element={<EditInstallerPage />} />
                 <Route path="/territories" element={<TerritoryManagement />} />
+                <Route path="/admin-tools" element={<AdminToolsPage />} />
               </Route>
 
               {/* Catch-all Not Found Route */}
