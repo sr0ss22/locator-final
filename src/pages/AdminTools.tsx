@@ -24,7 +24,7 @@ const AdminToolsPage: React.FC = () => {
 
   const handleUpdateStateCodes = async () => {
     if (!selectedFile) {
-      toast.error("Please select the JSON data file first.");
+      toast.error("Please select the CSV data file first.");
       return;
     }
 
@@ -32,7 +32,7 @@ const AdminToolsPage: React.FC = () => {
     const loadingToastId = toast.loading('Uploading data file...');
 
     try {
-      const filePath = `zip-data.json`;
+      const filePath = `zip-data.csv`; // Changed to .csv
       const { error: uploadError } = await supabase.storage
         .from('migrations')
         .upload(filePath, selectedFile, {
@@ -48,7 +48,17 @@ const AdminToolsPage: React.FC = () => {
       const { data, error: invokeError } = await supabase.functions.invoke('update-zip-state');
 
       if (invokeError) {
-        throw invokeError;
+        // Try to parse a more specific error message from the function response
+        let detailedError = invokeError.message;
+        if (invokeError.context && typeof invokeError.context.json === 'function') {
+            try {
+                const errorJson = await invokeError.context.json();
+                if (errorJson.error) detailedError = errorJson.error;
+            } catch (e) {
+                console.error("Could not parse JSON from function error response", e);
+            }
+        }
+        throw new Error(detailedError);
       }
 
       toast.success(data.message || 'State codes updated successfully!', { id: loadingToastId });
@@ -73,13 +83,13 @@ const AdminToolsPage: React.FC = () => {
           <CardHeader>
             <CardTitle>Update State Codes from File</CardTitle>
             <CardDescription>
-              Upload the `georef-united-states-of-america-zc-point@public.json` file to update the `state_province` for all US ZIP codes. This is a one-time operation to fix data inconsistencies.
+              Upload a CSV file to update the `state_province` for all US ZIP codes. The CSV must contain headers: <code className="bg-gray-100 p-1 rounded">zip_code</code> and <code className="bg-gray-100 p-1 rounded">stusps_code</code>.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <Label htmlFor="zip-file-upload">ZIP Code Data File (.json)</Label>
-              <Input id="zip-file-upload" type="file" accept=".json" onChange={handleFileSelect} />
+              <Label htmlFor="zip-file-upload">ZIP Code Data File (.csv)</Label>
+              <Input id="zip-file-upload" type="file" accept=".csv" onChange={handleFileSelect} />
             </div>
           </CardContent>
           <CardFooter>

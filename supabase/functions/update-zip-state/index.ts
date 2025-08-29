@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { parse } from "https://deno.land/std@0.190.0/csv/mod.ts";
 
 // Standard CORS headers for Supabase Edge Functions
 const corsHeaders = {
@@ -21,8 +22,8 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
 
-    // 1. Download the file from storage
-    const filePath = 'zip-data.json';
+    // 1. Download the CSV file from storage
+    const filePath = 'zip-data.csv';
     const { data: fileData, error: downloadError } = await supabaseAdmin.storage
       .from('migrations')
       .download(filePath);
@@ -31,27 +32,28 @@ serve(async (req) => {
       throw new Error(`Failed to download data file from storage: ${downloadError.message}`);
     }
 
-    const jsonText = await fileData.text();
-    const jsonData = JSON.parse(jsonText);
+    const csvText = await fileData.text();
+    
+    // 2. Parse the CSV content
+    const records = parse(csvText, {
+      header: true, // Treat the first row as headers
+      skipFirstRow: true,
+    });
 
-    // Prepare the data for upserting from the downloaded JSON file
-    if (!Array.isArray(jsonData)) {
-      throw new Error('Invalid JSON data format: Expected an array of records.');
-    }
-
-    const updates = jsonData.map((record: any) => ({
-      zip_code: record.fields.zip_code,
-      state_province: record.fields.stusps_code,
+    // 3. Prepare the data for upserting
+    const updates = records.map((record: any) => ({
+      zip_code: record.zip_code,
+      state_province: record.stusps_code,
     })).filter(item => item.zip_code && item.state_province);
 
     if (updates.length === 0) {
-      return new Response(JSON.stringify({ message: "No valid records to update from file." }), {
+      return new Response(JSON.stringify({ message: "No valid records to update from the CSV file." }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });
     }
 
-    // Process in batches to avoid overwhelming the database
+    // 4. Process in batches
     const batchSize = 500;
     let successCount = 0;
 
