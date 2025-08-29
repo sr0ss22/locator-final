@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, MousePointer2 } from "lucide-react"; // Added MousePointer2
+import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download } from "lucide-react"; // Removed MousePointer2
 import { Installer, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -230,7 +230,7 @@ const EditInstallerPage: React.FC = () => {
       });
       const updatedList = Array.from(newSelectedMap.values());
       toast.success(`Selected ${selectedZips.length} ZIP codes.`); // Changed toast message
-      setBulkActionType(null);
+      setBulkActionType(null); // Exit bulk selection mode after completion
       return updatedList;
     });
   }, [bulkActionType, zipCodeCentroids]);
@@ -347,8 +347,13 @@ const EditInstallerPage: React.FC = () => {
 
   const handleToggleBulkSelect = (action: 'approve' | 'needs_approval') => {
     setBulkActionType(prev => {
-      if (prev === action) { toast.info("Individual selection mode activated."); return null; } // Changed toast message
-      else { toast.info(`${action === 'approve' ? 'Approve' : 'Needs Approval'} bulk selection mode activated. Click and drag on the map.`); return action; } // Changed toast message
+      if (prev === action) {
+        toast.info("Individual selection mode activated.");
+        return null; // Toggle off the current bulk action, returning to individual selection
+      } else {
+        toast.info(`${action === 'approve' ? 'Approve' : 'Needs Approval'} bulk selection mode activated. Click and drag on the map.`);
+        return action; // Activate the new bulk action
+      }
     });
   };
 
@@ -534,10 +539,6 @@ const EditInstallerPage: React.FC = () => {
                   <Button onClick={handleExportInstallerTerritories} disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 mr-2" />} Export Territories</Button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {/* New Individual Selection Button */}
-                  <Button variant="outline" className={cn(bulkActionType === null ? "bg-blue-600 text-white hover:bg-blue-700" : "border-blue-600 text-blue-600 hover:bg-blue-100")} onClick={() => setBulkActionType(null)} disabled={loading}>
-                    <MousePointer2 className="mr-2 h-4 w-4" /> Individual Selection
-                  </Button>
                   <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}>
                     <MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Approve" : "Approve"}
                   </Button>
