@@ -451,6 +451,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
     
+    // Console log to check interactivity state when feature is processed
+    console.log(`[DEBUG] Polygon ${zipCode}: isBulkSelecting = ${isBulkSelecting}, layer interactive = ${layer.options.interactive}`);
+
     // Ensure previous event listeners and tooltips are removed before adding new ones
     layer.off('click');
     if (layer.getTooltip()) {
@@ -460,10 +463,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     layer.on({
       click: (e) => {
         L.DomEvent.stopPropagation(e);
-        // Only allow clicks if not in bulk selecting mode
-        if (!isBulkSelecting) {
+        console.log(`[DEBUG] Clicked polygon ${zipCode}. isBulkSelecting: ${isBulkSelecting}`);
+        // Temporarily removed conditional check for debugging purposes
+        // if (!isBulkSelecting) { 
           onZipCodeClickRef.current(zipCode, stateProvince); 
-        }
+        // }
       },
     });
     layer.bindTooltip(`${isCanada ? 'FSA' : 'ZIP'}: ${zipCode} (${stateProvince})`, { permanent: false, direction: 'auto' });
