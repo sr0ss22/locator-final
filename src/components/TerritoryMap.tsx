@@ -9,6 +9,7 @@ import { InstallerZipAssignment, TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
+import { useCountrySettings } from "@/hooks/useCountrySettings"; // Import useCountrySettings
 
 // Import both GeoJSON files from the new src/data directory with import assertions
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
@@ -262,6 +263,47 @@ function MapInteractionHandler({
   return null;
 }
 
+// New component for radius circles with labels
+interface RadiusCircleWithLabelProps {
+  center: L.LatLngExpression;
+  radiusMiles: number; // Original radius in miles
+  pathOptions: L.PathOptions;
+  distanceUnit: 'miles' | 'km'; // Unit for display
+}
+
+const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, radiusMiles, pathOptions, distanceUnit }) => {
+  const [lat, lng] = Array.isArray(center) ? center : [center.lat, center.lng];
+
+  const radiusMeters = radiusMiles * 1609.34; // Convert miles to meters for Leaflet Circle
+
+  // Approximate conversion of meters to degrees latitude for label placement
+  // 1 degree of latitude is approximately 111,139 meters
+  const latOffsetDegrees = radiusMeters / 111139;
+  const labelLat = lat + latOffsetDegrees; // Place label at the top of the circle
+
+  const displayRadius = distanceUnit === 'km' ? (radiusMiles * 1.60934).toFixed(0) : radiusMiles.toFixed(0);
+  const labelText = `${displayRadius} ${distanceUnit}`;
+
+  const labelIcon = L.divIcon({
+    html: `<div class="flex items-center justify-center">
+            <span class="bg-white text-gray-800 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-gray-300 shadow-sm whitespace-nowrap">
+              ${labelText}
+            </span>
+          </div>`,
+    className: 'custom-radius-label-icon',
+    iconSize: [labelText.length * 8 + 20, 20], // Estimate size based on text length
+    iconAnchor: [labelText.length * 4 + 10, 10], // Center the icon
+  });
+
+  return (
+    <>
+      <Circle center={center} radius={radiusMeters} pathOptions={pathOptions} />
+      <Marker position={[labelLat, lng]} icon={labelIcon} interactive={false} />
+    </>
+  );
+};
+
+
 const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onZipCodeClick,
   centerLocation,
@@ -278,6 +320,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [loadingGeoJson, setLoadingGeoJson] = useState(true);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
+  const { distanceUnit } = useCountrySettings(); // Use useCountrySettings to get distance unit
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
@@ -425,9 +468,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     );
   }
 
-  const yellowCircleOptions = { color: '#FACC15', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
-  const orangeCircleOptions = { color: '#FB923C', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
-  const lightRedCircleOptions = { color: '#FCA5A5', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
+  // Define new path options for the circles
+  const greenCircleOptions = { color: '#22C55E', fillOpacity: 0, dashArray: '5, 5', weight: 2 }; // Green for 25 miles
+  const yellowCircleOptions = { color: '#FACC15', fillOpacity: 0, dashArray: '5, 5', weight: 2 }; // Yellow for 50 miles
+  const orangeCircleOptions = { color: '#F97316', fillOpacity: 0, dashArray: '5, 5', weight: 2 }; // Orange for 100 miles
+  const redCircleOptions = { color: '#EF4444', fillOpacity: 0, dashArray: '5, 5', weight: 2 };   // Red for 150 miles
 
   return (
     <MapContainer
@@ -463,9 +508,10 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           </Marker>
           {showRadiusCircles && (
             <>
-              <Circle center={[centerLocation.lat, centerLocation.lng]} radius={25 * 1609.34} pathOptions={yellowCircleOptions} />
-              <Circle center={[centerLocation.lat, centerLocation.lng]} radius={50 * 1609.34} pathOptions={orangeCircleOptions} />
-              <Circle center={[centerLocation.lat, centerLocation.lng]} radius={100 * 1609.34} pathOptions={lightRedCircleOptions} />
+              <RadiusCircleWithLabel center={[centerLocation.lat, centerLocation.lng]} radiusMiles={25} pathOptions={greenCircleOptions} distanceUnit={distanceUnit} />
+              <RadiusCircleWithLabel center={[centerLocation.lat, centerLocation.lng]} radiusMiles={50} pathOptions={yellowCircleOptions} distanceUnit={distanceUnit} />
+              <RadiusCircleWithLabel center={[centerLocation.lat, centerLocation.lng]} radiusMiles={100} pathOptions={orangeCircleOptions} distanceUnit={distanceUnit} />
+              <RadiusCircleWithLabel center={[centerLocation.lat, centerLocation.lng]} radiusMiles={150} pathOptions={redCircleOptions} distanceUnit={distanceUnit} />
             </>
           )}
         </>
