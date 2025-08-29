@@ -41,7 +41,6 @@ function Login() {
             },
           }}
           theme="light"
-          magicLink={true} // Enable magic link for passwordless login
         />
       </div>
     </div>
