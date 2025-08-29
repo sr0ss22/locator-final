@@ -263,6 +263,14 @@ function MapInteractionHandler({
   return null;
 }
 
+// Helper to convert hex color to rgba with a specified alpha
+const hexToRgba = (hex: string, alpha: number) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 // New component for radius circles with labels
 interface RadiusCircleWithLabelProps {
   center: L.LatLngExpression;
@@ -284,9 +292,14 @@ const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, r
   const displayRadius = distanceUnit === 'km' ? (radiusMiles * 1.60934).toFixed(0) : radiusMiles.toFixed(0);
   const labelText = `${displayRadius} ${distanceUnit}`;
 
+  const circleColor = pathOptions.color as string; // Get the color from pathOptions
+  const badgeBgColor = hexToRgba(circleColor, 0.2); // Transparent background
+  const badgeTextColor = circleColor; // Text color matches circle color
+  const badgeBorderColor = circleColor; // Border color matches circle color
+
   const labelIcon = L.divIcon({
     html: `<div class="flex items-center justify-center">
-            <span class="bg-white text-gray-800 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-gray-300 shadow-sm whitespace-nowrap">
+            <span style="background-color: ${badgeBgColor}; color: ${badgeTextColor}; border: 1px solid ${badgeBorderColor};" class="text-xs font-semibold px-2.5 py-0.5 rounded-full shadow-sm whitespace-nowrap">
               ${labelText}
             </span>
           </div>`,
