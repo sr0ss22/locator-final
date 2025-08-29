@@ -226,12 +226,7 @@ function MapInteractionHandler({
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
       
-      // 2. Explicitly re-enable map interactions
-      map.dragging.enable();
-      map.doubleClickZoom.enable();
-      map.scrollWheelZoom.enable();
-
-      // 3. Crucially, remove any lingering draw circle if bulk select mode was active
+      // 2. Crucially, remove any lingering draw circle if bulk select mode was active
       // and then turned off without a mouseup event (e.g., by clicking the button again)
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
@@ -247,10 +242,7 @@ function MapInteractionHandler({
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
       // Ensure map interactions are re-enabled on component unmount or re-render
-      map.dragging.enable();
-      map.doubleClickZoom.enable();
-      map.scrollWheelZoom.enable();
-      // Ensure the circle is removed on cleanup
+      // This is handled by the new useEffect in TerritoryMap directly
       if (currentDrawCircleRef.current) {
         map.removeLayer(currentDrawCircleRef.current);
         currentDrawCircleRef.current = null;
@@ -466,6 +458,19 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const highlightedZipsString = Array.from(highlightedZipCodes.entries()).map(([k, v]) => `${k}:${v}`).join(',');
     return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
   }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
+
+  // New effect to explicitly ensure map interactions are enabled when not in bulk select mode
+  useEffect(() => {
+    if (!isBulkSelecting && geoJsonLayerRef.current) {
+      const map = geoJsonLayerRef.current.getEvents().layer.getMap();
+      if (map) {
+        map.dragging.enable();
+        map.doubleClickZoom.enable();
+        map.scrollWheelZoom.enable();
+        console.log("TerritoryMap: Explicitly re-enabled map interactions outside of bulk select.");
+      }
+    }
+  }, [isBulkSelecting, geoJsonLayerRef.current]); // Depend on isBulkSelecting and geoJsonLayerRef.current
 
   if (loadingGeoJson) {
     return (
