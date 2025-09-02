@@ -69,7 +69,7 @@ const EditInstallerPage: React.FC = () => {
   const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | null>(null);
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
-  const { profile, loading: sessionLoading } = useSession();
+  const { profile, user, loading: sessionLoading } = useSession();
 
   const installerCountry = useMemo(() => {
     const country = currentInstaller?.rawSupabaseData?.country?.toUpperCase();
@@ -270,7 +270,7 @@ const EditInstallerPage: React.FC = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const isAdmin = profile?.role === 'admin';
+  const isAdmin = profile?.role === 'admin' && user?.email?.endsWith('@hunterdouglas.com');
   const canEdit = isAdmin || (profile?.role === 'installer' && currentInstaller?.rawSupabaseData.account_id === profile.id);
 
   const handleSubmit = async () => {
