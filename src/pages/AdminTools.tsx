@@ -10,8 +10,8 @@ import { Progress } from '@/components/ui/progress';
 // Import the local GeoJSON files
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
 import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
-// Import the US zip-to-state mapping file
-import usZipToStateMappingGeoJson from '@/data/georef-united-states-of-america-zc-point@public.json' with { type: 'json' };
+// Import the US zip-to-state mapping file with its new name
+import usZipToStateMappingGeoJson from '@/data/us-zip-code-points.json' with { type: 'json' };
 
 
 // We need these for Canadian coordinate reprojection
