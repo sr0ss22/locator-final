@@ -473,7 +473,7 @@ const EditInstallerPage: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {brandCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((item) => (
               <div key={item.key} className="flex items-center space-x-2">
-                <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!canEdit} />
+                <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!isAdmin} />
                 <Label htmlFor={item.key}>{item.label}</Label>
               </div>
             ))}
@@ -484,7 +484,7 @@ const EditInstallerPage: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {productSkillCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((item) => (
               <div key={item.key} className="flex items-center space-x-2">
-                <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!canEdit} />
+                <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!isAdmin} />
                 <Label htmlFor={item.key}>{item.label}</Label>
               </div>
             ))}
@@ -497,7 +497,7 @@ const EditInstallerPage: React.FC = () => {
             const isChecked = currentCerts.includes(cert.value);
             return (
               <div key={cert.label} className="flex items-center space-x-2">
-                <Checkbox id={cert.label} name={cert.label} checked={isChecked} onCheckedChange={(checked) => handleCertificationCheckboxChange(cert.dbColumn, cert.value, checked as boolean)} disabled={!canEdit} />
+                <Checkbox id={cert.label} name={cert.label} checked={isChecked} onCheckedChange={(checked) => handleCertificationCheckboxChange(cert.dbColumn, cert.value, checked as boolean)} disabled={!isAdmin} />
                 <Label htmlFor={cert.label}>{cert.label}</Label>
               </div>
             );
@@ -511,7 +511,7 @@ const EditInstallerPage: React.FC = () => {
               {key === 'shipment' ? (
                 <Checkbox id={key} name={key} checked={toBoolean(formData[key])} onCheckedChange={(checked) => handleCheckboxChange(key, checked as boolean)} className="col-span-3" disabled={!canEdit} />
               ) : (
-                <Input id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className="col-span-3" type={['installer_vendor_id', 'star_rating'].includes(key) ? 'number' : 'text'} disabled={!canEdit} />
+                <Input id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className="col-span-3" type={['installer_vendor_id', 'star_rating'].includes(key) ? 'number' : 'text'} disabled={!canEdit || (['installer_vendor_id', 'star_rating'].includes(key) && !isAdmin)} />
               )}
             </div>
           ))}
