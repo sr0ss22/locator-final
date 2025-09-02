@@ -10,6 +10,9 @@ import { Progress } from '@/components/ui/progress';
 // Import the local GeoJSON files
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
 import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
+// Import the US zip-to-state mapping file
+import usZipToStateMappingGeoJson from '@/data/georef-united-states-of-america-zc-point@public.json' with { type: 'json' };
+
 
 // We need these for Canadian coordinate reprojection
 import * as turf from '@turf/turf';
@@ -35,6 +38,25 @@ const AdminToolsPage: React.FC = () => {
     const features = geoJson.features;
     setTotal(features.length);
 
+    // Create a lookup map for US states from the point data file
+    const zipToStateMap = new Map<string, string>();
+    if (!isCanada) {
+      toast.info("Building ZIP to State map...", { id: loadingToastId });
+      if (usZipToStateMappingGeoJson && (usZipToStateMappingGeoJson as any).features) {
+        (usZipToStateMappingGeoJson as any).features.forEach((feature: any) => {
+            const props = feature.properties;
+            // The point file uses 'zip_code' and 'stusps_code'
+            if (props.zip_code && props.stusps_code) {
+                zipToStateMap.set(props.zip_code, props.stusps_code);
+            }
+        });
+        toast.success("ZIP to State map built successfully.", { id: loadingToastId });
+      } else {
+        toast.error("Could not read the US ZIP to State mapping file. State information will be missing.", { id: loadingToastId });
+      }
+    }
+
+
     const batchSize = 100;
     let successCount = 0;
     let errorCount = 0;
@@ -45,7 +67,8 @@ const AdminToolsPage: React.FC = () => {
       const rpcCalls = batch.map(feature => {
         const { properties, geometry } = feature;
         const zipCode = isCanada ? properties.CFSAUID : properties.ZCTA5CE20;
-        const stateProvince = isCanada ? properties.PRNAME : (properties.STUSPS || 'Unknown');
+        // Use the map for US, direct property for Canada
+        const stateProvince = isCanada ? properties.PRNAME : (zipToStateMap.get(zipCode) || 'Unknown');
         
         let centroidLatitude: number | null = null;
         let centroidLongitude: number | null = null;
@@ -67,8 +90,8 @@ const AdminToolsPage: React.FC = () => {
           _zip_code: zipCode,
           _state_province: stateProvince,
           _geometry_geojson_string: geometryJsonString,
-          _centroid_latitude: isNaN(centroidLatitude) ? null : centroidLatitude,
-          _centroid_longitude: isNaN(centroidLongitude) ? null : centroidLongitude,
+          _centroid_latitude: isNaN(centroidLatitude!) ? null : centroidLatitude,
+          _centroid_longitude: isNaN(centroidLongitude!) ? null : centroidLongitude,
           _is_canada: isCanada,
         });
       });
