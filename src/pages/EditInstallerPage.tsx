@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download } from "lucide-react";
+import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home } from "lucide-react";
 import { Installer, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -453,6 +453,9 @@ const EditInstallerPage: React.FC = () => {
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="flex items-center gap-4 mb-8">
+        <Button variant="outline" size="sm" onClick={() => navigate("/public-locator")}>
+          <Home className="h-4 w-4" />
+        </Button>
         <Button variant="outline" size="sm" onClick={() => navigate("/installers")}><ArrowLeft className="h-4 w-4" /></Button>
         <h1 className="text-2xl font-bold text-gray-700">Edit Installer: {currentInstaller.name}</h1>
       </div>
