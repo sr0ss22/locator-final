@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Database } from 'lucide-react';
+import { Loader2, ArrowLeft, Database, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Progress } from '@/components/ui/progress';
 
@@ -24,6 +24,16 @@ const AdminToolsPage: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
   const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error("Logout failed: " + error.message);
+    } else {
+      toast.success("You have been logged out.");
+      navigate('/login');
+    }
+  };
 
   const handleProcessGeoJson = async (country: 'USA' | 'Canada') => {
     setProcessing(true);
@@ -94,11 +104,16 @@ const AdminToolsPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-      <div className="flex items-center gap-4 mb-8">
-        <Button variant="outline" size="sm" onClick={() => navigate("/installers")}>
-          <ArrowLeft className="h-4 w-4" />
+      <div className="flex items-center justify-between gap-4 mb-8">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={() => navigate("/installers")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl font-bold text-gray-700">Admin Tools</h1>
+        </div>
+        <Button variant="outline" onClick={handleLogout}>
+          <LogOut className="h-4 w-4 mr-2" /> Log Out
         </Button>
-        <h1 className="text-2xl font-bold text-gray-700">Admin Tools</h1>
       </div>
       <div className="grid gap-6 md:grid-cols-2">
         <Card>

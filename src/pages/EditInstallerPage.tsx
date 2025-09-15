@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home } from "lucide-react";
+import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut } from "lucide-react";
 import { Installer, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -70,6 +70,16 @@ const EditInstallerPage: React.FC = () => {
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
   const { profile, user, loading: sessionLoading } = useSession();
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error("Logout failed: " + error.message);
+    } else {
+      toast.success("You have been logged out.");
+      navigate('/login');
+    }
+  };
 
   const installerCountry = useMemo(() => {
     const country = currentInstaller?.rawSupabaseData?.country?.toUpperCase();
@@ -452,12 +462,17 @@ const EditInstallerPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-      <div className="flex items-center gap-4 mb-8">
-        <Button variant="outline" size="sm" onClick={() => navigate("/public-locator")}>
-          <Home className="h-4 w-4" />
+      <div className="flex items-center justify-between gap-4 mb-8">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={() => navigate("/public-locator")}>
+            <Home className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate("/installers")}><ArrowLeft className="h-4 w-4" /></Button>
+          <h1 className="text-2xl font-bold text-gray-700">Edit Installer: {currentInstaller.name}</h1>
+        </div>
+        <Button variant="outline" onClick={handleLogout}>
+          <LogOut className="h-4 w-4 mr-2" /> Log Out
         </Button>
-        <Button variant="outline" size="sm" onClick={() => navigate("/installers")}><ArrowLeft className="h-4 w-4" /></Button>
-        <h1 className="text-2xl font-bold text-gray-700">Edit Installer: {currentInstaller.name}</h1>
       </div>
       <div className="grid gap-6 py-4">
         <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Contact & Address Information</h3>

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Loader2, LogOut } from 'lucide-react';
 
 const ClaimProfilePage: React.FC = () => {
   const { user, profile, loading: sessionLoading } = useSession();
@@ -15,6 +15,16 @@ const ClaimProfilePage: React.FC = () => {
   const [email, setEmail] = useState(user?.email || '');
   const [loading, setLoading] = useState(false);
   const [checkingProfile, setCheckingProfile] = useState(true);
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error("Logout failed: " + error.message);
+    } else {
+      toast.success("You have been logged out.");
+      navigate('/login');
+    }
+  };
 
   useEffect(() => {
     const checkAndRedirect = async () => {
@@ -130,10 +140,13 @@ const ClaimProfilePage: React.FC = () => {
             />
           </div>
         </CardContent>
-        <CardFooter>
+        <CardFooter className="flex flex-col gap-2">
           <Button onClick={handleClaimProfile} disabled={loading} className="w-full">
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Claim Profile
+          </Button>
+          <Button variant="link" onClick={handleLogout} disabled={loading} className="w-full text-sm">
+            <LogOut className="mr-2 h-4 w-4" /> Not you? Log Out
           </Button>
         </CardFooter>
       </Card>

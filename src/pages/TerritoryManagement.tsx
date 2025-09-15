@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PlusCircle, Edit, Trash2, Download, Eye, Upload, Search, Loader2, ArrowUp, ArrowDown, ArrowLeft, Filter, X } from "lucide-react";
+import { PlusCircle, Edit, Trash2, Download, Eye, Upload, Search, Loader2, ArrowUp, ArrowDown, ArrowLeft, Filter, X, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client"; // Updated import
 import { toast } from "sonner";
 import {
@@ -109,6 +109,16 @@ const TerritoryManagement: React.FC = () => {
   const totalPages = Math.ceil(totalAssignments / itemsPerPage);
 
   const { isCanada, toggleCountry } = useCountrySettings(); // Use useCountrySettings
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error("Logout failed: " + error.message);
+    } else {
+      toast.success("You have been logged out.");
+      navigate('/login');
+    }
+  };
 
   const fetchUsersByRole = useCallback(async (role: string) => {
     const { data, error } = await supabase
@@ -429,10 +439,9 @@ const TerritoryManagement: React.FC = () => {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          {/* Add Territory button removed as territories are now managed via installer assignments */}
-          {/* <Button onClick={handleAddTerritory}>
-            <PlusCircle className="h-4 w-4 mr-2" /> Add Territory
-          </Button> */}
+          <Button variant="outline" onClick={handleLogout}>
+            <LogOut className="h-4 w-4 mr-2" /> Log Out
+          </Button>
         </div>
       </div>
 
@@ -461,7 +470,7 @@ const TerritoryManagement: React.FC = () => {
                   {columns.filter(col => visibleColumns.has(col.key)).map((column) => (
                     <TableHead 
                       key={column.key}
-                      className={column.dbColumn && column.key !== 'actions' ? "cursor-pointer select-none" : ""}
+                      className={column.dbColumn && column.key !== 'actions' && column.key !== 'address' ? "cursor-pointer select-none" : ""}
                       onClick={() => handleSort(column.key)}
                     >
                       <div className="flex items-center">

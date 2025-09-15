@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PlusCircle, Edit, Trash2, Download, Eye, Upload, Search, Loader2, ArrowUp, ArrowDown, ArrowLeft, Filter, Settings } from "lucide-react";
+import { PlusCircle, Edit, Trash2, Download, Eye, Upload, Search, Loader2, ArrowUp, ArrowDown, ArrowLeft, Filter, Settings, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { toast } from "sonner";
@@ -142,6 +142,16 @@ const InstallerManagement: React.FC = () => {
   const columns = useMemo(() => getColumns(postalCodeLabel), [postalCodeLabel]);
   const totalPages = Math.ceil(totalInstallers / itemsPerPage);
 
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error("Logout failed: " + error.message);
+    } else {
+      toast.success("You have been logged out.");
+      navigate('/login');
+    }
+  };
+
   const standardizeCertificationName = (cert: string | null | undefined): InstallerCertification | null => {
     if (!cert) return null;
     const normalizedCert = cert.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -267,24 +277,15 @@ const InstallerManagement: React.FC = () => {
           latitude: rawInstaller.latitude, longitude: rawInstaller.longitude,
           installerVendorId: rawInstaller.installer_vendor_id?.toString(),
           acceptsShipments: toBoolean(rawInstaller.shipment),
-          blinds_and_shades_raw: rawInstaller.blinds_and_shades,
-          pip_certification_level_raw: rawInstaller.pip_certification_level,
-          power_view_raw: rawInstaller.power_view,
-          powerview_certification_raw: rawInstaller.powerview_certification,
-          draperies_raw: rawInstaller.draperies,
-          draperies_certification_level_raw: rawInstaller.draperies_certification_level,
-          shutters_raw: rawInstaller.shutters,
-          shutter_certification_level_raw: rawInstaller.shutter_certification_level,
-          alta_raw: rawInstaller.alta,
-          alta_motorization_raw: rawInstaller.alta_motorization,
-          hunter_douglas_raw: rawInstaller.hunter_douglas,
-          carole_raw: rawInstaller.carole,
-          architectural_raw: rawInstaller.architectural,
-          levolor_raw: rawInstaller.levolor,
-          three_day_blinds_raw: rawInstaller.three_day_blinds,
-          tall_window_raw: rawInstaller.tall_window,
-          fixture_displays_raw: rawInstaller.fixture_displays,
-          outdoor_raw: rawInstaller.outdoor,
+          blinds_and_shades_raw: rawInstaller.blinds_and_shades, pip_certification_level_raw: rawInstaller.pip_certification_level,
+          power_view_raw: rawInstaller.power_view, powerview_certification_raw: rawInstaller.powerview_certification,
+          draperies_raw: rawInstaller.draperies, draperies_certification_level_raw: rawInstaller.draperies_certification_level,
+          shutters_raw: rawInstaller.shutters, shutter_certification_level_raw: rawInstaller.shutter_certification_level,
+          alta_raw: rawInstaller.alta, alta_motorization_raw: rawInstaller.alta_motorization,
+          hunter_douglas_raw: rawInstaller.hunter_douglas, carole_raw: rawInstaller.carole,
+          architectural_raw: rawInstaller.architectural, levolor_raw: rawInstaller.levolor,
+          three_day_blinds_raw: rawInstaller.three_day_blinds, tall_window_raw: rawInstaller.tall_window,
+          fixture_displays_raw: rawInstaller.fixture_displays, outdoor_raw: rawInstaller.outdoor,
           high_voltage_hardwired_raw: rawInstaller.high_voltage_hardwired,
           rawSupabaseData: rawInstaller,
         };
@@ -638,6 +639,9 @@ const InstallerManagement: React.FC = () => {
             </DropdownMenuContent>
           </DropdownMenu>
           <Button onClick={handleAddInstaller}><PlusCircle className="h-4 w-4 mr-2" /> Add</Button>
+          <Button variant="outline" onClick={handleLogout}>
+            <LogOut className="h-4 w-4 mr-2" /> Log Out
+          </Button>
         </div>
       </div>
       {error ? (
