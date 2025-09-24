@@ -85,7 +85,7 @@ const PublicLocator: React.FC = () => {
 
   useEffect(() => {
     const fetchInstallersForLocation = async () => {
-      if (!userSearchLocation?.lat || !userSearchLocation?.lng || !searchedZipCode) {
+      if (!userSearchLocation?.lat || !userSearchLocation?.lng) {
         setInstallers([]);
         return;
       }
