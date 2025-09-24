@@ -5,16 +5,18 @@ import { Installer } from "@/types/installer";
 interface InstallerListProps {
   installers: (Installer & { distance?: number })[];
   searchedZipCode: string;
-  selectedInstallerId: string | null; // New prop
-  onInstallerCardClick: (installerId: string) => void; // New prop
-  isPublicView?: boolean; // New prop to pass down
+  selectedInstallerId: string | null;
+  onInstallerCardClick: (installerId: string) => void;
+  isPublicView?: boolean;
+  searchRadius: number;
+  distanceUnit: 'miles' | 'km';
 }
 
-const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCode, selectedInstallerId, onInstallerCardClick, isPublicView = false }) => {
+const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCode, selectedInstallerId, onInstallerCardClick, isPublicView = false, searchRadius, distanceUnit }) => {
   if (installers.length === 0 && searchedZipCode) {
     return (
       <p className="text-center text-gray-500 mt-8">
-        No installers found for the given criteria.
+        No installers found within {searchRadius} {distanceUnit}. Try expanding the search radius or changing filters.
       </p>
     );
   } else if (installers.length === 0) {
@@ -33,9 +35,9 @@ const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCo
           installer={installer}
           distance={installer.distance}
           pinNumber={index + 1}
-          isSelected={installer.id === selectedInstallerId} // Determine if card is selected
-          onClick={() => onInstallerCardClick(installer.id)} // Pass click handler
-          isPublicView={isPublicView} // Pass the new prop
+          isSelected={installer.id === selectedInstallerId}
+          onClick={() => onInstallerCardClick(installer.id)}
+          isPublicView={isPublicView}
         />
       ))}
     </div>

@@ -272,7 +272,14 @@ const Locator: React.FC = () => {
                   {loadingOrs && searchedZipCode && userLocation?.lat !== null && (!showAdditionalFilters || selectedStatesProvinces.length === 0) ? "Calculating driving distances..." : ""}
                 </p>
               ) : (
-                <InstallerList installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} selectedInstallerId={selectedInstallerId} onInstallerCardClick={handleInstallerCardClick} />
+                <InstallerList 
+                  installers={filteredAndSortedInstallers} 
+                  searchedZipCode={searchedZipCode} 
+                  selectedInstallerId={selectedInstallerId} 
+                  onInstallerCardClick={handleInstallerCardClick}
+                  searchRadius={searchRadius}
+                  distanceUnit={distanceUnit}
+                />
               )}
               {searchedZipCode && (!userLocation || userLocation.lat === null) && !loadingUserLocation && (!showAdditionalFilters || selectedStatesProvinces.length === 0) && (
                 <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>

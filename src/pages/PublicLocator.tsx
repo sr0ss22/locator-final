@@ -250,7 +250,15 @@ const PublicLocator: React.FC = () => {
                   {loadingOrs && userSearchLocation?.lat !== null ? "Calculating driving distances..." : ""}
                 </p>
               ) : (
-                <InstallerList installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} selectedInstallerId={selectedInstallerId} onInstallerCardClick={handleInstallerCardClick} isPublicView={true} />
+                <InstallerList 
+                  installers={filteredAndSortedInstallers} 
+                  searchedZipCode={searchedZipCode} 
+                  selectedInstallerId={selectedInstallerId} 
+                  onInstallerCardClick={handleInstallerCardClick} 
+                  isPublicView={true}
+                  searchRadius={searchRadius}
+                  distanceUnit={distanceUnit}
+                />
               )}
               {searchedZipCode && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
                 <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
