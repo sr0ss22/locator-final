@@ -14,8 +14,6 @@ interface DonutChartComponentProps {
 }
 
 const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, colors }) => {
-  const totalValue = data.reduce((sum, entry) => sum + entry.value, 0);
-
   const RADIAN = Math.PI / 180;
   const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }) => {
     if (value === 0) return null;
@@ -70,9 +68,6 @@ const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, 
               />
             </PieChart>
           </ResponsiveContainer>
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className="text-4xl font-bold text-foreground">{totalValue}</span>
-          </div>
         </div>
       </CardContent>
     </Card>
