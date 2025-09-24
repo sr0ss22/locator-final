@@ -226,7 +226,15 @@ const PublicLocator: React.FC = () => {
               <InstallerMapComponent userLocation={userSearchLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
             </div>
             {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
-              <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userSearchLocation} showAdditionalFilters={false} selectedStatesProvinces={[]} searchRadius={searchRadius} />
+              <InstallerSummary 
+                installers={filteredAndSortedInstallers} 
+                searchedZipCode={searchedZipCode} 
+                userLocation={userSearchLocation} 
+                showAdditionalFilters={false} 
+                selectedStatesProvinces={[]} 
+                searchRadius={searchRadius}
+                isPublicView={true}
+              />
             )}
           </div>
         </div>

@@ -11,6 +11,7 @@ interface InstallerSummaryProps {
   showAdditionalFilters: boolean;
   selectedStatesProvinces: string[];
   searchRadius: number;
+  isPublicView?: boolean; // New prop to distinguish between public and internal views
 }
 
 const InstallerSummary: React.FC<InstallerSummaryProps> = ({
@@ -20,6 +21,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
   showAdditionalFilters,
   selectedStatesProvinces,
   searchRadius,
+  isPublicView = false, // Default to false
 }) => {
   const { distanceUnit } = useCountrySettings();
 
@@ -44,10 +46,16 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
       { name: 'Motorization Pro', value: installerList.filter(i => i.certifications.includes("Motorization Pro")).length },
     ];
 
-    return { brandData, productData, certificationData };
+    const mileageData = [
+      { name: 'Mileage Covered', value: installerList.filter(i => i.is_local_service_area).length },
+      { name: 'Mileage Charged', value: installerList.filter(i => !i.is_local_service_area).length },
+    ];
+
+    return { brandData, productData, certificationData, mileageData };
   };
 
   const chartColors = ["#0EA5E9", "#94a3b8", "#6366F1", "#FACC15"]; // Sky Blue, Slate Gray, Indigo, Yellow
+  const mileageChartColors = ["#22C55E", "#FBBF24"]; // Green, Yellow
 
   return (
     <Card className="mt-4 p-4 shadow-sm">
@@ -98,7 +106,11 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
             <DonutChartComponent data={processSummaryData(installers).brandData} title="Brands" colors={chartColors} />
             <DonutChartComponent data={processSummaryData(installers).productData} title="Skills" colors={chartColors} />
-            <DonutChartComponent data={processSummaryData(installers).certificationData} title="Certifications" colors={chartColors} />
+            {isPublicView ? (
+              <DonutChartComponent data={processSummaryData(installers).mileageData} title="Mileage Coverage" colors={mileageChartColors} />
+            ) : (
+              <DonutChartComponent data={processSummaryData(installers).certificationData} title="Certifications" colors={chartColors} />
+            )}
           </div>
         )}
       </CardContent>
