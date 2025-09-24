@@ -226,8 +226,8 @@ const PublicLocator: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-700">Installer Locator</h1>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1 h-[600px] flex flex-col gap-8">
-            <Card className="flex-shrink-0">
+          <div className="lg:col-span-1">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-2xl font-semibold">Find Installers</CardTitle>
               </CardHeader>
@@ -246,11 +246,16 @@ const PublicLocator: React.FC = () => {
                 />
               </CardContent>
             </Card>
-            <Card className="flex-grow overflow-hidden flex flex-col">
-              <CardHeader>
-                <CardTitle className="text-2xl font-semibold">Results</CardTitle>
-              </CardHeader>
-              <CardContent className="flex-grow overflow-y-auto p-6">
+          </div>
+          <div className="lg:col-span-2 space-y-8">
+            <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
+              <InstallerMapComponent userLocation={userSearchLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
+            </div>
+            <div>
+              {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
+                <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userSearchLocation} showAdditionalFilters={false} selectedStatesProvinces={[]} searchRadius={searchRadius} />
+              )}
+              <div className="mt-8">
                 {isLoadingData ? (
                   <p className="text-center text-gray-500 mt-8">
                     {loadingInstallers ? "Loading installers..." : ""}
@@ -272,16 +277,8 @@ const PublicLocator: React.FC = () => {
                 {searchedZipCode && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
                   <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
                 )}
-              </CardContent>
-            </Card>
-          </div>
-          <div className="lg:col-span-2">
-            <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
-              <InstallerMapComponent userLocation={userSearchLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
+              </div>
             </div>
-            {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
-              <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userSearchLocation} showAdditionalFilters={false} selectedStatesProvinces={[]} searchRadius={searchRadius} />
-            )}
           </div>
         </div>
       </div>
