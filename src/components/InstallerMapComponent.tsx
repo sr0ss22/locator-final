@@ -21,9 +21,10 @@ interface InstallerMapProps {
   userLocation: { lat: number | null; lng: number | null } | null;
   installers: (Installer & { distance?: number })[];
   selectedInstallerId: string | null;
+  isPublicView?: boolean;
 }
 
-const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, installers, selectedInstallerId }) => {
+const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, installers, selectedInstallerId, isPublicView = false }) => {
   const mapRef = useRef<L.Map | null>(null);
   const [mounted, setMounted] = useState(false);
   const { distanceUnit } = useCountrySettings();
@@ -129,12 +130,15 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
             key={installer.id}
             position={[installer.latitude, installer.longitude]}
             icon={createNumberedIcon(index + 1, installer.id, selectedInstallerId)}
+            interactive={!isPublicView}
           >
-            <Popup>
-              <strong>{installer.name}</strong><br />
-              {simplifiedAddress}<br />
-              {formattedDistance}
-            </Popup>
+            {!isPublicView && (
+              <Popup>
+                <strong>{installer.name}</strong><br />
+                {simplifiedAddress}<br />
+                {formattedDistance}
+              </Popup>
+            )}
           </Marker>
         )
       })}

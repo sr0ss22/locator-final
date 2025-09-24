@@ -223,7 +223,12 @@ const PublicLocator: React.FC = () => {
           </div>
           <div className="lg:col-span-2 space-y-8">
             <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
-              <InstallerMapComponent userLocation={userSearchLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
+              <InstallerMapComponent 
+                userLocation={userSearchLocation} 
+                installers={filteredAndSortedInstallers} 
+                selectedInstallerId={selectedInstallerId}
+                isPublicView={true}
+              />
             </div>
             {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
               <InstallerSummary 
