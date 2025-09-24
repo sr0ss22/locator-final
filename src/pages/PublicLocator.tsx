@@ -226,7 +226,7 @@ const PublicLocator: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-700">Installer Locator</h1>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 space-y-8">
             <Card>
               <CardHeader>
                 <CardTitle className="text-2xl font-semibold">Find Installers</CardTitle>
@@ -246,39 +246,37 @@ const PublicLocator: React.FC = () => {
                 />
               </CardContent>
             </Card>
+            <div className="space-y-4">
+              {isLoadingData ? (
+                <p className="text-center text-gray-500 mt-8">
+                  {loadingInstallers ? "Loading installers..." : ""}
+                  {loadingLocation && searchedZipCode ? `Getting location for ${searchedZipCode}...` : ""}
+                  {loadingLocation && !searchedZipCode ? "Detecting your location..." : ""}
+                  {loadingOrs && userSearchLocation?.lat !== null ? "Calculating driving distances..." : ""}
+                </p>
+              ) : (
+                <InstallerList 
+                  installers={filteredAndSortedInstallers} 
+                  searchedZipCode={searchedZipCode} 
+                  selectedInstallerId={selectedInstallerId} 
+                  onInstallerCardClick={handleInstallerCardClick} 
+                  isPublicView={true}
+                  searchRadius={searchRadius}
+                  distanceUnit={distanceUnit}
+                />
+              )}
+              {searchedZipCode && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
+                <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
+              )}
+            </div>
           </div>
           <div className="lg:col-span-2 space-y-8">
             <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
               <InstallerMapComponent userLocation={userSearchLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
             </div>
-            <div>
-              {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
-                <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userSearchLocation} showAdditionalFilters={false} selectedStatesProvinces={[]} searchRadius={searchRadius} />
-              )}
-              <div className="mt-8">
-                {isLoadingData ? (
-                  <p className="text-center text-gray-500 mt-8">
-                    {loadingInstallers ? "Loading installers..." : ""}
-                    {loadingLocation && searchedZipCode ? `Getting location for ${searchedZipCode}...` : ""}
-                    {loadingLocation && !searchedZipCode ? "Detecting your location..." : ""}
-                    {loadingOrs && userSearchLocation?.lat !== null ? "Calculating driving distances..." : ""}
-                  </p>
-                ) : (
-                  <InstallerList 
-                    installers={filteredAndSortedInstallers} 
-                    searchedZipCode={searchedZipCode} 
-                    selectedInstallerId={selectedInstallerId} 
-                    onInstallerCardClick={handleInstallerCardClick} 
-                    isPublicView={true}
-                    searchRadius={searchRadius}
-                    distanceUnit={distanceUnit}
-                  />
-                )}
-                {searchedZipCode && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
-                  <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
-                )}
-              </div>
-            </div>
+            {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
+              <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userSearchLocation} showAdditionalFilters={false} selectedStatesProvinces={[]} searchRadius={searchRadius} />
+            )}
           </div>
         </div>
       </div>
