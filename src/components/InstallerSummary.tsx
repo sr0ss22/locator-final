@@ -85,7 +85,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <DonutChartComponent data={brandData} title="Brands Installed" colors={chartColors} />
+                    <DonutChartComponent data={brandData} title="Brands" colors={chartColors} />
                     <DonutChartComponent data={productData} title="Skills" colors={chartColors} />
                     <DonutChartComponent data={certificationData} title="Certifications" colors={chartColors} />
                   </div>
@@ -95,7 +95,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
-            <DonutChartComponent data={processSummaryData(installers).brandData} title="Brands Installed" colors={chartColors} />
+            <DonutChartComponent data={processSummaryData(installers).brandData} title="Brands" colors={chartColors} />
             <DonutChartComponent data={processSummaryData(installers).productData} title="Skills" colors={chartColors} />
             <DonutChartComponent data={processSummaryData(installers).certificationData} title="Certifications" colors={chartColors} />
           </div>
