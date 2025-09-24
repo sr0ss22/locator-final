@@ -106,7 +106,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
             <DonutChartComponent data={processSummaryData(installers).brandData} title="Brands" colors={chartColors} />
             <DonutChartComponent data={processSummaryData(installers).productData} title="Skills" colors={chartColors} />
-            {isPublicView ? (
+            {isPublicView && searchedZipCode ? (
               <DonutChartComponent data={processSummaryData(installers).mileageData} title="Mileage Coverage" colors={mileageChartColors} />
             ) : (
               <DonutChartComponent data={processSummaryData(installers).certificationData} title="Certifications" colors={chartColors} />

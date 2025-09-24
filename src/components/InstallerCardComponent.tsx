@@ -13,9 +13,10 @@ interface InstallerCardComponentProps {
   isSelected: boolean;
   onClick: () => void;
   isPublicView?: boolean;
+  searchedZipCode?: string;
 }
 
-const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ installer, distance, pinNumber, isSelected, onClick, isPublicView = false }) => {
+const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ installer, distance, pinNumber, isSelected, onClick, isPublicView = false, searchedZipCode }) => {
   const { distanceUnit } = useCountrySettings();
 
   const displayDistance = distance !== undefined && distance !== null && distance !== Infinity
@@ -98,7 +99,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
           </div>
         )}
       </CardContent>
-      {isPublicView && installer.is_local_service_area !== undefined && (
+      {isPublicView && searchedZipCode && installer.is_local_service_area !== undefined && (
         <div className="absolute bottom-4 right-4">
           {installer.is_local_service_area ? (
             <Badge variant="default" className="bg-green-100 text-green-800 border-green-300 hover:bg-green-200">

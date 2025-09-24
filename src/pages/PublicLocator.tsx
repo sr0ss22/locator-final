@@ -234,7 +234,7 @@ const PublicLocator: React.FC = () => {
             {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
               <InstallerSummary 
                 installers={filteredAndSortedInstallers} 
-                searchedZipCode={searchedZipCode || searchText} 
+                searchedZipCode={searchedZipCode} 
                 userLocation={userSearchLocation} 
                 showAdditionalFilters={false} 
                 selectedStatesProvinces={[]} 

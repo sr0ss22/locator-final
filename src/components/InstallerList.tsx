@@ -38,6 +38,7 @@ const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCo
           isSelected={installer.id === selectedInstallerId}
           onClick={() => onInstallerCardClick(installer.id)}
           isPublicView={isPublicView}
+          searchedZipCode={searchedZipCode}
         />
       ))}
     </div>
