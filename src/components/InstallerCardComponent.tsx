@@ -81,7 +81,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
             <h4 className="font-semibold text-base mb-2">Brands:</h4>
             <div className="flex flex-wrap gap-2">
               {installer.brands.map((brand) => (
-                <Badge key={brand} variant="secondary" className="bg-indigo-100 text-indigo-500 border-indigo-500">{brand}</Badge>
+                <Badge key={brand} variant="secondary" className="bg-indigo-100 text-indigo-700 border-indigo-700">{brand}</Badge>
               ))}
             </div>
           </div>
