@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { MapPin, Star } from 'lucide-react'; // Import MapPin and Star icons
 import { Installer } from '@/types/installer';
+import { useCountrySettings } from "@/hooks/useCountrySettings";
 
 // Fix for default Leaflet icons with Webpack/Vite
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -19,12 +20,13 @@ L.Icon.Default.mergeOptions({
 interface InstallerMapProps {
   userLocation: { lat: number | null; lng: number | null } | null;
   installers: (Installer & { distance?: number })[];
-  selectedInstallerId: string | null; // New prop
+  selectedInstallerId: string | null;
 }
 
 const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, installers, selectedInstallerId }) => {
   const mapRef = useRef<L.Map | null>(null);
   const [mounted, setMounted] = useState(false);
+  const { distanceUnit } = useCountrySettings();
 
   useEffect(() => {
     setMounted(true);
@@ -45,7 +47,7 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
 
   // Custom icon for numbered installers (colored MapPin with circular number)
   const createNumberedIcon = (number: number, installerId: string, currentSelectedInstallerId: string | null) => {
-    const fillColor = installerId === currentSelectedInstallerId ? '#f97316' : '#000000'; // Orange if selected, black otherwise
+    const fillColor = installerId === currentSelectedInstallerId ? '#0EA5E9' : '#000000'; // Sky Blue if selected, black otherwise
     return L.divIcon({
       html: `<div class="relative flex items-center justify-center" style="width: 48px; height: 48px;">
               <svg stroke="currentColor" fill="${fillColor}" stroke-width="0" viewBox="0 0 24 24" height="48px" width="48px" xmlns="http://www.w3.org/2000/svg">
@@ -115,23 +117,27 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
           <Popup>Your Search Location</Popup>
         </Marker>
       )}
-      {installers.map((installer, index) => (
-        installer.latitude && installer.longitude && (
+      {installers.map((installer, index) => {
+        const displayDistance = installer.distance !== undefined && installer.distance !== null && installer.distance !== Infinity
+          ? (distanceUnit === 'km' ? (installer.distance * 1.60934).toFixed(1) : installer.distance.toFixed(1))
+          : undefined;
+        const formattedDistance = displayDistance ? `Distance: ${displayDistance} ${distanceUnit}` : undefined;
+        const simplifiedAddress = `${installer.rawSupabaseData?.city || ''}, ${installer.rawSupabaseData?.state || ''} ${installer.zipCode || ''}`.trim();
+
+        return installer.latitude && installer.longitude && (
           <Marker
             key={installer.id}
             position={[installer.latitude, installer.longitude]}
-            icon={createNumberedIcon(index + 1, installer.id, selectedInstallerId)} // Pass installer ID and selected ID
+            icon={createNumberedIcon(index + 1, installer.id, selectedInstallerId)}
           >
             <Popup>
               <strong>{installer.name}</strong><br />
-              {installer.address}<br />
-              {installer.distance !== undefined && installer.distance !== Infinity && (
-                `Distance: ${installer.distance.toFixed(1)} miles`
-              )}
+              {simplifiedAddress}<br />
+              {formattedDistance}
             </Popup>
           </Marker>
         )
-      ))}
+      })}
       <MapUpdater />
     </MapContainer>
   );
