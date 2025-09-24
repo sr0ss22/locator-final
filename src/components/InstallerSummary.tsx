@@ -50,8 +50,21 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
 
   return (
     <Card className="mt-4 p-4 shadow-sm">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-xl font-semibold">Installer Summary</CardTitle>
+      <CardHeader className="flex flex-row items-start justify-between pb-2">
+        <div>
+          <CardTitle className="text-xl font-semibold">Installer Summary</CardTitle>
+          {!showAdditionalFilters && (
+            <p className="text-sm text-gray-600 mt-1">
+              Showing {installers.length} installers within {searchRadius} {distanceUnit} of {searchedZipCode || "your search location"}.
+            </p>
+          )}
+        </div>
+        {!showAdditionalFilters && (
+          <div className="text-right">
+            <p className="text-sm font-medium text-gray-600">Total Installers</p>
+            <p className="text-4xl font-bold text-orange-500">{installers.length}</p>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {showAdditionalFilters && selectedStatesProvinces.length > 0 ? (
@@ -64,16 +77,14 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
               
               return (
                 <div key={state} className="border-t pt-4 first:border-t-0 first:pt-0">
-                  <h4 className="font-medium text-lg mb-3">{state} Installers:</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card>
-                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Total Installers</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-4xl font-bold text-orange-500">{installersInState.length}</div>
-                      </CardContent>
-                    </Card>
+                  <div className="flex flex-row items-start justify-between">
+                    <h4 className="font-medium text-lg mb-3">{state} Installers:</h4>
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-gray-600">Total Installers</p>
+                      <p className="text-4xl font-bold text-orange-500">{installersInState.length}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <DonutChartComponent data={brandData} title="Brands Installed" colors={chartColors} />
                     <DonutChartComponent data={productData} title="Skills" colors={chartColors} />
                     <DonutChartComponent data={certificationData} title="Certifications" colors={chartColors} />
@@ -83,23 +94,10 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
             })}
           </div>
         ) : (
-          <div className="space-y-2">
-            <p className="text-sm text-gray-600 mb-4">
-              Showing {installers.length} installers within {searchRadius} {distanceUnit} of {searchedZipCode || "your search location"}.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-               <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Installers</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-4xl font-bold text-orange-500">{installers.length}</div>
-                </CardContent>
-              </Card>
-              <DonutChartComponent data={processSummaryData(installers).brandData} title="Brands Installed" colors={chartColors} />
-              <DonutChartComponent data={processSummaryData(installers).productData} title="Skills" colors={chartColors} />
-              <DonutChartComponent data={processSummaryData(installers).certificationData} title="Certifications" colors={chartColors} />
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+            <DonutChartComponent data={processSummaryData(installers).brandData} title="Brands Installed" colors={chartColors} />
+            <DonutChartComponent data={processSummaryData(installers).productData} title="Skills" colors={chartColors} />
+            <DonutChartComponent data={processSummaryData(installers).certificationData} title="Certifications" colors={chartColors} />
           </div>
         )}
       </CardContent>
