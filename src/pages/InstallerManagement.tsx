@@ -616,12 +616,6 @@ const InstallerManagement: React.FC = () => {
           </div>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button 
-            onClick={() => navigate("/admin-tools")}
-            variant="outline"
-          >
-            <Settings className="h-4 w-4 mr-2" /> Admin Tools
-          </Button>
           <Button variant="outline" onClick={() => setIsFilterModalOpen(true)}><Filter className="h-4 w-4 mr-2" /> Filter</Button>
           <Button variant="outline" onClick={() => setIsImportModalOpen(true)}><Upload className="h-4 w-4 mr-2" /> Import</Button>
           <Button onClick={handleExportInstallers} disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 mr-2" />} Export</Button>
