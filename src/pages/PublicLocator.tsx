@@ -15,6 +15,7 @@ import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } fro
 import { useNavigate } from "react-router-dom"; // Import useNavigate
 import { useSession } from "@/components/SessionContextProvider"; // Import useSession
 import { Button } from "@/components/ui/button"; // Ensure Button is imported
+import { calculateDistance } from "@/utils/distance";
 
 const PublicLocator: React.FC = () => {
   const [searchedZipCode, setSearchedZipCode] = useState<string>("");
@@ -32,7 +33,6 @@ const PublicLocator: React.FC = () => {
   const { isCanada, distanceUnit, toggleCountry } = useCountrySettings(); // Destructure toggleCountry
   const navigate = useNavigate(); // Initialize useNavigate
   const { user, loading: sessionLoading } = useSession(); // Get user and session loading state
-  const OPENROUTESERVICE_API_KEY = '5b3ce3597851110001cf6248d8c27a7c67644fb391eaf7080c84c301';
 
   const toBoolean = (value: any): boolean => {
     if (typeof value === 'string') return value.toLowerCase() === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
@@ -141,51 +141,64 @@ const PublicLocator: React.FC = () => {
   useEffect(() => {
     const fetchDrivingDistances = async () => {
       if (!userSearchLocation || userSearchLocation.lat === null || userSearchLocation.lng === null || installers.length === 0) {
-        setInstallerDistancesMap(new Map()); return;
-      }
-      if (!OPENROUTESERVICE_API_KEY) {
-        console.error("OpenRouteService API key is not set.");
-        toast.error("Mapping service is not configured.");
-        setInstallerDistancesMap(new Map()); return;
+        setInstallerDistancesMap(new Map());
+        return;
       }
       setLoadingOrs(true);
       const validInstallers = installers.filter(i => i.latitude != null && i.longitude != null && i.id != null);
       if (validInstallers.length === 0) {
         toast.info("No installers with valid coordinates for distance calculation.");
-        setInstallerDistancesMap(new Map()); setLoadingOrs(false); return;
+        setInstallerDistancesMap(new Map());
+        setLoadingOrs(false);
+        return;
       }
       const locations = [[userSearchLocation.lng, userSearchLocation.lat], ...validInstallers.map(i => [i.longitude!, i.latitude!])];
-      const destinationsIndices = Array.from({ length: validInstallers.length }, (_, i) => i + 1);
+      
       try {
-        const res = await fetch("https://api.openrouteservice.org/v2/matrix/driving-car", {
-          method: "POST", headers: { "Authorization": OPENROUTESERVICE_API_KEY, "Content-Type": "application/json" },
-          body: JSON.stringify({ locations, sources: [0], destinations: destinationsIndices, metrics: ["distance"] })
+        const { data, error } = await supabase.functions.invoke('openrouteservice-proxy', {
+          body: { locations },
         });
-        if (!res.ok) {
-          const errorData = await res.json();
-          console.error("OpenRouteService API error:", errorData);
-          throw new Error(`OpenRouteService API error: ${res.status} - ${errorData.error?.message || res.statusText}`);
-        }
-        const data = await res.json();
+
+        if (error) throw error;
+        if (data.error) throw new Error(data.error);
+
         const distances = data.distances ? data.distances[0] : [];
         const newMap = new Map<string, number>();
         validInstallers.forEach((installer, index) => {
           const distanceInMeters = distances[index];
-          if (distanceInMeters != null && distanceInMeters !== Infinity) newMap.set(installer.id, distanceInMeters / 1609.34);
+          if (distanceInMeters != null && distanceInMeters !== Infinity) {
+            newMap.set(installer.id, distanceInMeters / 1609.34); // Convert meters to miles
+          }
         });
         setInstallerDistancesMap(newMap);
+        toast.info("Driving distances calculated.");
+
       } catch (error) {
-        console.error("Error fetching driving distances:", error);
+        console.error("Error fetching driving distances, falling back to straight-line distance:", error);
+        toast.warning("Could not calculate driving distances. Showing straight-line distances instead.");
+        
+        const newMap = new Map<string, number>();
+        validInstallers.forEach(installer => {
+          const distance = calculateDistance(
+            userSearchLocation.lat!,
+            userSearchLocation.lng!,
+            installer.latitude!,
+            installer.longitude!
+          );
+          newMap.set(installer.id, distance);
+        });
+        setInstallerDistancesMap(newMap);
       } finally {
         setLoadingOrs(false);
       }
     };
+
     if (userSearchLocation?.lat !== null && userSearchLocation?.lng !== null && installers.length > 0) {
       fetchDrivingDistances();
     } else {
       setInstallerDistancesMap(new Map());
     }
-  }, [userSearchLocation, installers, OPENROUTESERVICE_API_KEY]);
+  }, [userSearchLocation, installers]);
 
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
