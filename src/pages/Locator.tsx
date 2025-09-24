@@ -65,7 +65,7 @@ const Locator: React.FC = () => {
         const mappedInstallers: Installer[] = (data || []).map((rawInstaller: any) => {
           const skills: InstallerSkill[] = [];
           if (toBoolean(rawInstaller.blinds_and_shades)) skills.push("Blinds & Shades");
-          if (toBoolean(rawInstaller.power_view)) skills.push("Motorization");
+          if (toBoolean(rawInstaller.power_view)) skills.push("Automation");
           if (toBoolean(rawInstaller.shutters)) skills.push("Shutters");
           if (toBoolean(rawInstaller.draperies)) skills.push("Drapery");
           if (toBoolean(rawInstaller.service_call)) skills.push("Service Call");

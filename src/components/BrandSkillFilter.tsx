@@ -15,7 +15,7 @@ interface BrandSkillFilterProps {
 }
 
 const allBrands: InstallerBrand[] = ["Hunter Douglas", "Alta", "Carole", "Architectural", "Levolor", "Three Day Blinds"];
-const allProductSkills: InstallerSkill[] = ["Blinds & Shades", "Shutters", "Drapery", "Motorization", "Tall Window"]; // Removed Service Call, Fixture Displays, Outdoor, High Voltage Hardwired, Alta Motorization
+const allProductSkills: InstallerSkill[] = ["Blinds & Shades", "Shutters", "Drapery", "Automation", "Tall Window"]; // Removed Service Call, Fixture Displays, Outdoor, High Voltage Hardwired, Alta Motorization
 const allCertifications: InstallerCertification[] = ["Motorization Pro", "Certified Installer", "Master Installer", "Shutter Pro", "Drapery Pro"]; // Removed PIP Certified
 
 const BrandSkillFilter: React.FC<BrandSkillFilterProps> = ({

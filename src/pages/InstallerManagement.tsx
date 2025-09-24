@@ -79,7 +79,7 @@ const getColumns = (postalCodeLabel: string): TableColumn[] => [
   { key: "blindsAndShades", header: "Blinds & Shades", accessor: (installer) => toBoolean(installer.blinds_and_shades_raw) ? "Yes" : "No", exportKey: "blinds_and_shades", dbColumn: "blinds_and_shades" },
   { key: "shutters", header: "Shutters", accessor: (installer) => toBoolean(installer.shutters_raw) ? "Yes" : "No", exportKey: "shutters", dbColumn: "shutters" },
   { key: "draperies", header: "Draperies", accessor: (installer) => toBoolean(installer.draperies_raw) ? "Yes" : "No", exportKey: "draperies", dbColumn: "draperies" },
-  { key: "motorization", header: "Motorization", accessor: (installer) => toBoolean(installer.power_view_raw) ? "Yes" : "No", exportKey: "power_view", dbColumn: "power_view" },
+  { key: "motorization", header: "Automation", accessor: (installer) => toBoolean(installer.power_view_raw) ? "Yes" : "No", exportKey: "power_view", dbColumn: "power_view" },
   { key: "altaMotorization", header: "Alta Motorization", accessor: (installer) => toBoolean(installer.alta_motorization_raw) ? "Yes" : "No", exportKey: "alta_motorization", dbColumn: "alta_motorization" },
   { key: "tallWindow", header: "Tall Window", accessor: (installer) => toBoolean(installer.tall_window_raw) ? "Yes" : "No", exportKey: "tall_window", dbColumn: "tall_window" },
   { key: "fixtureDisplays", header: "Fixture Displays", accessor: (installer) => toBoolean(installer.fixture_displays_raw) ? "Yes" : "No", exportKey: "fixture_displays", dbColumn: "fixture_displays" },
@@ -191,7 +191,7 @@ const InstallerManagement: React.FC = () => {
     if (filterProductSkills.length > 0) {
       filterProductSkills.forEach(skill => {
         if (skill === "Blinds & Shades") query = query.filter("blinds_and_shades", "eq", 1);
-        else if (skill === "Motorization") query = query.filter("power_view", "eq", 1);
+        else if (skill === "Automation") query = query.filter("power_view", "eq", 1);
         else if (skill === "Service Call") query = query.filter("service_call", "eq", 1);
         else if (skill === "Shutters") query = query.filter("shutters", "eq", 1);
         else if (skill === "Drapery") query = query.filter("draperies", "eq", 1);
@@ -239,7 +239,7 @@ const InstallerManagement: React.FC = () => {
       const mappedInstallers: Installer[] = (data || []).map((rawInstaller: any) => {
         const skills: InstallerSkill[] = [];
         if (toBoolean(rawInstaller.blinds_and_shades)) skills.push("Blinds & Shades");
-        if (toBoolean(rawInstaller.power_view)) skills.push("Motorization");
+        if (toBoolean(rawInstaller.power_view)) skills.push("Automation");
         if (toBoolean(rawInstaller.shutters)) skills.push("Shutters");
         if (toBoolean(rawInstaller.draperies)) skills.push("Drapery");
         if (toBoolean(rawInstaller.service_call)) skills.push("Service Call");
@@ -382,7 +382,7 @@ const InstallerManagement: React.FC = () => {
       if (filterProductSkills.length > 0) {
         filterProductSkills.forEach(skill => {
           if (skill === "Blinds & Shades") query = query.filter("blinds_and_shades", "eq", 1);
-          else if (skill === "Motorization") query = query.filter("power_view", "eq", 1);
+          else if (skill === "Automation") query = query.filter("power_view", "eq", 1);
           else if (skill === "Service Call") query = query.filter("service_call", "eq", 1);
           else if (skill === "Shutters") query = query.filter("shutters", "eq", 1);
           else if (skill === "Drapery") query = query.filter("draperies", "eq", 1);

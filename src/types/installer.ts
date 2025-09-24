@@ -1,4 +1,4 @@
-export type InstallerSkill = "Blinds & Shades" | "Shutters" | "Drapery" | "Motorization" | "Service Call" | "Tall Window" | "Fixture Displays" | "Outdoor" | "High Voltage Hardwired";
+export type InstallerSkill = "Blinds & Shades" | "Shutters" | "Drapery" | "Automation" | "Service Call" | "Tall Window" | "Fixture Displays" | "Outdoor" | "High Voltage Hardwired";
 export type InstallerBrand = "Hunter Douglas" | "Alta" | "Carole" | "Architectural" | "Levolor" | "Three Day Blinds";
 export type InstallerCertification = "Motorization Pro" | "Certified Installer" | "Master Installer" | "Shutter Pro" | "Drapery Pro" | "PIP Certified";
 

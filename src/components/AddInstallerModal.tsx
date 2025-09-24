@@ -38,7 +38,7 @@ const brandCheckboxes = [
 
 const productSkillCheckboxes = [
   { key: "blinds_and_shades", label: "Blinds & Shades" }, { key: "shutters", label: "Shutters" }, { key: "draperies", label: "Drapery" },
-  { key: "power_view", label: "Motorization" }, { key: "service_call", label: "Service Call" }, { key: "tall_window", label: "Tall Window" },
+  { key: "power_view", label: "Automation" }, { key: "service_call", label: "Service Call" }, { key: "tall_window", label: "Tall Window" },
   { key: "fixture_displays", label: "Fixture Displays" }, { key: "outdoor", label: "Outdoor" }, { key: "high_voltage_hardwired", label: "High Voltage Hardwired" },
 ];
 
@@ -72,7 +72,7 @@ const AddInstallerModal: React.FC<AddInstallerModalProps> = ({ isOpen, onClose, 
     name: "Name", email: "Email", primary_phone: "Phone", secondary_phone: "Secondary Phone", address1: "Address Line 1",
     add2: "Address Line 2", city: "City", state: "State", postalcode: postalCodeLabel, country: "Country",
     hunter_douglas: "Hunter Douglas", alta: "Alta", carole: "Carole", architectural: "Architectural", levolor: "Levolor",
-    three_day_blinds: "Three Day Blinds", blinds_and_shades: "Blinds & Shades", power_view: "Motorization",
+    three_day_blinds: "Three Day Blinds", blinds_and_shades: "Blinds & Shades", power_view: "Automation",
     service_call: "Service Call", shutters: "Shutters", draperies: "Drapery", alta_motorization: "Alta Motorization",
     tall_window: "Tall Window", fixture_displays: "Fixture Displays", outdoor: "Outdoor", high_voltage_hardwired: "High Voltage Hardwired",
     pip_certification_level: "PIP Certification", shutter_certification_level: "Shutter Certification Level",
