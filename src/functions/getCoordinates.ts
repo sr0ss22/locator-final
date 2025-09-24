@@ -8,7 +8,7 @@ export async function run({ searchText }: { searchText: string }) {
   }
 
   // Added components=US to restrict results to the United States
-  const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(query)}&key=${apiKey}&components=US`;
+  const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(query)}&key=${apiKey}&countrycode=us,ca`;
 
   try {
     const response = await fetch(url);
@@ -20,16 +20,20 @@ export async function run({ searchText }: { searchText: string }) {
 
     if (!data.results || data.results.length === 0) {
       console.warn("No results found for the given search text:", searchText);
-      return { lat: null, lng: null };
+      return { lat: null, lng: null, zipCode: null };
     }
 
-    const location = data.results[0].geometry;
+    const result = data.results[0];
+    const location = result.geometry;
+    const zipCode = result.components.postcode || null;
+
     return {
       lat: location.lat,
-      lng: location.lng
+      lng: location.lng,
+      zipCode: zipCode
     };
   } catch (error) {
     console.error("Error fetching coordinates:", error);
-    return { lat: null, lng: null };
+    return { lat: null, lng: null, zipCode: null };
   }
 }

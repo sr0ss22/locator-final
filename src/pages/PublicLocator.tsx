@@ -19,6 +19,7 @@ import { calculateDistance } from "@/utils/distance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const PublicLocator: React.FC = () => {
+  const [searchText, setSearchText] = useState<string>("");
   const [searchedZipCode, setSearchedZipCode] = useState<string>("");
   const [selectedBrands, setSelectedBrands] = useState<InstallerBrand[]>([]);
   const [selectedProductSkills, setSelectedProductSkills] = useState<InstallerSkill[]>([]);
@@ -53,31 +54,34 @@ const PublicLocator: React.FC = () => {
   useEffect(() => {
     const determineAndSetLocation = async () => {
       setLoadingLocation(true);
-      let coords = { lat: null, lng: null };
-      if (searchedZipCode) {
-        coords = await getCoordinates({ searchText: searchedZipCode });
-        if (coords.lat === null || coords.lng === null) toast.error("Could not find coordinates for the entered zip code.");
+      let coords = { lat: null, lng: null, zipCode: null };
+      if (searchText) {
+        coords = await getCoordinates({ searchText });
+        if (coords.lat === null || coords.lng === null) {
+          toast.error("Could not find a location for your search. Please try again.");
+        }
+        setSearchedZipCode(coords.zipCode || "");
       } else {
         if (navigator.geolocation) {
           try {
             const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 }));
-            coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+            coords = { lat: position.coords.latitude, lng: position.coords.longitude, zipCode: null };
             toast.info("Your location detected via browser.");
           } catch (error: any) {
             toast.info("Could not get location from browser. Trying IP-based location...");
           }
         }
         if (coords.lat === null || coords.lng === null) {
-          coords = await getIpLocation();
+          coords = { ...(await getIpLocation()), zipCode: null };
           if (coords.lat !== null && coords.lng !== null) toast.info("Your location detected via IP address.");
-          else toast.info("Could not determine your location. Please enter a zip code.");
+          else toast.info("Could not determine your location. Please enter a location.");
         }
       }
-      setUserSearchLocation(coords);
+      setUserSearchLocation({ lat: coords.lat, lng: coords.lng });
       setLoadingLocation(false);
     };
     determineAndSetLocation();
-  }, [searchedZipCode]);
+  }, [searchText]);
 
   useEffect(() => {
     const fetchInstallersForLocation = async () => {
@@ -180,7 +184,7 @@ const PublicLocator: React.FC = () => {
                   <CardTitle className="text-2xl font-semibold">Find Installers</CardTitle>
                 </CardHeader>
                 <CardContent className="flex-grow overflow-y-auto space-y-6">
-                  <InstallerSearch onSearch={setSearchedZipCode} />
+                  <InstallerSearch onSearch={setSearchText} />
                   <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
                   <Separator />
                   <BrandSkillFilter
@@ -199,8 +203,8 @@ const PublicLocator: React.FC = () => {
               {isLoadingData ? (
                 <p className="text-center text-gray-500 mt-8">
                   {loadingInstallers ? "Loading installers..." : ""}
-                  {loadingLocation && searchedZipCode ? `Getting location for ${searchedZipCode}...` : ""}
-                  {loadingLocation && !searchedZipCode ? "Detecting your location..." : ""}
+                  {loadingLocation && searchText ? `Getting location for ${searchText}...` : ""}
+                  {loadingLocation && !searchText ? "Detecting your location..." : ""}
                 </p>
               ) : (
                 <InstallerList 
@@ -213,8 +217,8 @@ const PublicLocator: React.FC = () => {
                   distanceUnit={distanceUnit}
                 />
               )}
-              {searchedZipCode && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
-                <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
+              {searchText && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
+                <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for your search. Please try another location.</p>
               )}
             </div>
           </div>
@@ -230,7 +234,7 @@ const PublicLocator: React.FC = () => {
             {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
               <InstallerSummary 
                 installers={filteredAndSortedInstallers} 
-                searchedZipCode={searchedZipCode} 
+                searchedZipCode={searchedZipCode || searchText} 
                 userLocation={userSearchLocation} 
                 showAdditionalFilters={false} 
                 selectedStatesProvinces={[]} 

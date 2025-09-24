@@ -5,24 +5,24 @@ import { Search } from "lucide-react";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 
 interface InstallerSearchProps {
-  onSearch: (zipCode: string) => void;
+  onSearch: (searchText: string) => void;
 }
 
 const InstallerSearch: React.FC<InstallerSearchProps> = ({ onSearch }) => {
-  const [zipCode, setZipCode] = useState("");
+  const [searchText, setSearchText] = useState("");
   const { postalCodeLabel } = useCountrySettings();
 
   const handleSearch = () => {
-    onSearch(zipCode);
+    onSearch(searchText);
   };
 
   return (
     <div className="flex w-full max-w-sm items-center space-x-2">
       <Input
         type="text"
-        placeholder={`Enter ${postalCodeLabel}`}
-        value={zipCode}
-        onChange={(e) => setZipCode(e.target.value)}
+        placeholder={`Enter City, State, or ${postalCodeLabel}`}
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
         onKeyPress={(e) => {
           if (e.key === "Enter") {
             handleSearch();
