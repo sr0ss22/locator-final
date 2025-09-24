@@ -47,7 +47,9 @@ const Locator: React.FC = () => {
   const standardizeCertificationName = (cert: string | null | undefined): InstallerCertification | null => {
     if (!cert) return null;
     const normalizedCert = cert.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-    if (normalizedCert.includes("motorization pro")) return "Motorization Pro";
+    if (normalizedCert.includes("motorization pro") || normalizedCert === 'pv pro' || normalizedCert === 'powerview pro certified') {
+        return "Motorization Pro";
+    }
     const validCertificationsMap: { [key: string]: InstallerCertification } = {
       "certified installer": "Certified Installer", "master installer": "Master Installer",
       "master shutter": "Shutter Pro", "drapery pro": "Drapery Pro", "pip certified": "PIP Certified",

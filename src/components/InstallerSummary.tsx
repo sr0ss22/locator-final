@@ -41,6 +41,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
       { name: 'Certified', value: installerList.filter(i => i.certifications.includes("Certified Installer") || i.certifications.includes("Master Installer")).length },
       { name: 'ShutterPro', value: installerList.filter(i => i.certifications.includes("Shutter Pro")).length },
       { name: 'DraperyPro', value: installerList.filter(i => i.certifications.includes("Drapery Pro")).length },
+      { name: 'Motorization Pro', value: installerList.filter(i => i.certifications.includes("Motorization Pro")).length },
     ];
 
     return { brandData, productData, certificationData };
