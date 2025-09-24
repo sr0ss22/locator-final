@@ -225,9 +225,9 @@ const PublicLocator: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-700">Installer Locator</h1>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1 space-y-6">
-            <div className="p-4 border rounded-lg shadow-sm bg-card space-y-6">
-              <h2 className="text-2xl font-semibold mb-4">Find Installers</h2>
+          <div className="lg:col-span-1 h-[600px] border rounded-lg shadow-sm bg-card flex flex-col">
+            <div className="p-6 space-y-6 border-b">
+              <h2 className="text-2xl font-semibold">Find Installers</h2>
               <InstallerSearch onSearch={setSearchedZipCode} />
               <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
               <Separator />
@@ -241,7 +241,7 @@ const PublicLocator: React.FC = () => {
                 brandsToShow={["Hunter Douglas", "Alta"]}
               />
             </div>
-            <div className="mt-8">
+            <div className="flex-grow overflow-y-auto p-6">
               {isLoadingData ? (
                 <p className="text-center text-gray-500 mt-8">
                   {loadingInstallers ? "Loading installers..." : ""}
@@ -268,14 +268,6 @@ const PublicLocator: React.FC = () => {
           <div className="lg:col-span-2">
             <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
               <InstallerMapComponent userLocation={userSearchLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
-            </div>
-            <div className="flex justify-end mt-4 space-x-2">
-              <Button onClick={toggleCountry} variant="outline">Switch to {isCanada ? "US" : "Canada"} View</Button>
-              {!sessionLoading && user && (
-                <Button onClick={() => navigate("/installers")}>
-                  Installer Management
-                </Button>
-              )}
             </div>
             {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
               <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userSearchLocation} showAdditionalFilters={false} selectedStatesProvinces={[]} searchRadius={searchRadius} />

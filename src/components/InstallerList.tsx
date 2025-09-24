@@ -28,7 +28,7 @@ const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCo
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 mt-8">
+    <div className="grid grid-cols-1 gap-6">
       {installers.map((installer, index) => (
         <InstallerCardComponent
           key={installer.id}
