@@ -232,7 +232,15 @@ const Locator: React.FC = () => {
                 <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
                 <Separator />
               </>)}
-              <BrandSkillFilter selectedBrands={selectedBrands} selectedProductSkills={selectedProductSkills} selectedCertifications={selectedCertifications} onBrandChange={handleBrandChange} onProductSkillChange={handleProductSkillChange} onCertificationChange={handleCertificationChange} hideBrands={true} />
+              <BrandSkillFilter
+                selectedBrands={selectedBrands}
+                selectedProductSkills={selectedProductSkills}
+                selectedCertifications={selectedCertifications}
+                onBrandChange={handleBrandChange}
+                onProductSkillChange={handleProductSkillChange}
+                onCertificationChange={handleCertificationChange}
+                brandsToShow={["Hunter Douglas", "Alta"]}
+              />
               <Separator />
               <div>
                 <div className="flex items-center justify-between mb-2">

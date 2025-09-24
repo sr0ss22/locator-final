@@ -11,6 +11,7 @@ interface BrandSkillFilterProps {
   onProductSkillChange: (skill: InstallerSkill, checked: boolean) => void;
   onCertificationChange: (certification: InstallerCertification, checked: boolean) => void;
   hideBrands?: boolean; // New prop to conditionally hide brands section
+  brandsToShow?: InstallerBrand[]; // New prop to specify which brands to show
 }
 
 const allBrands: InstallerBrand[] = ["Hunter Douglas", "Alta", "Carole", "Architectural", "Levolor", "Three Day Blinds"];
@@ -25,14 +26,15 @@ const BrandSkillFilter: React.FC<BrandSkillFilterProps> = ({
   onProductSkillChange,
   onCertificationChange,
   hideBrands = false, // Default to false
+  brandsToShow = allBrands, // Default to all brands if not provided
 }) => {
   return (
     <div className="space-y-4">
       {!hideBrands && ( // Conditionally render Brands section
         <div>
-          <h3 className="font-semibold text-lg mb-2">Brands (Level 1)</h3>
+          <h3 className="font-semibold text-lg mb-2">Brand</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {allBrands.map((brand) => (
+            {brandsToShow.map((brand) => (
               <div key={brand} className="flex items-center space-x-2">
                 <Checkbox
                   id={`brand-${brand}`}

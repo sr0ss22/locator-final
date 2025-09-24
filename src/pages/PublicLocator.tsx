@@ -218,7 +218,15 @@ const PublicLocator: React.FC = () => {
               <InstallerSearch onSearch={setSearchedZipCode} />
               <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
               <Separator />
-              <BrandSkillFilter selectedBrands={selectedBrands} selectedProductSkills={selectedProductSkills} selectedCertifications={selectedCertifications} onBrandChange={handleBrandChange} onProductSkillChange={handleProductSkillChange} onCertificationChange={handleCertificationChange} hideBrands={true} />
+              <BrandSkillFilter
+                selectedBrands={selectedBrands}
+                selectedProductSkills={selectedProductSkills}
+                selectedCertifications={selectedCertifications}
+                onBrandChange={handleBrandChange}
+                onProductSkillChange={handleProductSkillChange}
+                onCertificationChange={handleCertificationChange}
+                brandsToShow={["Hunter Douglas", "Alta"]}
+              />
             </div>
             <div className="mt-8">
               {isLoadingData ? (
