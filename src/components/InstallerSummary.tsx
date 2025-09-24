@@ -62,7 +62,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
         {!showAdditionalFilters && (
           <div className="text-right">
             <p className="text-sm font-medium text-gray-600">Total Installers</p>
-            <p className="text-4xl font-bold text-blue-600">{installers.length}</p>
+            <p className="text-4xl font-bold text-sky-500">{installers.length}</p>
           </div>
         )}
       </CardHeader>
@@ -81,7 +81,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
                     <h4 className="font-medium text-lg mb-3">{state} Installers:</h4>
                     <div className="text-right">
                       <p className="text-sm font-medium text-gray-600">Total Installers</p>
-                      <p className="text-4xl font-bold text-blue-600">{installersInState.length}</p>
+                      <p className="text-4xl font-bold text-sky-500">{installersInState.length}</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

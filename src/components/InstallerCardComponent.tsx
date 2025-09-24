@@ -38,7 +38,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
     >
       <CardHeader className="relative">
         {pinNumber && (
-          <Badge className="absolute top-2 right-2 bg-orange-500 text-white text-lg px-3 py-1 rounded-full z-10">
+          <Badge className="absolute top-2 right-2 bg-black text-white text-lg px-3 py-1 rounded-full z-10">
             {pinNumber}
           </Badge>
         )}
@@ -54,19 +54,21 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <div className="flex items-center text-gray-600">
-          <MapPin className="h-4 w-4 mr-2 text-gray-500" />
-          <span>{addressToDisplay}</span>
+        <div className="flex items-start justify-between text-gray-600">
+          <div className="flex items-center">
+            <MapPin className="h-4 w-4 mr-2 text-gray-500 flex-shrink-0" />
+            <span>{addressToDisplay}</span>
+          </div>
+          {formattedDistance && (
+            <div className="font-medium text-blue-600 ml-4 whitespace-nowrap">
+              {formattedDistance}
+            </div>
+          )}
         </div>
         {!isPublicView && (
           <div className="flex items-center text-gray-600">
             <Phone className="h-4 w-4 mr-2 text-gray-500" />
             <span>{installer.phone}</span>
-          </div>
-        )}
-        {formattedDistance && (
-          <div className="font-medium text-blue-600">
-            Distance: {formattedDistance}
           </div>
         )}
         {!isPublicView && installer.installerVendorId && (
@@ -79,7 +81,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
             <h4 className="font-semibold text-base mb-2">Brands:</h4>
             <div className="flex flex-wrap gap-2">
               {installer.brands.map((brand) => (
-                <Badge key={brand} variant="secondary" className="bg-purple-100 text-purple-800 border-purple-300">{brand}</Badge>
+                <Badge key={brand} variant="secondary" className="bg-indigo-100 text-indigo-500 border-indigo-500">{brand}</Badge>
               ))}
             </div>
           </div>
