@@ -31,10 +31,11 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
   return (
     <Card 
       className={cn(
-        "w-full max-w-md relative cursor-pointer transition-all duration-200",
-        isSelected ? "border-sky-500 ring-2 ring-sky-500 shadow-lg" : "border-gray-200 hover:border-gray-300"
+        "w-full max-w-md relative transition-all duration-200",
+        isSelected && !isPublicView ? "border-sky-500 ring-2 ring-sky-500 shadow-lg" : "border-gray-200",
+        isPublicView ? "cursor-default" : "cursor-pointer hover:border-gray-300"
       )}
-      onClick={onClick}
+      onClick={isPublicView ? undefined : onClick}
     >
       <CardHeader>
         <CardTitle className="flex flex-col items-start">

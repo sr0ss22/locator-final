@@ -27,7 +27,6 @@ const PublicLocator: React.FC = () => {
   const [loadingLocation, setLoadingLocation] = useState<boolean>(false);
   const [installers, setInstallers] = useState<Installer[]>([]);
   const [loadingInstallers, setLoadingInstallers] = useState<boolean>(false);
-  const [selectedInstallerId, setSelectedInstallerId] = useState<string | null>(null);
   const [searchRadius, setSearchRadius] = useState<number>(50);
   const { isCanada, distanceUnit, toggleCountry } = useCountrySettings(); // Destructure toggleCountry
   const navigate = useNavigate(); // Initialize useNavigate
@@ -76,7 +75,6 @@ const PublicLocator: React.FC = () => {
       }
       setUserSearchLocation(coords);
       setLoadingLocation(false);
-      setSelectedInstallerId(null);
     };
     determineAndSetLocation();
   }, [searchedZipCode]);
@@ -164,7 +162,6 @@ const PublicLocator: React.FC = () => {
   const handleBrandChange = (brand: InstallerBrand, checked: boolean) => setSelectedBrands(p => checked ? [...p, brand] : p.filter(b => b !== brand));
   const handleProductSkillChange = (skill: InstallerSkill, checked: boolean) => setSelectedProductSkills(p => checked ? [...p, skill] : p.filter(s => s !== skill));
   const handleCertificationChange = (certification: InstallerCertification, checked: boolean) => setSelectedCertifications(p => checked ? [...p, certification] : p.filter(c => c !== certification));
-  const handleInstallerCardClick = (installerId: string) => setSelectedInstallerId(installerId);
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingLocation;
 
@@ -209,8 +206,8 @@ const PublicLocator: React.FC = () => {
                 <InstallerList 
                   installers={filteredAndSortedInstallers} 
                   searchedZipCode={searchedZipCode} 
-                  selectedInstallerId={selectedInstallerId} 
-                  onInstallerCardClick={handleInstallerCardClick} 
+                  selectedInstallerId={null} 
+                  onInstallerCardClick={() => {}} 
                   isPublicView={true}
                   searchRadius={searchRadius}
                   distanceUnit={distanceUnit}
@@ -226,7 +223,7 @@ const PublicLocator: React.FC = () => {
               <InstallerMapComponent 
                 userLocation={userSearchLocation} 
                 installers={filteredAndSortedInstallers} 
-                selectedInstallerId={selectedInstallerId}
+                selectedInstallerId={null}
                 isPublicView={true}
               />
             </div>
