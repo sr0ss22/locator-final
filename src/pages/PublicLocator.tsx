@@ -227,25 +227,27 @@ const PublicLocator: React.FC = () => {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 space-y-8">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-2xl font-semibold">Find Installers</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <InstallerSearch onSearch={setSearchedZipCode} />
-                <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
-                <Separator />
-                <BrandSkillFilter
-                  selectedBrands={selectedBrands}
-                  selectedProductSkills={selectedProductSkills}
-                  selectedCertifications={selectedCertifications}
-                  onBrandChange={handleBrandChange}
-                  onProductSkillChange={handleProductSkillChange}
-                  onCertificationChange={handleCertificationChange}
-                  brandsToShow={["Hunter Douglas", "Alta"]}
-                />
-              </CardContent>
-            </Card>
+            <div className="h-[600px]">
+              <Card className="h-full flex flex-col">
+                <CardHeader>
+                  <CardTitle className="text-2xl font-semibold">Find Installers</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-grow overflow-y-auto space-y-6">
+                  <InstallerSearch onSearch={setSearchedZipCode} />
+                  <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
+                  <Separator />
+                  <BrandSkillFilter
+                    selectedBrands={selectedBrands}
+                    selectedProductSkills={selectedProductSkills}
+                    selectedCertifications={selectedCertifications}
+                    onBrandChange={handleBrandChange}
+                    onProductSkillChange={handleProductSkillChange}
+                    onCertificationChange={handleCertificationChange}
+                    brandsToShow={["Hunter Douglas", "Alta"]}
+                  />
+                </CardContent>
+              </Card>
+            </div>
             <div className="space-y-4">
               {isLoadingData ? (
                 <p className="text-center text-gray-500 mt-8">
