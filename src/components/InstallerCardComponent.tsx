@@ -36,14 +36,22 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
       )}
       onClick={onClick}
     >
-      <CardHeader className="relative">
-        {pinNumber && (
-          <Badge className="absolute top-2 right-2 bg-black text-white text-lg px-3 py-1 rounded-full z-10">
-            {pinNumber}
-          </Badge>
-        )}
-        <CardTitle className="flex flex-col items-start pr-10">
+      <CardHeader>
+        <CardTitle className="flex flex-col items-start">
           <span className="mb-2">{installer.name}</span>
+          {isPublicView && installer.is_local_service_area !== undefined && (
+            <div className="mb-2">
+              {installer.is_local_service_area ? (
+                <Badge variant="default" className="bg-green-100 text-green-800 border-green-300 hover:bg-green-200">
+                  Mileage Covered
+                </Badge>
+              ) : (
+                <Badge variant="default" className="bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200">
+                  Mileage Charged
+                </Badge>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             {installer.certifications.map((cert) => (
               <Badge key={cert} variant="outline" className="bg-blue-100 text-blue-800 border-blue-300">

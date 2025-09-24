@@ -16,6 +16,7 @@ export interface Installer {
   longitude?: number;
   installerVendorId?: string;
   acceptsShipments?: boolean;
+  is_local_service_area?: boolean; // New flag for public locator
   // Raw fields for specific column display as requested by user, now in snake_case
   blinds_and_shades_raw?: number;
   pip_certification_level_raw?: string;
