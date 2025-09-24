@@ -32,7 +32,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
     <Card 
       className={cn(
         "w-full max-w-md relative cursor-pointer transition-all duration-200",
-        isSelected ? "border-orange-500 ring-2 ring-orange-500 shadow-lg" : "border-gray-200 hover:border-gray-300"
+        isSelected ? "border-sky-500 ring-2 ring-sky-500 shadow-lg" : "border-gray-200 hover:border-gray-300"
       )}
       onClick={onClick}
     >
