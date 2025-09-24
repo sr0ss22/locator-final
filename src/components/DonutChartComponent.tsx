@@ -30,6 +30,17 @@ const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, 
     );
   };
 
+  // Create a payload for the legend, filtering out items with a value of 0.
+  const legendPayload = data
+    .map((entry, index) => ({
+      value: entry.name,
+      type: 'square',
+      id: entry.name,
+      color: colors[index % colors.length],
+      payload: entry, // Keep original entry for filtering
+    }))
+    .filter(item => item.payload.value > 0);
+
   return (
     <Card>
       <CardHeader>
@@ -64,6 +75,7 @@ const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, 
               </Pie>
               {totalValue > 0 && (
                 <Legend
+                  payload={legendPayload} // Use the filtered payload
                   iconSize={10}
                   layout="horizontal"
                   verticalAlign="bottom"

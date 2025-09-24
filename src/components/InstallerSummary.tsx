@@ -46,7 +46,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
     return { brandData, productData, certificationData };
   };
 
-  const chartColors = ["#0EA5E9", "#EAB308", "#6366F1"]; // Sky, Yellow, Indigo
+  const chartColors = ["#0EA5E9", "#94a3b8", "#6366F1"]; // Sky Blue, Slate Gray, Indigo
 
   return (
     <Card className="mt-4 p-4 shadow-sm">
@@ -62,7 +62,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
         {!showAdditionalFilters && (
           <div className="text-right">
             <p className="text-sm font-medium text-gray-600">Total Installers</p>
-            <p className="text-4xl font-bold text-orange-500">{installers.length}</p>
+            <p className="text-4xl font-bold text-blue-600">{installers.length}</p>
           </div>
         )}
       </CardHeader>
@@ -81,7 +81,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
                     <h4 className="font-medium text-lg mb-3">{state} Installers:</h4>
                     <div className="text-right">
                       <p className="text-sm font-medium text-gray-600">Total Installers</p>
-                      <p className="text-4xl font-bold text-orange-500">{installersInState.length}</p>
+                      <p className="text-4xl font-bold text-blue-600">{installersInState.length}</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
