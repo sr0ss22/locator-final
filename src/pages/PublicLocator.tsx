@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom"; // Import useNavigate
 import { useSession } from "@/components/SessionContextProvider"; // Import useSession
 import { Button } from "@/components/ui/button"; // Ensure Button is imported
 import { calculateDistance } from "@/utils/distance";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const PublicLocator: React.FC = () => {
   const [searchedZipCode, setSearchedZipCode] = useState<string>("");
@@ -225,45 +226,54 @@ const PublicLocator: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-700">Installer Locator</h1>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1 h-[600px] border rounded-lg shadow-sm bg-card flex flex-col">
-            <div className="p-6 space-y-6 border-b">
-              <h2 className="text-2xl font-semibold">Find Installers</h2>
-              <InstallerSearch onSearch={setSearchedZipCode} />
-              <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
-              <Separator />
-              <BrandSkillFilter
-                selectedBrands={selectedBrands}
-                selectedProductSkills={selectedProductSkills}
-                selectedCertifications={selectedCertifications}
-                onBrandChange={handleBrandChange}
-                onProductSkillChange={handleProductSkillChange}
-                onCertificationChange={handleCertificationChange}
-                brandsToShow={["Hunter Douglas", "Alta"]}
-              />
-            </div>
-            <div className="flex-grow overflow-y-auto p-6">
-              {isLoadingData ? (
-                <p className="text-center text-gray-500 mt-8">
-                  {loadingInstallers ? "Loading installers..." : ""}
-                  {loadingLocation && searchedZipCode ? `Getting location for ${searchedZipCode}...` : ""}
-                  {loadingLocation && !searchedZipCode ? "Detecting your location..." : ""}
-                  {loadingOrs && userSearchLocation?.lat !== null ? "Calculating driving distances..." : ""}
-                </p>
-              ) : (
-                <InstallerList 
-                  installers={filteredAndSortedInstallers} 
-                  searchedZipCode={searchedZipCode} 
-                  selectedInstallerId={selectedInstallerId} 
-                  onInstallerCardClick={handleInstallerCardClick} 
-                  isPublicView={true}
-                  searchRadius={searchRadius}
-                  distanceUnit={distanceUnit}
+          <div className="lg:col-span-1 h-[600px] flex flex-col gap-8">
+            <Card className="flex-shrink-0">
+              <CardHeader>
+                <CardTitle className="text-2xl font-semibold">Find Installers</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <InstallerSearch onSearch={setSearchedZipCode} />
+                <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
+                <Separator />
+                <BrandSkillFilter
+                  selectedBrands={selectedBrands}
+                  selectedProductSkills={selectedProductSkills}
+                  selectedCertifications={selectedCertifications}
+                  onBrandChange={handleBrandChange}
+                  onProductSkillChange={handleProductSkillChange}
+                  onCertificationChange={handleCertificationChange}
+                  brandsToShow={["Hunter Douglas", "Alta"]}
                 />
-              )}
-              {searchedZipCode && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
-                <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
-              )}
-            </div>
+              </CardContent>
+            </Card>
+            <Card className="flex-grow overflow-hidden flex flex-col">
+              <CardHeader>
+                <CardTitle className="text-2xl font-semibold">Results</CardTitle>
+              </CardHeader>
+              <CardContent className="flex-grow overflow-y-auto p-6">
+                {isLoadingData ? (
+                  <p className="text-center text-gray-500 mt-8">
+                    {loadingInstallers ? "Loading installers..." : ""}
+                    {loadingLocation && searchedZipCode ? `Getting location for ${searchedZipCode}...` : ""}
+                    {loadingLocation && !searchedZipCode ? "Detecting your location..." : ""}
+                    {loadingOrs && userSearchLocation?.lat !== null ? "Calculating driving distances..." : ""}
+                  </p>
+                ) : (
+                  <InstallerList 
+                    installers={filteredAndSortedInstallers} 
+                    searchedZipCode={searchedZipCode} 
+                    selectedInstallerId={selectedInstallerId} 
+                    onInstallerCardClick={handleInstallerCardClick} 
+                    isPublicView={true}
+                    searchRadius={searchRadius}
+                    distanceUnit={distanceUnit}
+                  />
+                )}
+                {searchedZipCode && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
+                  <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
+                )}
+              </CardContent>
+            </Card>
           </div>
           <div className="lg:col-span-2">
             <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
