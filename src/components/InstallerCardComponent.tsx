@@ -91,7 +91,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
             <h4 className="font-semibold text-base mb-2">Product Skills:</h4>
             <div className="flex flex-wrap gap-2">
               {installer.skills.map((skill) => (
-                <Badge key={skill} variant="default">{skill}</Badge>
+                <Badge key={skill} variant="secondary" className="border-border">{skill}</Badge>
               ))}
             </div>
           </div>
