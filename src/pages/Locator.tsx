@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import MultiSelect from "@/components/MultiSelect";
 import InstallerSummary from "@/components/InstallerSummary";
 import { calculateDistance } from "@/utils/distance";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 const Locator: React.FC = () => {
   const [searchedZipCode, setSearchedZipCode] = useState<string>("");
@@ -36,6 +37,7 @@ const Locator: React.FC = () => {
   const [allStatesProvinces, setAllStatesProvinces] = useState<string[]>([]);
   const navigate = useNavigate();
   const { isCanada, distanceUnit, toggleCountry } = useCountrySettings();
+  const [filterAcceptsShipments, setFilterAcceptsShipments] = useState<'any' | 'yes' | 'no'>('any');
 
   const toBoolean = (value: any): boolean => {
     if (typeof value === 'string') return value.toLowerCase() === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
@@ -210,13 +212,26 @@ const Locator: React.FC = () => {
     if (selectedBrands.length > 0) currentInstallers = currentInstallers.filter(i => selectedBrands.every(b => (i.brands ?? []).includes(b)));
     if (selectedProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => selectedProductSkills.every(s => (i.skills ?? []).includes(s)));
     if (selectedCertifications.length > 0) currentInstallers = currentInstallers.filter(i => selectedCertifications.every(c => (i.certifications ?? []).includes(c)));
-    if (showAdditionalFilters && selectedStatesProvinces.length > 0) {
-      return currentInstallers.filter(i => i.rawSupabaseData?.state && selectedStatesProvinces.includes(i.rawSupabaseData.state));
+    
+    if (showAdditionalFilters) {
+      if (selectedStatesProvinces.length > 0) {
+        currentInstallers = currentInstallers.filter(i => i.rawSupabaseData?.state && selectedStatesProvinces.includes(i.rawSupabaseData.state));
+      }
+      if (filterAcceptsShipments === 'yes') {
+        currentInstallers = currentInstallers.filter(i => i.acceptsShipments);
+      } else if (filterAcceptsShipments === 'no') {
+        currentInstallers = currentInstallers.filter(i => !i.acceptsShipments);
+      }
     }
+
+    if (showAdditionalFilters && selectedStatesProvinces.length > 0) {
+      return currentInstallers;
+    }
+
     let installersWithDistance = currentInstallers.map(i => ({ ...i, distance: installerDistancesMap.get(i.id) ?? Infinity }));
     installersWithDistance.sort((a, b) => a.distance - b.distance);
     return installersWithDistance.filter(i => i.distance <= searchRadius);
-  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications, installerDistancesMap, searchRadius, showAdditionalFilters, selectedStatesProvinces]);
+  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications, installerDistancesMap, searchRadius, showAdditionalFilters, selectedStatesProvinces, filterAcceptsShipments]);
 
   const handleBrandChange = (brand: InstallerBrand, checked: boolean) => setSelectedBrands(p => checked ? [...p, brand] : p.filter(b => b !== brand));
   const handleProductSkillChange = (skill: InstallerSkill, checked: boolean) => setSelectedProductSkills(p => checked ? [...p, skill] : p.filter(s => s !== skill));
@@ -257,9 +272,32 @@ const Locator: React.FC = () => {
                   <Switch id="additional-filters-toggle" checked={showAdditionalFilters} onCheckedChange={setShowAdditionalFilters} />
                 </div>
                 {showAdditionalFilters && (
-                  <div className="space-y-2 mt-2">
-                    <Label htmlFor="state-province-select">State / Province</Label>
-                    <MultiSelect options={allStatesProvinces} selectedValues={selectedStatesProvinces} onValueChange={setSelectedStatesProvinces} placeholder="Select States/Provinces" />
+                  <div className="space-y-4 mt-2">
+                    <div>
+                      <Label htmlFor="state-province-select">State / Province</Label>
+                      <MultiSelect options={allStatesProvinces} selectedValues={selectedStatesProvinces} onValueChange={setSelectedStatesProvinces} placeholder="Select States/Provinces" />
+                    </div>
+                    <div>
+                      <Label className="mb-2 block">Accepts Shipments</Label>
+                      <RadioGroup
+                        value={filterAcceptsShipments}
+                        onValueChange={(value) => setFilterAcceptsShipments(value as 'any' | 'yes' | 'no')}
+                        className="flex space-x-4"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="any" id="shipments-any-locator" />
+                          <Label htmlFor="shipments-any-locator">Any</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="yes" id="shipments-yes-locator" />
+                          <Label htmlFor="shipments-yes-locator">Yes</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="no" id="shipments-no-locator" />
+                          <Label htmlFor="shipments-no-locator">No</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
                   </div>
                 )}
               </div>
