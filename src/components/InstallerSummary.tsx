@@ -47,7 +47,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
     return { brandData, productData, certificationData };
   };
 
-  const chartColors = ["#0EA5E9", "#94a3b8", "#6366F1"]; // Sky Blue, Slate Gray, Indigo
+  const chartColors = ["#0EA5E9", "#94a3b8", "#6366F1", "#FACC15"]; // Sky Blue, Slate Gray, Indigo, Yellow
 
   return (
     <Card className="mt-4 p-4 shadow-sm">
