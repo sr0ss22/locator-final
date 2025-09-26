@@ -23,6 +23,7 @@ const AdminToolsPage: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
+  const [assigningTerritories, setAssigningTerritories] = useState(false);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -102,6 +103,24 @@ const AdminToolsPage: React.FC = () => {
     setProcessing(false);
   };
 
+  const handleAutoAssignTerritories = async () => {
+    setAssigningTerritories(true);
+    const loadingToastId = toast.loading("Starting automated territory assignment for all US installers. This may take several minutes...");
+
+    const { data, error } = await supabase.rpc('assign_territories_for_all_us_installers', {
+      radius_miles: 25,
+    });
+
+    if (error) {
+      console.error("Error auto-assigning territories:", error);
+      toast.error(`An error occurred: ${error.message}`, { id: loadingToastId });
+    } else {
+      toast.success(`Territory assignment complete. ${data}`, { id: loadingToastId, duration: 8000 });
+    }
+
+    setAssigningTerritories(false);
+  };
+
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between gap-4 mb-8">
@@ -135,13 +154,32 @@ const AdminToolsPage: React.FC = () => {
             )}
           </CardContent>
           <CardFooter className="flex gap-4">
-            <Button onClick={() => handleProcessGeoJson('USA')} disabled={processing}>
+            <Button onClick={() => handleProcessGeoJson('USA')} disabled={processing || assigningTerritories}>
               {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Process US Data
             </Button>
-            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={processing}>
+            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={processing || assigningTerritories}>
               {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Process Canada Data
+            </Button>
+          </CardFooter>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Automated Territory Assignment</CardTitle>
+            <CardDescription>
+              Automatically assign territories to all US-based installers. This will find all ZIP codes within a 25-mile radius of each installer's location and assign them.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-destructive">
+              <strong>Warning:</strong> This is a long-running process that will modify many records. It will not remove existing assignments, only add new ones.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={handleAutoAssignTerritories} disabled={assigningTerritories || processing}>
+              {assigningTerritories ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+              Assign Territories (25-mile radius)
             </Button>
           </CardFooter>
         </Card>
