@@ -187,7 +187,7 @@ const PublicLocator: React.FC = () => {
                 <CardHeader>
                   <CardTitle className="text-2xl font-semibold">Find Installers</CardTitle>
                 </CardHeader>
-                <CardContent className="flex-grow overflow-y-auto space-y-6">
+                <CardContent className="flex-grow overflow-y-auto space-y-6 pt-6">
                   <InstallerSearch onSearch={setSearchText} />
                   <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
                   <Separator />
