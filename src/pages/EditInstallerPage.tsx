@@ -170,41 +170,49 @@ const EditInstallerPage: React.FC = () => {
     }
   }, [zipCodeCentroids]);
 
-  useEffect(() => {
-    const loadInstallerData = async () => {
-      if (!installerId) { toast.error("No installer ID provided."); navigate("/installers"); return; }
-      setLoading(true);
-      const { data: installerData, error: fetchError } = await supabase.from('installers').select('*').eq('id', installerId).single();
-      if (fetchError || !installerData) {
-        console.error("Error fetching installer:", fetchError);
-        toast.error("Failed to load installer data."); navigate("/installers"); setLoading(false); return;
-      }
-      const mappedInstaller: Installer = {
-        id: installerData.id, name: installerData.name,
-        address: `${installerData.address1 || ''} ${installerData.add2 || ''}, ${installerData.city || ''}, ${installerData.state || ''} ${installerData.postalcode || ''}`.trim(),
-        zipCode: installerData.postalcode, phone: installerData.primary_phone, email: installerData.email,
-        skills: [], brands: [], certifications: [],
-        latitude: installerData.latitude, longitude: installerData.longitude,
-        installerVendorId: installerData.installer_vendor_id?.toString(),
-        acceptsShipments: toBoolean(installerData.shipment),
-        rawSupabaseData: installerData,
-      };
-      setFormData(installerData); setCurrentInstaller(mappedInstaller); setErrors({});
+  const loadAllData = useCallback(async () => {
+    if (!installerId) {
+      toast.error("No installer ID provided.");
+      navigate("/installers");
+      return;
+    }
+    setLoading(true);
+    
+    const { data: installerData, error: fetchError } = await supabase.from('installers').select('*').eq('id', installerId).single();
+    if (fetchError || !installerData) {
+      console.error("Error fetching installer:", fetchError);
+      toast.error("Failed to load installer data.");
+      navigate("/installers");
+      setLoading(false);
+      return;
+    }
+    const mappedInstaller: Installer = {
+      id: installerData.id, name: installerData.name,
+      address: `${installerData.address1 || ''} ${installerData.add2 || ''}, ${installerData.city || ''}, ${installerData.state || ''} ${installerData.postalcode || ''}`.trim(),
+      zipCode: installerData.postalcode, phone: installerData.primary_phone, email: installerData.email,
+      skills: [], brands: [], certifications: [],
+      latitude: installerData.latitude, longitude: installerData.longitude,
+      installerVendorId: installerData.installer_vendor_id?.toString(),
+      acceptsShipments: toBoolean(installerData.shipment),
+      rawSupabaseData: installerData,
     };
-    if (!sessionLoading && installerId) loadInstallerData();
-    else if (!installerId) setLoading(false);
-  }, [installerId, navigate, sessionLoading]);
+    setFormData(installerData);
+    setCurrentInstaller(mappedInstaller);
+    setErrors({});
+
+    await fetchTerritoryStatuses();
+    await fetchInstallerZipCodes(installerId);
+
+    setLoading(false);
+  }, [installerId, navigate, fetchTerritoryStatuses, fetchInstallerZipCodes]);
 
   useEffect(() => {
-    const loadTerritoryData = async () => {
-      if (installerId && currentInstaller) {
-        await fetchTerritoryStatuses();
-        await fetchInstallerZipCodes(installerId);
-        setLoading(false);
-      }
-    };
-    loadTerritoryData();
-  }, [currentInstaller, installerId, fetchTerritoryStatuses, fetchInstallerZipCodes]);
+    if (!sessionLoading && installerId) {
+      loadAllData();
+    } else if (!installerId) {
+      setLoading(false);
+    }
+  }, [installerId, sessionLoading, loadAllData]);
 
   const memoizedCenterLocation = useMemo(() => {
     if (currentInstaller?.latitude != null && currentInstaller?.longitude != null) {
@@ -359,8 +367,9 @@ const EditInstallerPage: React.FC = () => {
           if (insertError) throw new Error(`Failed to save new territories: ${insertError.message}`);
         }
       }
-      toast.success("Installer and ZIP code associations updated successfully!", { id: loadingToastId });
-      navigate("/installers");
+      toast.success("Changes saved successfully! Refreshing data...", { id: loadingToastId });
+      await loadAllData();
+      toast.success("Save complete. Data is up to date.", { id: loadingToastId, duration: 4000 });
     } catch (err: any) {
       console.error("Error saving installer and/or ZIP associations:", err);
       toast.error(`Failed to save changes: ${err.message || err.toString()}`, { id: loadingToastId });
@@ -541,7 +550,7 @@ const EditInstallerPage: React.FC = () => {
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between gap-4 mb-8">
         <div className="flex items-center gap-4">
-          <Button variant="outline" size="sm" onClick={() => navigate("/public-locator")}>
+          <Button variant="outline" size="sm" onClick={() => navigate("/locator")}>
             <Home className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="sm" onClick={() => navigate("/installers")}><ArrowLeft className="h-4 w-4" /></Button>
@@ -649,7 +658,7 @@ const EditInstallerPage: React.FC = () => {
                 <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
                 <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
                   {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
-                  <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor="list-radius-all">All</Label></div>
+                  <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
                 </RadioGroup>
               </div>
               <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} onZipCodeClick={handleMapZipCodeClick} mapClickStates={highlightedZipCodes} installerLocation={memoizedCenterLocation} listDisplayRadius={listDisplayRadius} />
