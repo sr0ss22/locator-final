@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut } from "lucide-react";
+import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut, Copy } from "lucide-react";
 import { Installer, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -358,6 +358,72 @@ const EditInstallerPage: React.FC = () => {
     }
   };
 
+  const handleClone = async () => {
+    if (!currentInstaller?.id) {
+      toast.error("Cannot clone. Original installer data is not available.");
+      return;
+    }
+
+    setLoading(true);
+    const loadingToastId = toast.loading("Cloning installer...");
+
+    try {
+      const clonedData: any = {};
+      for (const key in formData) {
+        if (Object.prototype.hasOwnProperty.call(formData, key)) {
+          const value = formData[key];
+          if (typeof value === 'boolean') {
+            clonedData[key] = fromBooleanToSupabase(key, value);
+          } else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) {
+            clonedData[key] = Array.isArray(value) ? value.join(', ') : value;
+          } else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof value === 'string' && value !== '') {
+            clonedData[key] = parseFloat(value);
+          } else if (value === "") {
+            clonedData[key] = null;
+          } else {
+            clonedData[key] = value;
+          }
+        }
+      }
+
+      clonedData.name = `${formData.name || 'Installer'} - Copy`;
+      clonedData.address1 = "";
+      clonedData.add2 = null;
+      clonedData.city = "";
+      clonedData.state = "";
+      clonedData.postalcode = "";
+      clonedData.latitude = null;
+      clonedData.longitude = null;
+      delete clonedData.id;
+      delete clonedData.created_at;
+      delete clonedData.updated_at;
+      clonedData.account_id = null;
+
+      const { data: newInstaller, error: insertError } = await supabase
+        .from('installers')
+        .insert([clonedData])
+        .select('id')
+        .single();
+
+      if (insertError) {
+        throw new Error(`Failed to create clone: ${insertError.message}`);
+      }
+
+      if (!newInstaller) {
+        throw new Error("Failed to retrieve the new installer record after creation.");
+      }
+
+      toast.success(`Installer cloned successfully. You are now editing the copy. Please fill in the required address details.`, { id: loadingToastId });
+      navigate(`/installers/edit/${newInstaller.id}`);
+
+    } catch (err: any) {
+      console.error("Error cloning installer:", err);
+      toast.error(`Failed to clone installer: ${err.message}`, { id: loadingToastId });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleToggleBulkSelect = (action: 'approve' | 'needs_approval') => {
     setBulkActionType(prev => {
       if (prev === action) { toast.info("Bulk selection mode deactivated."); return null; }
@@ -470,9 +536,16 @@ const EditInstallerPage: React.FC = () => {
           <Button variant="outline" size="sm" onClick={() => navigate("/installers")}><ArrowLeft className="h-4 w-4" /></Button>
           <h1 className="text-2xl font-bold text-gray-700">Edit Installer: {currentInstaller.name}</h1>
         </div>
-        <Button variant="outline" onClick={handleLogout}>
-          <LogOut className="h-4 w-4 mr-2" /> Log Out
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Button variant="outline" onClick={handleClone} disabled={loading}>
+              <Copy className="mr-2 h-4 w-4" /> Clone
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleLogout}>
+            <LogOut className="h-4 w-4 mr-2" /> Log Out
+          </Button>
+        </div>
       </div>
       <div className="grid gap-6 py-4">
         <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Contact & Address Information</h3>
