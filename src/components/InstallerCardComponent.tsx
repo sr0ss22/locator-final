@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Phone, MapPin } from "lucide-react";
 import { Installer } from "@/types/installer";
@@ -11,12 +11,12 @@ interface InstallerCardComponentProps {
   distance?: number;
   pinNumber?: number;
   isSelected: boolean;
-  onClick: () => void;
+  onInstallerCardClick: (id: string) => void;
   isPublicView?: boolean;
   searchedZipCode?: string;
 }
 
-const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ installer, distance, pinNumber, isSelected, onClick, isPublicView = false, searchedZipCode }) => {
+const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ installer, distance, pinNumber, isSelected, onInstallerCardClick, isPublicView = false, searchedZipCode }) => {
   const { distanceUnit } = useCountrySettings();
 
   const displayDistance = distance !== undefined && distance !== null && distance !== Infinity
@@ -29,6 +29,12 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
     ? `${installer.rawSupabaseData?.city || ''}, ${installer.rawSupabaseData?.state || ''} ${installer.zipCode || ''}`.trim()
     : installer.address;
 
+  const handleClick = () => {
+    if (!isPublicView) {
+      onInstallerCardClick(installer.id);
+    }
+  };
+
   return (
     <Card 
       className={cn(
@@ -36,7 +42,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
         isSelected && !isPublicView ? "border-sky-500 ring-2 ring-sky-500 shadow-lg" : "border-gray-200",
         isPublicView ? "cursor-default" : "cursor-pointer hover:border-gray-300"
       )}
-      onClick={isPublicView ? undefined : onClick}
+      onClick={handleClick}
     >
       <CardHeader>
         <CardTitle className="flex flex-col items-start">
@@ -116,4 +122,4 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
   );
 };
 
-export default InstallerCardComponent;
+export default memo(InstallerCardComponent);

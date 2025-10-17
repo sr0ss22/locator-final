@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import InstallerSearch from "@/components/InstallerSearch";
 import BrandSkillFilter from "@/components/BrandSkillFilter";
 import InstallerList from "@/components/InstallerList";
@@ -169,6 +169,10 @@ const PublicLocator: React.FC = () => {
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingLocation;
 
+  const handleInstallerCardClick = useCallback(() => {
+    // No-op for public view
+  }, []);
+
   return (
     <div className="flex flex-col min-h-screen">
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow">
@@ -211,7 +215,7 @@ const PublicLocator: React.FC = () => {
                   installers={filteredAndSortedInstallers} 
                   searchedZipCode={searchedZipCode} 
                   selectedInstallerId={null} 
-                  onInstallerCardClick={() => {}} 
+                  onInstallerCardClick={handleInstallerCardClick} 
                   isPublicView={true}
                   searchRadius={searchRadius}
                   distanceUnit={distanceUnit}

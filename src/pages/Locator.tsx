@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import InstallerSearch from "@/components/InstallerSearch";
 import BrandSkillFilter from "@/components/BrandSkillFilter";
 import InstallerList from "@/components/InstallerList";
@@ -238,7 +238,11 @@ const Locator: React.FC = () => {
   const handleBrandChange = (brand: InstallerBrand, checked: boolean) => setSelectedBrands(p => checked ? [...p, brand] : p.filter(b => b !== brand));
   const handleProductSkillChange = (skill: InstallerSkill, checked: boolean) => setSelectedProductSkills(p => checked ? [...p, skill] : p.filter(s => s !== skill));
   const handleCertificationChange = (certification: InstallerCertification, checked: boolean) => setSelectedCertifications(p => checked ? [...p, certification] : p.filter(c => c !== certification));
-  const handleInstallerCardClick = (installerId: string) => setSelectedInstallerId(installerId);
+  
+  const handleInstallerCardClick = useCallback((installerId: string) => {
+    setSelectedInstallerId(installerId);
+  }, []);
+
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingUserLocation || loadingOrs;
 

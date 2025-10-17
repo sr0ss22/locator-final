@@ -36,7 +36,7 @@ const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCo
           distance={installer.distance}
           pinNumber={index + 1}
           isSelected={installer.id === selectedInstallerId}
-          onClick={() => onInstallerCardClick(installer.id)}
+          onInstallerCardClick={onInstallerCardClick}
           isPublicView={isPublicView}
           searchedZipCode={searchedZipCode}
         />
