@@ -100,6 +100,7 @@ const TerritoryManagement: React.FC = () => {
   const [allStatesProvinces, setAllStatesProvinces] = useState<string[]>([]);
   const [allInstallers, setAllInstallers] = useState<Array<{ id: string; name: string }>>([]);
   const [filterInstallers, setFilterInstallers] = useState<string[]>([]); // Filter by installer ID
+  const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [assignmentToDelete, setAssignmentToDelete] = useState<{ id: string; zip_code: string; installer_name: string } | null>(null); // Changed type
@@ -143,6 +144,27 @@ const TerritoryManagement: React.FC = () => {
       return [];
     }
     return data || [];
+  }, []);
+
+  const fetchTerritoryStatuses = useCallback(async () => {
+    const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status');
+    if (error) {
+      console.error("Error fetching all territory statuses:", error);
+      toast.error("Failed to load map territory statuses.");
+      return new Map();
+    } else {
+      const statusMap = new Map<string, TerritoryStatus>();
+      for (const item of data) {
+        if (item.zip_code) {
+          const existingStatus = statusMap.get(item.zip_code);
+          if (item.status === 'Approved' || !existingStatus) {
+            statusMap.set(item.zip_code, item.status as TerritoryStatus);
+          }
+        }
+      }
+      setTerritoryStatuses(statusMap);
+      return statusMap;
+    }
   }, []);
 
   const fetchInstallerZipAssignments = useCallback(async () => {
@@ -231,7 +253,8 @@ const TerritoryManagement: React.FC = () => {
 
   useEffect(() => {
     fetchInstallerZipAssignments();
-  }, [fetchInstallerZipAssignments]);
+    fetchTerritoryStatuses();
+  }, [fetchInstallerZipAssignments, fetchTerritoryStatuses]);
 
   useEffect(() => {
     const loadRolesAndInstallers = async () => {
@@ -320,21 +343,6 @@ const TerritoryManagement: React.FC = () => {
     setLoading(false);
   };
 
-  // Map data for TerritoryMap component
-  const memoizedAssignmentsForMap = useMemo(() => {
-    return assignments.map(a => ({
-      zip_code: a.zip_code,
-      status: a.status,
-      field_ops_rep_id: a.field_ops_rep_id,
-      field_service_manager_id: a.field_service_manager_id,
-      state_province: a.state_province, // Pass state_province for map
-    }));
-  }, [assignments]);
-
-  // This map click handler is for the TerritoryManagement page,
-  // which should not add/remove assignments directly but perhaps
-  // provide a quick way to view/edit an assignment.
-  // For now, it will just show a toast.
   const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
     toast.info(`Clicked ZIP ${zipCode} (${stateProvince}). Use the table to manage assignments.`);
   }, []);
@@ -450,7 +458,7 @@ const TerritoryManagement: React.FC = () => {
           country={isCanada ? 'Canada' : 'USA'} // Pass the country from useCountrySettings
           selectedZipCodes={[]} // No specific selection for this map, it shows all
           onZipCodeClick={handleMapZipCodeClick} // Still provide a click handler
-          existingTerritories={memoizedAssignmentsForMap} // Pass all assignments for display
+          territoryStatuses={territoryStatuses} // Pass all assignments for display
           highlightedZipCodes={new Map()} // No specific highlights from this page
           currentDisplayRadius="all" // Show all territories
         />

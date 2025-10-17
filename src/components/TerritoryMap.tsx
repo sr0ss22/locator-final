@@ -30,7 +30,7 @@ interface TerritoryMapProps {
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   centerLocation?: { lat: number | null; lng: number | null };
   isOpen?: boolean; // True if used in a modal/drawer (e.g., EditInstallerPage), false for full page (e.g., TerritoryManagement)
-  existingTerritories: InstallerZipAssignment[]; // All territories for TerritoryManagement page
+  territoryStatuses?: Map<string, TerritoryStatus>; // All territories for any page, optimized
   selectedZipCodes?: Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>; // Selected zips for current installer (EditInstallerPage)
   currentDisplayRadius?: number | 'all'; // Radius for filtering displayed polygons (EditInstallerPage)
   showRadiusCircles?: boolean; // Whether to show radius circles around centerLocation
@@ -310,7 +310,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onZipCodeClick,
   centerLocation,
   isOpen = false,
-  existingTerritories = [],
+  territoryStatuses = new Map(),
   selectedZipCodes = [],
   currentDisplayRadius = DEFAULT_DISPLAY_RADIUS_MILES,
   showRadiusCircles = false,
@@ -411,10 +411,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       let assignedStatus: TerritoryStatus | null = null;
       if (!isTerritoryManagementPage) {
         const selectedZip = selectedZipCodes.find(item => item.zipCode === zipCode);
-        if (selectedZip) assignedStatus = selectedZip.assignedStatus;
+        if (selectedZip) {
+          assignedStatus = selectedZip.assignedStatus;
+        } else {
+          assignedStatus = territoryStatuses.get(zipCode) || null;
+        }
       } else {
-        const existingAssignment = existingTerritories.find(t => t.zip_code === zipCode);
-        if (existingAssignment) assignedStatus = existingAssignment.status;
+        assignedStatus = territoryStatuses.get(zipCode) || null;
       }
 
       if (assignedStatus === 'Approved') {
@@ -430,7 +433,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     return { fillColor, weight, opacity: 1, color, fillOpacity, interactive: true };
   }, [
-    existingTerritories,
+    territoryStatuses,
     highlightedZipCodes,
     isCanada,
     isTerritoryManagementPage,

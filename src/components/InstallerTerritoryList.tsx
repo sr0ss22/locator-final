@@ -11,8 +11,6 @@ import { calculateDistance } from "@/utils/distance"; // Import distance utility
 interface InstallerTerritoryListProps {
   // This now represents the selected assignments for the current installer
   assignedZipCodes: Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>;
-  // This prop is now all existing installer_zip_codes entries for map context, not just territories
-  allTerritories: InstallerZipAssignment[]; 
   onZipCodeClick: (zipCode: string, stateProvince: string) => void; // To unselect from the list, now requires stateProvince
   mapClickStates: Map<string, 'green' | 'orange'>; // New prop for map highlight states
   installerLocation: { lat: number | null; lng: number | null } | null; // New: Installer's location for distance calculation
@@ -21,7 +19,6 @@ interface InstallerTerritoryListProps {
 
 const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
   assignedZipCodes,
-  allTerritories, // Renamed from allTerritories to reflect new data
   onZipCodeClick,
   mapClickStates,
   installerLocation,
@@ -32,7 +29,6 @@ const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
   const [isNeedsApprovalOpen, setIsNeedsApprovalOpen] = useState(false); // Changed to false (collapsed by default)
 
   console.log("InstallerTerritoryList: assignedZipCodes prop:", assignedZipCodes);
-  console.log("InstallerTerritoryList: allTerritories prop (now all assignments):", allTerritories);
   console.log("InstallerTerritoryList: mapClickStates prop:", mapClickStates);
   console.log("InstallerTerritoryList: installerLocation:", installerLocation);
   console.log("InstallerTerritoryList: listDisplayRadius:", listDisplayRadius);

@@ -64,7 +64,7 @@ const EditInstallerPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
   const [mapDisplayRadius, setMapDisplayRadius] = useState<number | 'all'>(150);
-  const [allInstallerZipAssignments, setAllInstallerZipAssignments] = useState<InstallerZipAssignment[]>([]);
+  const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
   const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
   const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | null>(null);
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
@@ -129,14 +129,25 @@ const EditInstallerPage: React.FC = () => {
 
   const requiredFields = ["name", "email", "primary_phone", "address1", "city", "state", "postalcode"];
 
-  const fetchAllInstallerZipAssignments = useCallback(async () => {
-    const { data, error } = await supabase.from('installer_zip_codes').select('id, zip_code, status, state_province, field_ops_rep_id, field_service_manager_id, installer_id');
+  const fetchTerritoryStatuses = useCallback(async () => {
+    const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status');
     if (error) {
-      console.error("Error fetching all installer zip assignments:", error);
-      toast.error("Failed to load all territory data for map.");
-      setAllInstallerZipAssignments([]); return [];
+      console.error("Error fetching all territory statuses:", error);
+      toast.error("Failed to load map territory statuses.");
+      return new Map();
     } else {
-      setAllInstallerZipAssignments(data || []); return data || [];
+      const statusMap = new Map<string, TerritoryStatus>();
+      // Prioritize 'Approved' status if a ZIP code has multiple entries
+      for (const item of data) {
+        if (item.zip_code) {
+          const existingStatus = statusMap.get(item.zip_code);
+          if (item.status === 'Approved' || !existingStatus) {
+            statusMap.set(item.zip_code, item.status as TerritoryStatus);
+          }
+        }
+      }
+      setTerritoryStatuses(statusMap);
+      return statusMap;
     }
   }, []);
 
@@ -187,13 +198,13 @@ const EditInstallerPage: React.FC = () => {
   useEffect(() => {
     const loadTerritoryData = async () => {
       if (installerId && currentInstaller) {
-        await fetchAllInstallerZipAssignments();
+        await fetchTerritoryStatuses();
         await fetchInstallerZipCodes(installerId);
         setLoading(false);
       }
     };
     loadTerritoryData();
-  }, [currentInstaller, installerId, fetchAllInstallerZipAssignments, fetchInstallerZipCodes]);
+  }, [currentInstaller, installerId, fetchTerritoryStatuses, fetchInstallerZipCodes]);
 
   const memoizedCenterLocation = useMemo(() => {
     if (currentInstaller?.latitude != null && currentInstaller?.longitude != null) {
@@ -482,7 +493,7 @@ const EditInstallerPage: React.FC = () => {
       if (upsertError) throw new Error(`Failed to upsert territories: ${upsertError.message}`);
       importedCount = territoriesToUpsert.length;
       toast.success(`Successfully imported ${importedCount} territories. ${skippedCount > 0 ? `${skippedCount} rows skipped.` : ''}`, { id: loadingToastId, duration: 5000 });
-      await fetchAllInstallerZipAssignments();
+      await fetchTerritoryStatuses();
       await fetchInstallerZipCodes(installerId);
     } catch (err: any) {
       console.error("Error during territory import:", err);
@@ -631,7 +642,7 @@ const EditInstallerPage: React.FC = () => {
                 </div>
               </div>
               <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border">
-                <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} existingTerritories={allInstallerZipAssignments} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={bulkActionType !== null} onBulkSelectionComplete={handleBulkSelectionComplete} />
+                <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={bulkActionType !== null} onBulkSelectionComplete={handleBulkSelectionComplete} />
               </div>
               <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them to this installer. In bulk select mode, click and drag to select multiple ZIP codes.</p>
               <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
@@ -641,7 +652,7 @@ const EditInstallerPage: React.FC = () => {
                   <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor="list-radius-all">All</Label></div>
                 </RadioGroup>
               </div>
-              <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} allTerritories={allInstallerZipAssignments} onZipCodeClick={handleMapZipCodeClick} mapClickStates={highlightedZipCodes} installerLocation={memoizedCenterLocation} listDisplayRadius={listDisplayRadius} />
+              <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} onZipCodeClick={handleMapZipCodeClick} mapClickStates={highlightedZipCodes} installerLocation={memoizedCenterLocation} listDisplayRadius={listDisplayRadius} />
             </div>
           ) : (<div className="col-span-full mt-6 text-center text-gray-500"><p>Map not available: Installer address does not have valid coordinates.</p><p className="text-sm">Please ensure address fields are complete and valid to enable map functionality.</p></div>)
         ) : (<div className="col-span-full mt-6 text-center text-red-500"><p>You do not have permission to manage territories.</p></div>)}
