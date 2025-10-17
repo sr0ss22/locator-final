@@ -17,7 +17,7 @@ const InstallerSearch: React.FC<InstallerSearchProps> = ({ onSearch }) => {
   };
 
   return (
-    <div className="flex w-full max-w-sm items-center space-x-2">
+    <div className="flex w-full max-w-sm items-center space-x-2 pt-1">
       <Input
         type="text"
         placeholder={`Enter City, State, or ${postalCodeLabel}`}
