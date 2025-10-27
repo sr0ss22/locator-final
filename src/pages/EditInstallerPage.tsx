@@ -526,7 +526,15 @@ const EditInstallerPage: React.FC = () => {
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.setAttribute("download", `installer_${currentInstaller?.name.replace(/\s/g, '_') || 'unknown'}_territories.csv`);
+      
+      const sanitize = (str: string | number | null | undefined) => String(str || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      const vendorNumber = sanitize(formData.installer_vendor_id) || 'NoVendorID';
+      const nameParts = (formData.name || 'Unknown Installer').split(' ');
+      const firstName = sanitize(nameParts[0]);
+      const lastName = sanitize(nameParts.slice(1).join(' '));
+      const filename = `${vendorNumber}_${firstName}_${lastName}_territories.csv`;
+
+      link.setAttribute("download", filename);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

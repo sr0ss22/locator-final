@@ -420,7 +420,15 @@ const InstallerManagement: React.FC = () => {
         const row: { [key: string]: any } = {};
         columns.filter(col => visibleColumns.has(col.key) && col.key !== 'actions').forEach(column => {
           let value;
-          if (column.key === 'address') {
+          if (column.key === 'zipCode') {
+            const postalCode = rawInstaller.postalcode;
+            const country = rawInstaller.country?.toUpperCase();
+            if (postalCode && (country === 'USA' || country === 'US')) {
+              value = `="${postalCode}"`; // Format as text for Excel
+            } else {
+              value = postalCode;
+            }
+          } else if (column.key === 'address') {
             value = `${rawInstaller.address1 || ''} ${rawInstaller.add2 || ''}, ${rawInstaller.city || ''}, ${rawInstaller.state || ''} ${rawInstaller.postalcode || ''}`.trim();
           } else if (column.accessor) {
             const tempInstaller: Installer = {
