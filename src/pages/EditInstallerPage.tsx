@@ -521,7 +521,11 @@ const EditInstallerPage: React.FC = () => {
       const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', installerId);
       if (error) throw new Error(`Supabase Fetch Error: ${error.message}`);
       if (!data || data.length === 0) { toast.info("No territories found for this installer to export.", { id: loadingToastId }); return; }
-      const dataToExport = data.map(item => ({ ZipCode: item.zip_code, Status: item.status, StateProvince: item.state_province }));
+      const dataToExport = data.map(item => ({
+        'State/Province': item.state_province,
+        'ZIP Code': item.zip_code,
+        'Status': item.status
+      }));
       const csv = Papa.unparse(dataToExport);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
