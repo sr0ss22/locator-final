@@ -534,7 +534,7 @@ const EditInstallerPage: React.FC = () => {
         };
         return {
           'State/Province': item.state_province,
-          'ZIP Code': `="${item.zip_code}"`,
+          'ZIP Code': item.zip_code,
           'Status': statusMap[item.status as TerritoryStatus] || item.status
         };
       });
