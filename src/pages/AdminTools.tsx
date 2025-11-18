@@ -24,6 +24,7 @@ const AdminToolsPage: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
   const [assigningTerritories, setAssigningTerritories] = useState(false);
+  const [updatingStates, setUpdatingStates] = useState(false);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -121,6 +122,22 @@ const AdminToolsPage: React.FC = () => {
     setAssigningTerritories(false);
   };
 
+  const handleUpdateZipStates = async () => {
+    setUpdatingStates(true);
+    const loadingToastId = toast.loading("Updating state data for all US territories based on ZIP code ranges...");
+
+    const { data, error } = await supabase.rpc('update_zip_code_states');
+
+    if (error) {
+        console.error("Error updating ZIP states:", error);
+        toast.error(`An error occurred: ${error.message}`, { id: loadingToastId });
+    } else {
+        toast.success(data, { id: loadingToastId, duration: 8000 });
+    }
+
+    setUpdatingStates(false);
+  };
+
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between gap-4 mb-8">
@@ -134,7 +151,7 @@ const AdminToolsPage: React.FC = () => {
           <LogOut className="h-4 w-4 mr-2" /> Log Out
         </Button>
       </div>
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Populate Geometries from Local Files</CardTitle>
@@ -154,11 +171,11 @@ const AdminToolsPage: React.FC = () => {
             )}
           </CardContent>
           <CardFooter className="flex gap-4">
-            <Button onClick={() => handleProcessGeoJson('USA')} disabled={processing || assigningTerritories}>
+            <Button onClick={() => handleProcessGeoJson('USA')} disabled={processing || assigningTerritories || updatingStates}>
               {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Process US Data
             </Button>
-            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={processing || assigningTerritories}>
+            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={processing || assigningTerritories || updatingStates}>
               {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Process Canada Data
             </Button>
@@ -177,9 +194,28 @@ const AdminToolsPage: React.FC = () => {
             </p>
           </CardContent>
           <CardFooter>
-            <Button onClick={handleAutoAssignTerritories} disabled={assigningTerritories || processing}>
+            <Button onClick={handleAutoAssignTerritories} disabled={assigningTerritories || processing || updatingStates}>
               {assigningTerritories ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Assign Territories (25-mile radius)
+            </Button>
+          </CardFooter>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Update Territory States</CardTitle>
+            <CardDescription>
+              Corrects the 'State/Province' for all US territories based on their ZIP code prefix. This uses the standard USPS ZIP code ranges.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-destructive">
+              <strong>Warning:</strong> This will overwrite existing state data for all US ZIP code assignments. This process cannot be undone.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={handleUpdateZipStates} disabled={updatingStates || processing || assigningTerritories}>
+              {updatingStates ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+              Update All US Territory States
             </Button>
           </CardFooter>
         </Card>
