@@ -487,12 +487,18 @@ const EditInstallerPage: React.FC = () => {
         toast.success("Existing territories cleared.", { id: loadingToastId });
       }
       const territoriesToUpsert: any[] = [];
-      const validStatuses: TerritoryStatus[] = ["Approved", "Needs Approval"];
+      const statusMap: { [key: string]: TerritoryStatus } = {
+        'Free_Mileage': 'Approved',
+        'Paid_Mileage': 'Needs Approval',
+        'Approved': 'Approved',
+        'Needs Approval': 'Needs Approval'
+      };
       for (const row of data) {
-        const zipCode = row.ZipCode?.trim(), status = row.Status?.trim(), stateProvince = row.StateProvince?.trim();
-        if (!zipCode || !status || !stateProvince) { skippedCount++; continue; }
-        if (!validStatuses.includes(status as TerritoryStatus)) { skippedCount++; continue; }
-        territoriesToUpsert.push({ installer_id: installerId, zip_code: zipCode, status: status as TerritoryStatus, state_province: stateProvince });
+        const zipCode = row.ZipCode?.trim(), statusRaw = row.Status?.trim(), stateProvince = row.StateProvince?.trim();
+        if (!zipCode || !statusRaw || !stateProvince) { skippedCount++; continue; }
+        const status = statusMap[statusRaw];
+        if (!status) { skippedCount++; continue; }
+        territoriesToUpsert.push({ installer_id: installerId, zip_code: zipCode, status: status, state_province: stateProvince });
       }
       if (territoriesToUpsert.length === 0) {
         toast.info("No valid territories found in the CSV to import.", { id: loadingToastId });
@@ -521,11 +527,17 @@ const EditInstallerPage: React.FC = () => {
       const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', installerId);
       if (error) throw new Error(`Supabase Fetch Error: ${error.message}`);
       if (!data || data.length === 0) { toast.info("No territories found for this installer to export.", { id: loadingToastId }); return; }
-      const dataToExport = data.map(item => ({
-        'State/Province': item.state_province,
-        'ZIP Code': item.zip_code,
-        'Status': item.status
-      }));
+      const dataToExport = data.map(item => {
+        const statusMap: { [key in TerritoryStatus]: string } = {
+          'Approved': 'Free_Mileage',
+          'Needs Approval': 'Paid_Mileage'
+        };
+        return {
+          'State/Province': item.state_province,
+          'ZIP Code': `="${item.zip_code}"`,
+          'Status': statusMap[item.status as TerritoryStatus] || item.status
+        };
+      });
       const csv = Papa.unparse(dataToExport);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
