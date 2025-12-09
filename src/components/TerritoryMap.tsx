@@ -442,7 +442,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     }
 
-    return { fillColor, weight, opacity: 1, color, fillOpacity, interactive: true };
+    return { fillColor, weight, opacity: 0.6, color, fillOpacity, interactive: true };
   }, [
     territoryStatuses,
     highlightedZipCodes,
