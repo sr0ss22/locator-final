@@ -395,22 +395,22 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     // Default style for unassigned zips on any page
     let fillColor = '#F0F0F0';
     let color = '#94a3b8'; // gray
-    let weight = 1;
+    let weight = 1.5;
     let fillOpacity = 0; // Default to no fill for non-selected polygons
-    let opacity = 0.6; // Default border opacity
+    let opacity = 0.25; // Default border opacity
 
     if (highlightState === 'green') { // 'Approved' for current installer on Edit page
       color = '#22C55E';
       fillColor = '#DCFCE7';
-      weight = 1; 
+      weight = 1.5; 
       fillOpacity = 0.15; 
-      opacity = 1;
+      opacity = 0.25;
     } else if (highlightState === 'orange') { // 'Needs Approval' for current installer on Edit page
       color = '#F97316';
       fillColor = '#FFEDD5';
-      weight = 1; 
+      weight = 1.5; 
       fillOpacity = 0.15; 
-      opacity = 1;
+      opacity = 0.25;
     } else {
       // This block handles polygons not actively selected for the current installer on the Edit page,
       // OR all polygons on the main Territory Management page.
@@ -422,14 +422,14 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           fillColor = '#D4EDDA';
           fillOpacity = 0.15;
           color = '#22C55E';
-          weight = 1;
-          opacity = 1;
+          weight = 1.5;
+          opacity = 0.25;
         } else if (assignedStatus === 'Needs Approval') {
           fillColor = '#FFF3CD';
           fillOpacity = 0.15;
           color = '#F97316';
-          weight = 1;
-          opacity = 1;
+          weight = 1.5;
+          opacity = 0.25;
         }
         // Unassigned territories will use the default gray border and fillOpacity of 0.
       } else {
@@ -438,12 +438,12 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         // We can still give a subtle border hint about status.
         if (assignedStatus === 'Approved') {
           color = '#a7f3d0'; // Lighter green for background territories
-          weight = 0.5;
-          opacity = 1;
+          weight = 1;
+          opacity = 0.25;
         } else if (assignedStatus === 'Needs Approval') {
           color = '#fed7aa'; // Lighter orange for background territories
-          weight = 0.5;
-          opacity = 1;
+          weight = 1;
+          opacity = 0.25;
         }
         // Unassigned territories will use the default gray border and no fill.
       }
