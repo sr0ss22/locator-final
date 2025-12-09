@@ -402,12 +402,12 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       color = '#22C55E';
       fillColor = '#DCFCE7';
       weight = 1; 
-      fillOpacity = 0.15; 
+      fillOpacity = 0.05; 
     } else if (highlightState === 'orange') { // 'Needs Approval' for current installer on Edit page
       color = '#F97316';
       fillColor = '#FFEDD5';
       weight = 1; 
-      fillOpacity = 0.15; 
+      fillOpacity = 0.05; 
     } else {
       // This block handles polygons not actively selected for the current installer on the Edit page,
       // OR all polygons on the main Territory Management page.
