@@ -390,44 +390,55 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
     const zipCode = getPostalCode(feature, isCanada);
-    
     const highlightState = highlightedZipCodes.get(zipCode);
+
+    // Default style for unassigned zips on any page
     let fillColor = '#F0F0F0';
     let color = '#60A5FA';
     let weight = 1;
-    let fillOpacity = 0.3;
+    let fillOpacity = 0; // Default to no fill for non-selected polygons
 
-    if (highlightState === 'green') {
+    if (highlightState === 'green') { // 'Approved' for current installer on Edit page
       color = '#22C55E';
       fillColor = '#DCFCE7';
-      weight = 3;
-      fillOpacity = 0.8;
-    } else if (highlightState === 'orange') {
+      weight = 1.5; // Half of original 3
+      fillOpacity = 0.4; // Half of original 0.8
+    } else if (highlightState === 'orange') { // 'Needs Approval' for current installer on Edit page
       color = '#F97316';
       fillColor = '#FFEDD5';
-      weight = 3;
-      fillOpacity = 0.8;
+      weight = 1.5; // Half of original 3
+      fillOpacity = 0.4; // Half of original 0.8
     } else {
-      let assignedStatus: TerritoryStatus | null = null;
-      if (!isTerritoryManagementPage) {
-        const selectedZip = selectedZipCodes.find(item => item.zipCode === zipCode);
-        if (selectedZip) {
-          assignedStatus = selectedZip.assignedStatus;
-        } else {
-          assignedStatus = territoryStatuses.get(zipCode) || null;
-        }
-      } else {
-        assignedStatus = territoryStatuses.get(zipCode) || null;
-      }
+      // This block handles polygons not actively selected for the current installer on the Edit page,
+      // OR all polygons on the main Territory Management page.
+      const assignedStatus = territoryStatuses.get(zipCode) || null;
 
-      if (assignedStatus === 'Approved') {
-        fillColor = '#D4EDDA';
-        fillOpacity = 0.4;
-        weight = 1.5;
-      } else if (assignedStatus === 'Needs Approval') {
-        fillColor = '#FFF3CD';
-        fillOpacity = 0.4;
-        weight = 1.5;
+      if (isTerritoryManagementPage) {
+        // On Territory Management page, we want fills to show status across all installers
+        if (assignedStatus === 'Approved') {
+          fillColor = '#D4EDDA';
+          fillOpacity = 0.4;
+          color = '#22C55E';
+          weight = 1;
+        } else if (assignedStatus === 'Needs Approval') {
+          fillColor = '#FFF3CD';
+          fillOpacity = 0.4;
+          color = '#F97316';
+          weight = 1;
+        }
+        // Unassigned territories will use the default blue border and fillOpacity of 0.
+      } else {
+        // On Edit Installer Page, for zips not selected for *this* installer.
+        // User wants no fill. The default fillOpacity=0 handles this.
+        // We can still give a subtle border hint about status.
+        if (assignedStatus === 'Approved') {
+          color = '#a7f3d0'; // Lighter green for background territories
+          weight = 0.5;
+        } else if (assignedStatus === 'Needs Approval') {
+          color = '#fed7aa'; // Lighter orange for background territories
+          weight = 0.5;
+        }
+        // Unassigned territories will use the default blue border and no fill.
       }
     }
 
@@ -437,7 +448,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     highlightedZipCodes,
     isCanada,
     isTerritoryManagementPage,
-    selectedZipCodes,
   ]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
