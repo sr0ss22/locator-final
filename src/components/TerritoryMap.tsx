@@ -394,20 +394,23 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     // Default style for unassigned zips on any page
     let fillColor = '#F0F0F0';
-    let color = '#94a3b8'; // Changed from blue to gray
+    let color = '#94a3b8'; // gray
     let weight = 1;
     let fillOpacity = 0; // Default to no fill for non-selected polygons
+    let opacity = 0.6; // Default border opacity
 
     if (highlightState === 'green') { // 'Approved' for current installer on Edit page
       color = '#22C55E';
       fillColor = '#DCFCE7';
       weight = 1; 
-      fillOpacity = 0.05; 
+      fillOpacity = 0.15; 
+      opacity = 1;
     } else if (highlightState === 'orange') { // 'Needs Approval' for current installer on Edit page
       color = '#F97316';
       fillColor = '#FFEDD5';
       weight = 1; 
-      fillOpacity = 0.05; 
+      fillOpacity = 0.15; 
+      opacity = 1;
     } else {
       // This block handles polygons not actively selected for the current installer on the Edit page,
       // OR all polygons on the main Territory Management page.
@@ -417,14 +420,16 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         // On Territory Management page, we want fills to show status across all installers
         if (assignedStatus === 'Approved') {
           fillColor = '#D4EDDA';
-          fillOpacity = 0.4;
+          fillOpacity = 0.15;
           color = '#22C55E';
           weight = 1;
+          opacity = 1;
         } else if (assignedStatus === 'Needs Approval') {
           fillColor = '#FFF3CD';
-          fillOpacity = 0.4;
+          fillOpacity = 0.15;
           color = '#F97316';
           weight = 1;
+          opacity = 1;
         }
         // Unassigned territories will use the default gray border and fillOpacity of 0.
       } else {
@@ -434,15 +439,17 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         if (assignedStatus === 'Approved') {
           color = '#a7f3d0'; // Lighter green for background territories
           weight = 0.5;
+          opacity = 1;
         } else if (assignedStatus === 'Needs Approval') {
           color = '#fed7aa'; // Lighter orange for background territories
           weight = 0.5;
+          opacity = 1;
         }
         // Unassigned territories will use the default gray border and no fill.
       }
     }
 
-    return { fillColor, weight, opacity: 0.6, color, fillOpacity, interactive: true };
+    return { fillColor, weight, opacity, color, fillOpacity, interactive: true };
   }, [
     territoryStatuses,
     highlightedZipCodes,
