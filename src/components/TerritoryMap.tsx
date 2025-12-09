@@ -397,7 +397,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     let color = '#94a3b8'; // gray
     let weight = 1.5;
     let fillOpacity = 0; // Default to no fill for non-selected polygons
-    let opacity = 0.5; // Default border opacity
+    let opacity = 0.3; // Default border opacity
 
     if (highlightState === 'green') { // 'Approved' for current installer on Edit page
       color = '#22C55E';
