@@ -394,7 +394,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     // Default style for unassigned zips on any page
     let fillColor = '#F0F0F0';
-    let color = '#60A5FA';
+    let color = '#94a3b8'; // Changed from blue to gray
     let weight = 1;
     let fillOpacity = 0; // Default to no fill for non-selected polygons
 
@@ -426,7 +426,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           color = '#F97316';
           weight = 1;
         }
-        // Unassigned territories will use the default blue border and fillOpacity of 0.
+        // Unassigned territories will use the default gray border and fillOpacity of 0.
       } else {
         // On Edit Installer Page, for zips not selected for *this* installer.
         // User wants no fill. The default fillOpacity=0 handles this.
@@ -438,7 +438,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           color = '#fed7aa'; // Lighter orange for background territories
           weight = 0.5;
         }
-        // Unassigned territories will use the default blue border and no fill.
+        // Unassigned territories will use the default gray border and no fill.
       }
     }
 
@@ -551,15 +551,15 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           <div className="bg-white p-3 rounded-lg shadow-md flex flex-col space-y-2 text-sm">
             <div className="font-semibold mb-1">Territory Status</div>
             <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: '#D4EDDA', border: '1px solid #2563EB' }}></div>
+              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: '#D4EDDA', border: '1px solid #94a3b8' }}></div>
               <span>Approved (by any installer)</span>
             </div>
             <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: '#FFF3CD', border: '1px solid #2563EB' }}></div>
+              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: '#FFF3CD', border: '1px solid #94a3b8' }}></div>
               <span>Needs Approval (by any installer)</span>
             </div>
             <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: '#F0F0F0', border: '1px solid #2563EB' }}></div>
+              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: '#F0F0F0', border: '1px solid #94a3b8' }}></div>
               <span>Unassigned</span>
             </div>
           </div>
