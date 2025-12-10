@@ -101,13 +101,3 @@
     @apply bg-background text-foreground;
   }
 }
-
-@layer components {
-  .switch-active[data-state='checked'] {
-    @apply bg-green-600;
-  }
-
-  .switch-inactive[data-state='unchecked'] {
-    @apply bg-destructive;
-  }
-}

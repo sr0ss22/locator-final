@@ -61,6 +61,9 @@ const EditInstallerPage: React.FC = () => {
   const { installerId } = useParams<{ installerId: string }>();
   const navigate = useNavigate();
   const [formData, setFormData] = useState<any>({});
+  const [initialFormData, setInitialFormData] = useState<any>(null);
+  const [initialSelectedMapZipCodes, setInitialSelectedMapZipCodes] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
@@ -138,7 +141,6 @@ const EditInstallerPage: React.FC = () => {
       return new Map();
     } else {
       const statusMap = new Map<string, TerritoryStatus>();
-      // Prioritize 'Approved' status if a ZIP code has multiple entries
       for (const item of data) {
         if (item.zip_code) {
           const existingStatus = statusMap.get(item.zip_code);
@@ -153,12 +155,12 @@ const EditInstallerPage: React.FC = () => {
   }, []);
 
   const fetchInstallerZipCodes = useCallback(async (id: string) => {
-    if (!id) { setSelectedMapZipCodes([]); return; }
+    if (!id) { return []; }
     const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', id);
     if (error) {
       console.error("Error fetching installer zip codes:", error);
       toast.error("Failed to load installer's assigned ZIP codes.");
-      setSelectedMapZipCodes([]);
+      return [];
     } else {
       const enrichedZips = (data || []).map(item => {
         const centroid = zipCodeCentroids.get(item.zip_code);
@@ -167,7 +169,7 @@ const EditInstallerPage: React.FC = () => {
           centroid_latitude: centroid?.lat || null, centroid_longitude: centroid?.lng || null,
         };
       });
-      setSelectedMapZipCodes(enrichedZips);
+      return enrichedZips;
     }
   }, [zipCodeCentroids]);
 
@@ -199,11 +201,15 @@ const EditInstallerPage: React.FC = () => {
       rawSupabaseData: installerData,
     };
     setFormData(installerData);
+    setInitialFormData(JSON.parse(JSON.stringify(installerData)));
     setCurrentInstaller(mappedInstaller);
     setErrors({});
 
     await fetchTerritoryStatuses();
-    await fetchInstallerZipCodes(installerId);
+    const enrichedZips = await fetchInstallerZipCodes(installerId);
+    setSelectedMapZipCodes(enrichedZips);
+    setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
+    setIsDirty(false);
 
     setLoading(false);
   }, [installerId, navigate, fetchTerritoryStatuses, fetchInstallerZipCodes]);
@@ -215,6 +221,17 @@ const EditInstallerPage: React.FC = () => {
       setLoading(false);
     }
   }, [installerId, sessionLoading, loadAllData]);
+
+  useEffect(() => {
+    if (loading || sessionLoading || !initialFormData) return;
+
+    const formDataChanged = JSON.stringify(formData) !== JSON.stringify(initialFormData);
+
+    const normalizeZips = (zips: any[]) => zips.map(({ zipCode, assignedStatus }) => ({ zipCode, assignedStatus })).sort((a, b) => a.zipCode.localeCompare(b.zipCode));
+    const zipCodesChanged = JSON.stringify(normalizeZips(selectedMapZipCodes)) !== JSON.stringify(normalizeZips(initialSelectedMapZipCodes));
+
+    setIsDirty(formDataChanged || zipCodesChanged);
+  }, [formData, selectedMapZipCodes, initialFormData, initialSelectedMapZipCodes, loading, sessionLoading]);
 
   const memoizedCenterLocation = useMemo(() => {
     if (currentInstaller?.latitude != null && currentInstaller?.longitude != null) {
@@ -601,11 +618,9 @@ const EditInstallerPage: React.FC = () => {
               <Switch
                 id="is_active"
                 checked={toBoolean(formData.is_active)}
-                onCheckedChange={(checked) => handleCheckboxChange('is_active', checked)}
+                onCheckedChange={(checked) => handleCheckboxChange('is_active', checked as boolean)}
                 disabled={!canEdit}
-                className={cn(
-                  toBoolean(formData.is_active) ? 'switch-active' : 'switch-inactive'
-                )}
+                className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-destructive"
               />
               <Label htmlFor="is_active" className={cn(
                 "font-semibold",
@@ -714,13 +729,13 @@ const EditInstallerPage: React.FC = () => {
         </div>
       </div>
       <ImportInstallerTerritoriesModal isOpen={isImportTerritoriesModalOpen} onClose={() => setIsImportTerritoriesModalOpen(false)} onImport={handleImportInstallerTerritories} loading={loading} />
-      {canEdit && (
-        <div className="sticky bottom-0 left-0 w-full z-10 bg-background/80 backdrop-blur-sm border-t border-border">
+      {isDirty && canEdit && (
+        <div className="sticky bottom-0 left-0 w-full z-[1000] bg-background/80 backdrop-blur-sm border-t border-border">
           <div className="container mx-auto p-4 flex justify-end gap-2">
             <Button variant="outline" onClick={() => navigate("/installers")} disabled={loading}>
               <XCircle className="mr-2 h-4 w-4" /> Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={loading}>
+            <Button onClick={handleSubmit} disabled={loading} className="bg-green-600 hover:bg-green-700">
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Changes
             </Button>
           </div>
