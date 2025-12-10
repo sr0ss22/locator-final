@@ -22,6 +22,7 @@ import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
 import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
+import { Switch } from "@/components/ui/switch";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -194,6 +195,7 @@ const EditInstallerPage: React.FC = () => {
       latitude: installerData.latitude, longitude: installerData.longitude,
       installerVendorId: installerData.installer_vendor_id?.toString(),
       acceptsShipments: toBoolean(installerData.shipment),
+      is_active: toBoolean(installerData.is_active),
       rawSupabaseData: installerData,
     };
     setFormData(installerData);
@@ -592,7 +594,26 @@ const EditInstallerPage: React.FC = () => {
         </div>
       </div>
       <div className="grid gap-6 py-4">
-        <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Contact & Address Information</h3>
+        <div className="flex justify-between items-center col-span-full mt-4 mb-2">
+          <h3 className="text-lg font-semibold">Contact & Address Information</h3>
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="is_active"
+              checked={toBoolean(formData.is_active)}
+              onCheckedChange={(checked) => handleCheckboxChange('is_active', checked)}
+              disabled={!canEdit}
+              className={cn(
+                toBoolean(formData.is_active) ? 'switch-active' : 'switch-inactive'
+              )}
+            />
+            <Label htmlFor="is_active" className={cn(
+              "font-semibold",
+              toBoolean(formData.is_active) ? 'text-green-700' : 'text-red-700'
+            )}>
+              {toBoolean(formData.is_active) ? 'Active' : 'Inactive'}
+            </Label>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
           {contactAddressFields.map((key) => (
             <div key={key} className="grid grid-cols-4 items-center gap-4">

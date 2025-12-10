@@ -14,6 +14,8 @@ import { Loader2, Save, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 interface AddInstallerModalProps {
   isOpen: boolean;
@@ -61,6 +63,7 @@ const defaultFormState = {
   tall_window: false, fixture_displays: false, outdoor: false, high_voltage_hardwired: false,
   pip_certification_level: "", shutter_certification_level: "", powerview_certification: "", draperies_certification_level: "",
   installer_vendor_id: "", shipment: false, star_rating: "", specialnote: "", comments: "",
+  is_active: true,
 };
 
 const AddInstallerModal: React.FC<AddInstallerModalProps> = ({ isOpen, onClose, onSave, loading }) => {
@@ -139,7 +142,26 @@ const AddInstallerModal: React.FC<AddInstallerModalProps> = ({ isOpen, onClose, 
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Add New Installer</DialogTitle></DialogHeader>
         <div className="grid gap-4 py-4">
-          <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Contact & Address Information</h3>
+          <div className="flex justify-between items-center col-span-full mt-4 mb-2">
+            <h3 className="text-lg font-semibold">Contact & Address Information</h3>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="is_active_add"
+                name="is_active"
+                checked={formData.is_active}
+                onCheckedChange={(checked) => handleCheckboxChange('is_active', checked as boolean)}
+                className={cn(
+                  formData.is_active ? 'switch-active' : 'switch-inactive'
+                )}
+              />
+              <Label htmlFor="is_active_add" className={cn(
+                "font-semibold",
+                formData.is_active ? 'text-green-700' : 'text-red-700'
+              )}>
+                {formData.is_active ? 'Active' : 'Inactive'}
+              </Label>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
             {contactAddressFields.map((key) => (
               <div key={key} className="grid grid-cols-4 items-center gap-4">
