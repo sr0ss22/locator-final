@@ -60,7 +60,7 @@ const PublicTerritoryEditor: React.FC = () => {
   const [mapDisplayRadius, setMapDisplayRadius] = useState<number | 'all'>(150);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
   const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
-  const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | null>(null);
+  const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | null>('approve');
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
 
   const installerCountry = useMemo(() => {
@@ -101,6 +101,12 @@ const PublicTerritoryEditor: React.FC = () => {
     add2: "Address Line 2", city: "City", state: "State", postalcode: installerCountry === 'Canada' ? 'Postal Code' : 'Zip Code',
     country: "Country",
   }), [installerCountry]);
+
+  useEffect(() => {
+    toast.info("Bulk Approve mode is active. Click and drag on the map to select territories.", {
+      duration: 6000,
+    });
+  }, []);
 
   const loadAllData = useCallback(async () => {
     if (!installerId || !token) {
@@ -154,6 +160,22 @@ const PublicTerritoryEditor: React.FC = () => {
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (isDirty) {
+        event.preventDefault();
+        // Standard for most browsers to show the confirmation dialog
+        event.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isDirty]);
 
   useEffect(() => {
     if (loading || !initialFormData) return;
