@@ -22,6 +22,7 @@ const TerritoryManagement = lazy(() => import("./pages/TerritoryManagement"));
 const EditInstallerPage = lazy(() => import("./pages/EditInstallerPage"));
 const ClaimProfilePage = lazy(() => import("./pages/ClaimProfile"));
 const AdminToolsPage = lazy(() => import("./pages/AdminTools"));
+const PublicTerritoryEditor = lazy(() => import("./pages/PublicTerritoryEditor"));
 
 const queryClient = new QueryClient();
 
@@ -46,6 +47,7 @@ const App = () => (
                 <Route path="/login" element={<Login />} />
                 <Route path="/public-locator" element={<PublicLocator />} />
                 <Route path="/update-password" element={<UpdatePassword />} />
+                <Route path="/territory-editor/:installerId/:token" element={<PublicTerritoryEditor />} />
 
                 {/* Special route for installers to claim their profile */}
                 <Route path="/claim-profile" element={<ClaimProfilePage />} />

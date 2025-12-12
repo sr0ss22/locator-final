@@ -318,7 +318,7 @@ const EditInstallerPage: React.FC = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const isAdmin = profile?.role === 'admin' && user?.email?.endsWith('@hunterdouglas.com');
+  const isAdmin = profile?.role === 'admin';
   const canEdit = isAdmin || (profile?.role === 'installer' && currentInstaller?.rawSupabaseData.account_id === profile.id);
 
   const handleSubmit = async () => {
@@ -582,6 +582,31 @@ const EditInstallerPage: React.FC = () => {
     }
   };
 
+  const handleCopyShareableLink = async () => {
+    if (!installerId) return;
+    const loadingToastId = toast.loading("Generating link...");
+    try {
+      const { data, error } = await supabase
+        .from('installers')
+        .select('territory_access_token')
+        .eq('id', installerId)
+        .single();
+
+      if (error || !data?.territory_access_token) {
+        throw new Error(error?.message || "Could not retrieve access token.");
+      }
+
+      const token = data.territory_access_token;
+      const url = `${window.location.origin}/territory-editor/${installerId}/${token}`;
+      
+      await navigator.clipboard.writeText(url);
+      toast.success("Sharable link copied to clipboard!", { id: loadingToastId });
+    } catch (err: any) {
+      console.error("Error generating shareable link:", err);
+      toast.error(`Failed to generate link: ${err.message}`, { id: loadingToastId });
+    }
+  };
+
   if (loading || sessionLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-500" /><p className="text-gray-500 ml-2">Loading installer data...</p></div>;
   }
@@ -602,9 +627,14 @@ const EditInstallerPage: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             {isAdmin && (
-              <Button variant="outline" onClick={handleClone} disabled={loading}>
-                <Copy className="mr-2 h-4 w-4" /> Clone
-              </Button>
+              <>
+                <Button variant="outline" onClick={handleCopyShareableLink} disabled={loading}>
+                  <Copy className="mr-2 h-4 w-4" /> Copy Sharable Link
+                </Button>
+                <Button variant="outline" onClick={handleClone} disabled={loading}>
+                  <Copy className="mr-2 h-4 w-4" /> Clone
+                </Button>
+              </>
             )}
             <Button variant="outline" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-2" /> Log Out
