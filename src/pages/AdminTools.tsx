@@ -3,9 +3,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Database, LogOut } from 'lucide-react';
+import { Loader2, ArrowLeft, Database, LogOut, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Progress } from '@/components/ui/progress';
+import Papa from "papaparse";
 
 // Import the local GeoJSON files
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
@@ -138,6 +139,54 @@ const AdminToolsPage: React.FC = () => {
     setUpdatingStates(false);
   };
 
+  const handleExportShareableLinks = async () => {
+    setProcessing(true);
+    const loadingToastId = toast.loading("Fetching installer data for export...");
+
+    try {
+      const { data, error } = await supabase
+        .from('installers')
+        .select('id, name, email, state, territory_access_token');
+
+      if (error) {
+        throw new Error(`Failed to fetch installers: ${error.message}`);
+      }
+
+      if (!data || data.length === 0) {
+        toast.info("No installers found to export.", { id: loadingToastId });
+        setProcessing(false);
+        return;
+      }
+
+      const dataToExport = data.map(installer => {
+        const shareableLink = `${window.location.origin}/territory-editor/${installer.id}/${installer.territory_access_token}`;
+        return {
+          Name: installer.name,
+          Email: installer.email,
+          State: installer.state,
+          'Shareable Link': shareableLink,
+        };
+      });
+
+      const csv = Papa.unparse(dataToExport);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute("download", "installer_shareable_links.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success("Shareable links exported successfully!", { id: loadingToastId });
+
+    } catch (err: any) {
+      console.error("Error exporting shareable links:", err);
+      toast.error(`Export failed: ${err.message}`, { id: loadingToastId });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between gap-4 mb-8">
@@ -216,6 +265,25 @@ const AdminToolsPage: React.FC = () => {
             <Button onClick={handleUpdateZipStates} disabled={updatingStates || processing || assigningTerritories}>
               {updatingStates ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Update All US Territory States
+            </Button>
+          </CardFooter>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Export Sharable Links</CardTitle>
+            <CardDescription>
+              Export a CSV file containing the name, email, state, and unique territory editor link for every installer in the database.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600">
+              This file is useful for distributing territory management links to installers in bulk.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={handleExportShareableLinks} disabled={processing || assigningTerritories || updatingStates}>
+              {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Export Links
             </Button>
           </CardFooter>
         </Card>
