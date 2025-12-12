@@ -27,27 +27,6 @@ const toBoolean = (value: any): boolean => {
   return value === 1 || value === true;
 };
 
-const contactAddressFields = ["name", "email", "primary_phone", "secondary_phone", "address1", "add2", "city", "state", "postalcode", "country"];
-const brandCheckboxes = [
-  { key: "hunter_douglas", label: "Hunter Douglas" }, { key: "alta", label: "Alta" }, { key: "carole", label: "Carole" },
-  { key: "architectural", label: "Architectural" }, { key: "levolor", label: "Levolor" }, { key: "three_day_blinds", label: "Three Day Blinds" },
-];
-const productSkillCheckboxes = [
-  { key: "blinds_and_shades", label: "Blinds & Shades" }, { key: "shutters", label: "Shutters" }, { key: "draperies", label: "Drapery" },
-  { key: "power_view", label: "Automation" }, { key: "service_call", label: "Service Call" }, { key: "tall_window", label: "Tall Window" },
-  { key: "fixture_displays", label: "Fixture Displays" }, { key: "outdoor", label: "Outdoor" }, { key: "high_voltage_hardwired", label: "High Voltage Hardwired" },
-];
-const certificationCheckboxes = [
-  { label: "Motorization Pro Certified", dbColumn: "powerview_certification", value: "Motorization Pro" },
-  { label: "ShutterPro Certified", dbColumn: "shutter_certification_level", value: "ShutterPro Certified" },
-  { label: "Master Shutter", dbColumn: "shutter_certification_level", value: "Master Shutter" },
-  { label: "Master Installer", dbColumn: "pip_certification_level", value: "Master Installer" },
-  { label: "Certified Installer", dbColumn: "pip_certification_level", value: "Certified Installer" },
-  { label: "Drapery Certified", dbColumn: "draperies_certification_level", value: "Drapery Certified" },
-];
-const otherFields = ["installer_vendor_id", "star_rating", "shipment"];
-const textAreaFields = ["comments", "specialnote"];
-
 const PublicTerritoryEditor: React.FC = () => {
   const { installerId, token } = useParams<{ installerId: string; token: string }>();
   const navigate = useNavigate();
@@ -95,12 +74,6 @@ const PublicTerritoryEditor: React.FC = () => {
     }
     return map;
   }, [installerCountry]);
-
-  const columnDisplayNames: { [key: string]: string } = useMemo(() => ({
-    name: "Name", email: "Email", primary_phone: "Phone", secondary_phone: "Secondary Phone", address1: "Address Line 1",
-    add2: "Address Line 2", city: "City", state: "State", postalcode: installerCountry === 'Canada' ? 'Postal Code' : 'Zip Code',
-    country: "Country",
-  }), [installerCountry]);
 
   useEffect(() => {
     toast.info("Bulk Approve mode is active. Click and drag on the map to select territories.", {
@@ -285,18 +258,12 @@ const PublicTerritoryEditor: React.FC = () => {
     <>
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-24">
         <div className="flex items-center justify-between gap-4 mb-8">
-          <h1 className="text-2xl font-bold text-gray-700">Territory Editor: {currentInstaller.name}</h1>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-700">Territory Editor: {currentInstaller.name}</h1>
+            {currentInstaller.email && <p className="text-md text-gray-500">{currentInstaller.email}</p>}
+          </div>
         </div>
         <div className="grid gap-6 py-4">
-          <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Contact & Address Information (Read-Only)</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
-            {contactAddressFields.map((key) => (
-              <div key={key} className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor={key} className="text-right">{columnDisplayNames[key] || key.replace(/_/g, ' ')}:</Label>
-                <Input id={key} name={key} value={formData[key] ?? ''} className="col-span-3" type="text" disabled />
-              </div>
-            ))}
-          </div>
           <div className="col-span-full mt-6">
             <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
             <div className="flex flex-wrap justify-between gap-2 mb-4">
@@ -313,7 +280,7 @@ const PublicTerritoryEditor: React.FC = () => {
             <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
               <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
               <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
-                {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
+                {['0-25', '25-50', '50-75', '75-100', '100-125', '150+'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
                 <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
               </RadioGroup>
             </div>
