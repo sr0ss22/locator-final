@@ -10,11 +10,11 @@ import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 
-// Import both GeoJSON files from the new src/data directory with import assertions
+// Import both GeoJSON files
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
 import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
 
-// Fix for default Leaflet icons with Webpack/Vite
+// Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
@@ -29,20 +29,20 @@ L.Icon.Default.mergeOptions({
 interface TerritoryMapProps {
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   centerLocation?: { lat: number | null; lng: number | null };
-  isOpen?: boolean; // True if used in a modal/drawer (e.g., EditInstallerPage), false for full page (e.g., TerritoryManagement)
-  territoryStatuses?: Map<string, TerritoryStatus>; // All territories for any page, optimized
-  selectedZipCodes?: Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>; // Selected zips for current installer (EditInstallerPage)
-  currentDisplayRadius?: number | 'all'; // Radius for filtering displayed polygons (EditInstallerPage)
-  showRadiusCircles?: boolean; // Whether to show radius circles around centerLocation
-  highlightedZipCodes: Map<string, 'green' | 'orange'>; // Zips highlighted by user interaction (e.g., bulk select)
-  isBulkSelecting?: boolean; // Whether bulk selection mode is active
+  isOpen?: boolean;
+  territoryStatuses?: Map<string, TerritoryStatus>;
+  selectedZipCodes?: Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>;
+  currentDisplayRadius?: number | 'all';
+  showRadiusCircles?: boolean;
+  highlightedZipCodes: Map<string, 'green' | 'orange'>;
+  isBulkSelecting?: boolean;
   onBulkSelectionComplete?: (selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void;
-  country?: 'USA' | 'Canada'; // New prop for country awareness
+  country?: 'USA' | 'Canada';
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
 
-// Define projections at the top of the file
+// Define projections
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
 
@@ -58,7 +58,6 @@ const getRegion = (feature: any, isCanada: boolean): string => {
   return isCanada ? feature.properties.PRNAME : (feature.properties.STUSPS || 'Unknown');
 };
 
-// Helper to get centroid from GeoJSON feature (used for filtering/bulk selection)
 const getCentroid = (feature: any): { lat: number | null, lng: number | null } => {
     if (feature && feature.properties && feature.properties.calculated_centroid) {
         return feature.properties.calculated_centroid;
@@ -66,13 +65,11 @@ const getCentroid = (feature: any): { lat: number | null, lng: number | null } =
     return { lat: null, lng: null };
 };
 
-// Helper to check if a point (lat, lng) is inside a circle (centerLat, centerLng, radiusMeters)
 function isPointInCircle(pointLat: number, pointLng: number, circleCenterLat: number, circleCenterLng: number, circleRadiusMeters: number): boolean {
   const distanceMiles = calculateDistance(pointLat, pointLng, circleCenterLat, circleCenterLng);
-  return (distanceMiles * 1609.34) <= circleRadiusMeters; // Convert miles to meters for comparison
+  return (distanceMiles * 1609.34) <= circleRadiusMeters;
 }
 
-// Custom icon for installer location (star)
 const createStarIcon = () => L.divIcon({
   html: `<div class="relative flex items-center justify-center" style="width: 40px; height: 40px;">
           <svg stroke="currentColor" fill="#3b82f6" stroke-width="0" viewBox="0 0 24 24" height="40px" width="40px" xmlns="http://www.w3.org/2000/svg">
@@ -81,11 +78,10 @@ const createStarIcon = () => L.divIcon({
         </div>`,
   className: 'custom-div-icon',
   iconSize: [40, 40],
-  iconAnchor: [20, 40], // Anchor at the bottom center of the star
-  popupAnchor: [0, -35], // Adjust popup to appear above the star
+  iconAnchor: [20, 40],
+  popupAnchor: [0, -35],
 });
 
-// Component to handle map view updates (bounds, zoom, etc.)
 function MapUpdater({ centerLocation, isOpen, country }: {
   centerLocation?: { lat: number | null; lng: number | null };
   isOpen: boolean;
@@ -104,14 +100,18 @@ function MapUpdater({ centerLocation, isOpen, country }: {
     if (centerLocation?.lat != null && centerLocation?.lng != null) {
       map.setView([centerLocation.lat, centerLocation.lng], 10);
     } else {
-      map.setView(country === 'Canada' ? [56.1304, -106.3468] : [39.8283, -98.5795], country === 'Canada' ? 3 : 4);
+      // Default views
+      if (country === 'Canada') {
+        map.setView([56.1304, -106.3468], 3);
+      } else {
+        map.setView([39.8283, -98.5795], 4);
+      }
     }
   }, [map, centerLocation, country]);
 
   return null;
 }
 
-// Component to handle bulk selection interactions
 function MapInteractionHandler({
   isBulkSelecting,
   geoJsonData,
@@ -220,6 +220,7 @@ function MapInteractionHandler({
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
       
+      // Re-enable everything on cleanup
       if (map.dragging && !map.dragging.enabled()) map.dragging.enable();
       if (map.doubleClickZoom && !map.doubleClickZoom.enabled()) map.doubleClickZoom.enable();
       if (map.scrollWheelZoom && !map.scrollWheelZoom.enabled()) map.scrollWheelZoom.enable();
@@ -237,30 +238,22 @@ function MapInteractionHandler({
   return null;
 }
 
-// New component for radius circles with labels
 interface RadiusCircleWithLabelProps {
   center: L.LatLngExpression;
-  radiusMiles: number; // Original radius in miles
+  radiusMiles: number;
   pathOptions: L.PathOptions;
-  distanceUnit: 'miles' | 'km'; // Unit for display
+  distanceUnit: 'miles' | 'km';
 }
 
 const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, radiusMiles, pathOptions, distanceUnit }) => {
   const [lat, lng] = Array.isArray(center) ? center : [center.lat, center.lng];
-
-  const radiusMeters = radiusMiles * 1609.34; // Convert miles to meters for Leaflet Circle
-
-  // Approximate conversion of meters to degrees latitude for label placement
-  // 1 degree of latitude is approximately 111,139 meters
+  const radiusMeters = radiusMiles * 1609.34;
   const latOffsetDegrees = radiusMeters / 111139;
-  const labelLat = lat + latOffsetDegrees; // Place label at the top of the circle
-
+  const labelLat = lat + latOffsetDegrees;
   const displayRadius = distanceUnit === 'km' ? (radiusMiles * 1.60934).toFixed(0) : radiusMiles.toFixed(0);
   const labelText = `${displayRadius} ${distanceUnit}`;
-
-  // The text color should be a darker gray, background light gray, no border
-  const textColor = '#333333'; // Darker gray for text
-  const badgeBgColor = '#F0F0F0'; // Light gray background
+  const textColor = '#333333';
+  const badgeBgColor = '#F0F0F0';
 
   const labelIcon = L.divIcon({
     html: `<div class="flex items-center justify-center">
@@ -269,8 +262,8 @@ const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, r
             </span>
           </div>`,
     className: 'custom-radius-label-icon',
-    iconSize: [labelText.length * 8 + 20, 20], // Estimate size based on text length
-    iconAnchor: [labelText.length * 4 + 10, 10], // Center the icon
+    iconSize: [labelText.length * 8 + 20, 20],
+    iconAnchor: [labelText.length * 4 + 10, 10],
   });
 
   return (
@@ -280,7 +273,6 @@ const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, r
     </>
   );
 };
-
 
 const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onZipCodeClick,
@@ -298,7 +290,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [loadingGeoJson, setLoadingGeoJson] = useState(true);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
-  const { distanceUnit } = useCountrySettings(); // Use useCountrySettings to get distance unit
+  const { distanceUnit } = useCountrySettings();
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
@@ -311,9 +303,37 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   useEffect(() => {
     setLoadingGeoJson(true);
     const featuresToLoad = isCanada ? canadaGeoJson.features : usGeoJson.features;
+    
+    // Check if we have features
+    if (!featuresToLoad || featuresToLoad.length === 0) {
+      console.warn("No features found for map in", country);
+      setLoadingGeoJson(false);
+      return;
+    }
+
+    // Heuristic to check if reprojection is needed
+    // Check the first coordinate of the first feature's geometry
+    let needsReprojection = false;
+    const sampleFeature = featuresToLoad[0];
+    if (sampleFeature && sampleFeature.geometry && sampleFeature.geometry.coordinates) {
+      // Drill down to a coordinate pair
+      const findCoord = (coords: any): any => {
+        if (typeof coords[0] === 'number') return coords;
+        return findCoord(coords[0]);
+      };
+      const sampleCoord = findCoord(sampleFeature.geometry.coordinates);
+      // If coordinates are large (e.g. > 180 or < -180), they are likely Web Mercator (meters)
+      if (Math.abs(sampleCoord[0]) > 180 || Math.abs(sampleCoord[1]) > 90) {
+        needsReprojection = true;
+        console.log("Detected projected coordinates (likely 3857), will reproject to 4326.");
+      } else {
+        console.log("Detected geographic coordinates (likely 4326), no reprojection needed.");
+      }
+    }
+
     let processedFeatures;
 
-    if (isCanada) {
+    if (isCanada && needsReprojection) {
       const reprojectCoordinatesRecursive = (coordinates: any[]): any[] => {
         if (typeof coordinates[0] === 'number' && typeof coordinates[1] === 'number') {
           return proj4('EPSG:3857', 'EPSG:4326', coordinates);
@@ -322,41 +342,55 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       };
 
       processedFeatures = featuresToLoad.map(feature => {
-        const newFeature = JSON.parse(JSON.stringify(feature)); // Deep copy to avoid mutation issues
+        const newFeature = JSON.parse(JSON.stringify(feature));
         let centroidLat = null;
         let centroidLng = null;
 
-        // First, reproject the entire geometry to WGS84 (EPSG:4326)
+        // Reproject geometry
         if (newFeature.geometry && newFeature.geometry.coordinates) {
           newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
         }
 
-        // Now, calculate the centroid on the reprojected (WGS84) geometry
+        // Calculate centroid on reprojected geometry
         try {
-          // Using centerOfMass is often more robust for complex polygons
           const centroid = turf.centerOfMass(newFeature.geometry);
           if (centroid && centroid.geometry && centroid.geometry.coordinates) {
             centroidLng = centroid.geometry.coordinates[0];
             centroidLat = centroid.geometry.coordinates[1];
           }
         } catch (e) {
-          console.error("Error calculating centroid for reprojected Canadian feature:", newFeature, e);
+          console.error("Error calculating centroid for feature:", newFeature?.properties?.CFSAUID, e);
         }
         
-        // Store the correctly calculated centroid
         newFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
-        
         return newFeature;
       });
     } else {
-      // US data processing remains the same
+      // US data (assumed 4326) or Canada data if already 4326
       processedFeatures = featuresToLoad.map(feature => {
         const newFeature = JSON.parse(JSON.stringify(feature));
-        const lat = parseFloat(feature.properties.INTPTLAT20);
-        const lng = parseFloat(feature.properties.INTPTLON20);
+        
+        // Try to find pre-calculated centroid or calculate it
+        let lat = null; 
+        let lng = null;
+
+        if (newFeature.properties.INTPTLAT20 && newFeature.properties.INTPTLON20) {
+           lat = parseFloat(newFeature.properties.INTPTLAT20);
+           lng = parseFloat(newFeature.properties.INTPTLON20);
+        } else {
+           // Calculate if missing (e.g. for Canadian data that doesn't need reprojection)
+           try {
+             const centroid = turf.centerOfMass(newFeature.geometry);
+             lng = centroid.geometry.coordinates[0];
+             lat = centroid.geometry.coordinates[1];
+           } catch (e) {
+             console.warn("Could not calculate centroid for feature", feature.properties);
+           }
+        }
+
         newFeature.properties.calculated_centroid = {
-          lat: isNaN(lat) ? null : lat,
-          lng: isNaN(lng) ? null : lng
+          lat: (lat !== null && !isNaN(lat)) ? lat : null,
+          lng: (lng !== null && !isNaN(lng)) ? lng : null
         };
         return newFeature;
       });
@@ -367,7 +401,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       features: processedFeatures
     });
     setLoadingGeoJson(false);
-  }, [isCanada]);
+  }, [isCanada, country]); // Re-run if country changes
 
   const filteredGeoJsonData = useMemo(() => {
     if (!allGeoJsonData) return null;
@@ -387,6 +421,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           radiusInMeters
         );
       }
+      // If we can't determine centroid, keep it safe or exclude? Exclude to avoid clutter.
       return false;
     });
 
@@ -400,32 +435,28 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const zipCode = getPostalCode(feature, isCanada);
     const highlightState = highlightedZipCodes.get(zipCode);
 
-    // Default style for unassigned zips on any page
     let fillColor = '#F0F0F0';
-    let color = '#94a3b8'; // gray
+    let color = '#94a3b8';
     let weight = 1.5;
-    let fillOpacity = 0; // Default to no fill for non-selected polygons
-    let opacity = 0.3; // Default border opacity
+    let fillOpacity = 0;
+    let opacity = 0.3;
 
-    if (highlightState === 'green') { // 'Approved' for current installer on Edit page
+    if (highlightState === 'green') {
       color = '#22C55E';
       fillColor = '#DCFCE7';
       weight = 1.5; 
       fillOpacity = 0.65; 
       opacity = 1;
-    } else if (highlightState === 'orange') { // 'Needs Approval' for current installer on Edit page
+    } else if (highlightState === 'orange') {
       color = '#F97316';
       fillColor = '#FFEDD5';
       weight = 1.5; 
       fillOpacity = 0.65; 
       opacity = 1;
     } else {
-      // This block handles polygons not actively selected for the current installer on the Edit page,
-      // OR all polygons on the main Territory Management page.
       const assignedStatus = territoryStatuses.get(zipCode) || null;
 
       if (isTerritoryManagementPage) {
-        // On Territory Management page, we want fills to show status across all installers
         if (assignedStatus === 'Approved') {
           fillColor = '#D4EDDA';
           fillOpacity = 0.65;
@@ -439,31 +470,21 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           weight = 1.5;
           opacity = 1;
         }
-        // Unassigned territories will use the default gray border and fillOpacity of 0.
       } else {
-        // On Edit Installer Page, for zips not selected for *this* installer.
-        // User wants no fill. The default fillOpacity=0 handles this.
-        // We can still give a subtle border hint about status.
         if (assignedStatus === 'Approved') {
-          color = '#a7f3d0'; // Lighter green for background territories
+          color = '#a7f3d0';
           weight = 1;
           opacity = 1;
         } else if (assignedStatus === 'Needs Approval') {
-          color = '#fed7aa'; // Lighter orange for background territories
+          color = '#fed7aa';
           weight = 1;
           opacity = 1;
         }
-        // Unassigned territories will use the default gray border and no fill.
       }
     }
 
     return { fillColor, weight, opacity, color, fillOpacity, interactive: true };
-  }, [
-    territoryStatuses,
-    highlightedZipCodes,
-    isCanada,
-    isTerritoryManagementPage,
-  ]);
+  }, [territoryStatuses, highlightedZipCodes, isCanada, isTerritoryManagementPage]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
@@ -502,11 +523,10 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     );
   }
 
-  // Define new path options for the circles
-  const greenCircleOptions = { color: '#22C55E', fillOpacity: 0, dashArray: '5, 5', weight: 2 }; // Green for 25 miles
-  const yellowCircleOptions = { color: '#FACC15', fillOpacity: 0, dashArray: '5, 5', weight: 2 }; // Yellow for 50 miles
-  const orangeCircleOptions = { color: '#F97316', fillOpacity: 0, dashArray: '5, 5', weight: 2 }; // Orange for 100 miles
-  const redCircleOptions = { color: '#EF4444', fillOpacity: 0, dashArray: '5, 5', weight: 2 };   // Red for 150 miles
+  const greenCircleOptions = { color: '#22C55E', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
+  const yellowCircleOptions = { color: '#FACC15', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
+  const orangeCircleOptions = { color: '#F97316', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
+  const redCircleOptions = { color: '#EF4444', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
 
   return (
     <MapContainer
