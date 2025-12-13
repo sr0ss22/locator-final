@@ -2,13 +2,13 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
-import { Star, Loader2 } from 'lucide-react'; // Corrected import for Loader2
+import { Star, Loader2 } from 'lucide-react';
 import { calculateDistance } from '@/utils/distance';
 import { InstallerZipAssignment, TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
-import { useCountrySettings } from "@/hooks/useCountrySettings"; // Import useCountrySettings
+import { useCountrySettings } from "@/hooks/useCountrySettings";
 
 // Import both GeoJSON files from the new src/data directory with import assertions
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
@@ -59,35 +59,11 @@ const getRegion = (feature: any, isCanada: boolean): string => {
 };
 
 // Helper to get centroid from GeoJSON feature (used for filtering/bulk selection)
-const getCentroid = (feature: any, isCanada: boolean): { lat: number | null, lng: number | null } => {
-    if (!feature || !feature.geometry || !feature.properties) {
-        return { lat: null, lng: null };
+const getCentroid = (feature: any): { lat: number | null, lng: number | null } => {
+    if (feature && feature.properties && feature.properties.calculated_centroid) {
+        return feature.properties.calculated_centroid;
     }
-
-    let lat: number | null = null;
-    let lng: number | null = null;
-
-    if (isCanada) {
-        // The feature passed here is already reprojected to WGS84
-        try {
-            const centroid = turf.centroid(feature);
-            if (centroid && centroid.geometry && centroid.geometry.coordinates) {
-                lng = centroid.geometry.coordinates[0];
-                lat = centroid.geometry.coordinates[1];
-            }
-        } catch (e) {
-            console.error("Error calculating centroid for Canadian feature:", feature, e);
-        }
-    } else {
-        // For US data, we get lat/lng from properties
-        lat = parseFloat(feature.properties.INTPTLAT20);
-        lng = parseFloat(feature.properties.INTPTLON20);
-    }
-
-    if (isNaN(lat!)) lat = null;
-    if (isNaN(lng!)) lng = null;
-
-    return { lat, lng };
+    return { lat: null, lng: null };
 };
 
 // Helper to check if a point (lat, lng) is inside a circle (centerLat, centerLng, radiusMeters)
@@ -192,7 +168,7 @@ function MapInteractionHandler({
         const selectedZips: Array<{ zipCode: string, stateProvince: string }> = [];
         geoJsonData.features.forEach((feature: any) => {
           if (feature.geometry) {
-            const centroid = getCentroid(feature, isCanada);
+            const centroid = getCentroid(feature);
             if (centroid.lat && centroid.lng && isPointInCircle(centroid.lat, centroid.lng, finalCenter.lat, finalCenter.lng, finalRadiusMeters)) {
               selectedZips.push({ zipCode: getPostalCode(feature, isCanada), stateProvince: getRegion(feature, isCanada) });
             }
@@ -335,7 +311,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   useEffect(() => {
     setLoadingGeoJson(true);
     const featuresToLoad = isCanada ? canadaGeoJson.features : usGeoJson.features;
-    let processedFeatures = featuresToLoad;
+    let processedFeatures;
 
     if (isCanada) {
       const reprojectCoordinatesRecursive = (coordinates: any[]): any[] => {
@@ -347,9 +323,33 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
       processedFeatures = featuresToLoad.map(feature => {
         const newFeature = JSON.parse(JSON.stringify(feature));
+        let centroidLat = null;
+        let centroidLng = null;
+        try {
+          const centroid = turf.centroid(feature);
+          if (centroid && centroid.geometry && centroid.geometry.coordinates) {
+            const [lng, lat] = proj4('EPSG:3857', 'EPSG:4326', centroid.geometry.coordinates);
+            centroidLat = lat;
+            centroidLng = lng;
+          }
+        } catch (e) {
+          console.error("Error calculating centroid for Canadian feature:", feature, e);
+        }
+        newFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
         if (newFeature.geometry && newFeature.geometry.coordinates) {
           newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
         }
+        return newFeature;
+      });
+    } else {
+      processedFeatures = featuresToLoad.map(feature => {
+        const newFeature = JSON.parse(JSON.stringify(feature));
+        const lat = parseFloat(feature.properties.INTPTLAT20);
+        const lng = parseFloat(feature.properties.INTPTLON20);
+        newFeature.properties.calculated_centroid = {
+          lat: isNaN(lat) ? null : lat,
+          lng: isNaN(lng) ? null : lng
+        };
         return newFeature;
       });
     }
@@ -369,7 +369,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     const radiusInMeters = (currentDisplayRadius as number) * 1609.34;
     const filteredFeatures = allGeoJsonData.features.filter((feature: any) => {
-      const centroid = getCentroid(feature, isCanada);
+      const centroid = getCentroid(feature);
       if (centroid.lat != null && centroid.lng != null) {
         return isPointInCircle(
           centroid.lat,
