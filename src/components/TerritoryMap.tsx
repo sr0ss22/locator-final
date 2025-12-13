@@ -411,39 +411,48 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
     const status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
 
-    let fillColor = '#F0F0F0'; // Default unassigned
-    let fillOpacity = 0.5;
+    // Default style for unselected territories
+    let fillColor = '#F0F0F0';
+    let fillOpacity = 0; // No fill for unselected
     let color = '#94a3b8'; // Slate-400
     let weight = 1;
+    let opacity = 0.25; // 25% opacity for border
 
     if (isBulkSelecting) {
       fillColor = '#BFDBFE'; // Light blue for bulk select mode
       fillOpacity = 0.4;
       color = '#1D4ED8'; // Darker blue
+      opacity = 1; // Full opacity border for bulk select
     } else if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E'; // Green-500
-      fillOpacity = 0.6;
+      fillOpacity = 0.3; // 30% opacity fill
       color = '#166534'; // Green-800
-      weight = 2;
+      weight = 1; // Same width as unselected
+      opacity = 1; // Full opacity border for selected
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316'; // Orange-500
-      fillOpacity = 0.6;
+      fillOpacity = 0.3; // 30% opacity fill
       color = '#9A3412'; // Orange-800
-      weight = 2;
+      weight = 1; // Same width as unselected
+      opacity = 1; // Full opacity border for selected
     } else if (isTerritoryManagementPage) {
       if (status === 'Approved') {
         fillColor = '#D4EDDA'; // Light green
         fillOpacity = 0.5;
+        color = '#166534';
+        opacity = 0.5;
       } else if (status === 'Needs Approval') {
         fillColor = '#FFF3CD'; // Light yellow
         fillOpacity = 0.5;
+        color = '#9A3412';
+        opacity = 0.5;
       }
     }
 
     return {
       fillColor,
       weight,
-      opacity: 1,
+      opacity, // This is stroke opacity
       color,
       fillOpacity,
       interactive: true,
