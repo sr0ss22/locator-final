@@ -323,27 +323,26 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         let centroidLng = null;
 
         try {
-          // 1. Calculate centroid in original projection (EPSG:3857)
-          const centroidMercator = turf.centroid(feature.geometry);
-          if (centroidMercator?.geometry?.coordinates) {
-            // 2. Reproject the centroid point to WGS84 (lat/lng)
-            const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', centroidMercator.geometry.coordinates);
-            centroidLng = lon;
-            centroidLat = lat;
+          // 1. Reproject the entire polygon geometry to WGS84 (lat/lng) first.
+          // This is the correct order of operations.
+          turf.coordEach(reprojectedFeature, (currentCoord) => {
+            const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
+            currentCoord[0] = lon;
+            currentCoord[1] = lat;
+          });
+
+          // 2. Now, calculate the centroid from the correctly projected geometry.
+          const centroidWGS84 = turf.centroid(reprojectedFeature.geometry);
+          if (centroidWGS84?.geometry?.coordinates) {
+            centroidLng = centroidWGS84.geometry.coordinates[0];
+            centroidLat = centroidWGS84.geometry.coordinates[1];
           }
         } catch (e) {
           console.error("Error processing centroid for Canadian feature:", feature?.properties?.CFSAUID, e);
         }
         
-        // 3. Store the correct WGS84 centroid for filtering logic
+        // 3. Store the WGS84 centroid for filtering logic.
         reprojectedFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
-
-        // 4. Reproject the entire polygon geometry for Leaflet rendering
-        turf.coordEach(reprojectedFeature, (currentCoord) => {
-          const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
-          currentCoord[0] = lon;
-          currentCoord[1] = lat;
-        });
 
         return reprojectedFeature;
       });
