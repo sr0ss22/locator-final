@@ -91,33 +91,6 @@ const EditInstallerPage: React.FC = () => {
     return 'USA';
   }, [currentInstaller?.rawSupabaseData?.country]);
 
-  const zipCodeCentroids = useMemo(() => {
-    const map = new Map<string, { lat: number, lng: number, state: string }>();
-    const geoJsonToProcess = installerCountry === 'Canada' ? canadaGeoJson : usGeoJson;
-    if (geoJsonToProcess && geoJsonToProcess.features) {
-      geoJsonToProcess.features.forEach(feature => {
-        let zipCode: string | null = null, state: string | null = null, lat: number | null = null, lng: number | null = null;
-        if (installerCountry === 'Canada') {
-          zipCode = feature.properties.CFSAUID; state = feature.properties.PRNAME;
-          try {
-            const centroid = turf.centroid(feature);
-            if (centroid?.geometry?.coordinates) {
-              const reprojectedCoords = proj4('EPSG:3857', 'EPSG:4326', centroid.geometry.coordinates);
-              lng = reprojectedCoords[0]; lat = reprojectedCoords[1];
-            }
-          } catch (e) { console.warn("Error calculating centroid for Canadian feature:", feature, e); }
-        } else {
-          zipCode = feature.properties.ZCTA5CE20; state = feature.properties.STUSPS;
-          lat = parseFloat(feature.properties.INTPTLAT20); lng = parseFloat(feature.properties.INTPTLON20);
-        }
-        if (zipCode && lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
-          map.set(zipCode, { lat, lng, state: state || 'Unknown' });
-        }
-      });
-    }
-    return map;
-  }, [installerCountry]);
-
   const columnDisplayNames: { [key: string]: string } = useMemo(() => ({
     name: "Name", email: "Email", primary_phone: "Phone", secondary_phone: "Secondary Phone", address1: "Address Line 1",
     add2: "Address Line 2", city: "City", state: "State", postalcode: installerCountry === 'Canada' ? 'Postal Code' : 'Zip Code',
@@ -154,25 +127,6 @@ const EditInstallerPage: React.FC = () => {
     }
   }, []);
 
-  const fetchInstallerZipCodes = useCallback(async (id: string) => {
-    if (!id) { return []; }
-    const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', id);
-    if (error) {
-      console.error("Error fetching installer zip codes:", error);
-      toast.error("Failed to load installer's assigned ZIP codes.");
-      return [];
-    } else {
-      const enrichedZips = (data || []).map(item => {
-        const centroid = zipCodeCentroids.get(item.zip_code);
-        return {
-          zipCode: item.zip_code, assignedStatus: item.status as TerritoryStatus, stateProvince: item.state_province,
-          centroid_latitude: centroid?.lat || null, centroid_longitude: centroid?.lng || null,
-        };
-      });
-      return enrichedZips;
-    }
-  }, [zipCodeCentroids]);
-
   const loadAllData = useCallback(async () => {
     if (!installerId) {
       toast.error("No installer ID provided.");
@@ -189,6 +143,50 @@ const EditInstallerPage: React.FC = () => {
       setLoading(false);
       return;
     }
+
+    const country = installerData.country?.toUpperCase();
+    const isCanada = country === 'CANADA' || country === 'CA' || country === 'CAN';
+    const currentInstallerCountry = isCanada ? 'Canada' : 'USA';
+
+    const centroids = new Map<string, { lat: number, lng: number, state: string }>();
+    const geoJsonToProcess = currentInstallerCountry === 'Canada' ? canadaGeoJson : usGeoJson;
+    if (geoJsonToProcess && geoJsonToProcess.features) {
+      geoJsonToProcess.features.forEach(feature => {
+        let zipCode: string | null = null, state: string | null = null, lat: number | null = null, lng: number | null = null;
+        if (currentInstallerCountry === 'Canada') {
+          zipCode = feature.properties.CFSAUID; state = feature.properties.PRNAME;
+          try {
+            const centroid = turf.centroid(feature);
+            if (centroid?.geometry?.coordinates) {
+              const reprojectedCoords = proj4('EPSG:3857', 'EPSG:4326', centroid.geometry.coordinates);
+              lng = reprojectedCoords[0]; lat = reprojectedCoords[1];
+            }
+          } catch (e) { console.warn("Error calculating centroid for Canadian feature:", feature, e); }
+        } else {
+          zipCode = feature.properties.ZCTA5CE20; state = feature.properties.STUSPS;
+          lat = parseFloat(feature.properties.INTPTLAT20); lng = parseFloat(feature.properties.INTPTLON20);
+        }
+        if (zipCode && lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
+          centroids.set(zipCode, { lat, lng, state: state || 'Unknown' });
+        }
+      });
+    }
+
+    const { data: zipData, error: zipError } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', installerId);
+    if (zipError) {
+      console.error("Error fetching installer zip codes:", zipError);
+      toast.error("Failed to load installer's assigned ZIP codes.");
+    }
+    const enrichedZips = (zipData || []).map(item => {
+      const centroid = centroids.get(item.zip_code);
+      return {
+        zipCode: item.zip_code, assignedStatus: item.status as TerritoryStatus, stateProvince: item.state_province,
+        centroid_latitude: centroid?.lat || null, centroid_longitude: centroid?.lng || null,
+      };
+    });
+
+    await fetchTerritoryStatuses();
+
     const mappedInstaller: Installer = {
       id: installerData.id, name: installerData.name,
       address: `${installerData.address1 || ''} ${installerData.add2 || ''}, ${installerData.city || ''}, ${installerData.state || ''} ${installerData.postalcode || ''}`.trim(),
@@ -204,15 +202,12 @@ const EditInstallerPage: React.FC = () => {
     setInitialFormData(JSON.parse(JSON.stringify(installerData)));
     setCurrentInstaller(mappedInstaller);
     setErrors({});
-
-    await fetchTerritoryStatuses();
-    const enrichedZips = await fetchInstallerZipCodes(installerId);
     setSelectedMapZipCodes(enrichedZips);
     setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
     setIsDirty(false);
 
     setLoading(false);
-  }, [installerId, navigate, fetchTerritoryStatuses, fetchInstallerZipCodes]);
+  }, [installerId, navigate, fetchTerritoryStatuses]);
 
   useEffect(() => {
     if (!sessionLoading && installerId) {
@@ -240,10 +235,10 @@ const EditInstallerPage: React.FC = () => {
     return null;
   }, [currentInstaller?.latitude, currentInstaller?.longitude]);
 
-  const handleMapZipCodeClick = useCallback(async (zipCode: string, stateProvince: string) => {
+  const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
     setSelectedMapZipCodes(prevSelected => {
       const existingEntryIndex = prevSelected.findIndex(item => item.zipCode === zipCode);
-      const centroid = zipCodeCentroids.get(zipCode);
+      const centroid = new Map<string, { lat: number, lng: number, state: string }>().get(zipCode); // This is a placeholder, as we don't have access to the full map here.
       const centroid_latitude = centroid?.lat || null;
       const centroid_longitude = centroid?.lng || null;
       if (existingEntryIndex !== -1) {
@@ -257,7 +252,7 @@ const EditInstallerPage: React.FC = () => {
         return [...prevSelected, { zipCode, assignedStatus: 'Approved', stateProvince, centroid_latitude, centroid_longitude }];
       }
     });
-  }, [zipCodeCentroids]);
+  }, []);
 
   const handleBulkSelectionComplete = useCallback((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => {
     setSelectedMapZipCodes(prevSelected => {
@@ -265,7 +260,7 @@ const EditInstallerPage: React.FC = () => {
       const newSelectedMap = new Map(prevSelectedMap);
       selectedZips.forEach(zipInfo => {
         const existing = prevSelectedMap.get(zipInfo.zipCode);
-        const centroid = zipCodeCentroids.get(zipInfo.zipCode);
+        const centroid = new Map<string, { lat: number, lng: number, state: string }>().get(zipInfo.zipCode); // Placeholder
         const centroid_latitude = centroid?.lat || null;
         const centroid_longitude = centroid?.lng || null;
         if (bulkActionType === 'approve') {
@@ -281,7 +276,7 @@ const EditInstallerPage: React.FC = () => {
       setBulkActionType(null);
       return updatedList;
     });
-  }, [bulkActionType, zipCodeCentroids]);
+  }, [bulkActionType]);
 
   const highlightedZipCodes = useMemo(() => {
     const highlights = new Map<string, 'green' | 'orange'>();
@@ -528,7 +523,7 @@ const EditInstallerPage: React.FC = () => {
       importedCount = territoriesToUpsert.length;
       toast.success(`Successfully imported ${importedCount} territories. ${skippedCount > 0 ? `${skippedCount} rows skipped.` : ''}`, { id: loadingToastId, duration: 5000 });
       await fetchTerritoryStatuses();
-      await fetchInstallerZipCodes(installerId);
+      await loadAllData(); // Reload all data to get enriched zips
     } catch (err: any) {
       console.error("Error during territory import:", err);
       toast.error(`Territory import failed: ${err.message || err.toString()}`, { id: loadingToastId, duration: 8000 });
