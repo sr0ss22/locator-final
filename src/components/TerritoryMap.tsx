@@ -422,16 +422,16 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E'; // Green-500
-      fillOpacity = 0.2; // 20% opacity fill
+      fillOpacity = 0.05;
       color = '#166534'; // Green-800
       weight = 1;
-      opacity = 0.5; // 50% opacity border for selected
+      opacity = 0.25;
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316'; // Orange-500
-      fillOpacity = 0.2; // 20% opacity fill
+      fillOpacity = 0.05;
       color = '#9A3412'; // Orange-800
       weight = 1;
-      opacity = 0.5; // 50% opacity border for selected
+      opacity = 0.25;
     } else if (isTerritoryManagementPage) {
       if (status === 'Approved') {
         fillColor = '#D4EDDA'; // Light green
@@ -483,7 +483,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const selectedZipsString = selectedZipCodes.map(z => `${z.zipCode}:${z.assignedStatus}`).join(',');
     const highlightedZipsString = Array.from(highlightedZipCodes.entries()).map(([k, v]) => `${k}:${v}`).join(',');
     return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
-  }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
+  }, [selectedZipCodes, highlightedZipsString, currentDisplayRadius, isBulkSelecting]);
 
   if (geoJsonError) {
     return (
