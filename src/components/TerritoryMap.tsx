@@ -317,23 +317,19 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     let processedFeatures;
 
     if (isCanada) {
-      // The Canadian data is already in EPSG:4326 after the initial script run, but client-side processing is safer.
-      // The previous reprojection was faulty. Let's assume the source is EPSG:3857 and fix the reprojection.
-      // Correction: The logs show the source data is likely already WGS84 (lat/lng), and the reprojection was corrupting it.
-      // Let's remove the reprojection and calculate the centroid directly.
       processedFeatures = featuresToLoad.map(feature => {
         const originalFeature = JSON.parse(JSON.stringify(feature));
         let centroidLat = null;
         let centroidLng = null;
         try {
-          // Calculate centroid from the original geometry, assuming it's WGS84
           const centroid = turf.centroid(originalFeature.geometry);
           if (centroid?.geometry?.coordinates) {
-            centroidLng = centroid.geometry.coordinates[0];
-            centroidLat = centroid.geometry.coordinates[1];
+            const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', centroid.geometry.coordinates);
+            centroidLng = lon;
+            centroidLat = lat;
           }
         } catch (e) {
-          console.error("Error calculating centroid for Canadian feature:", originalFeature?.properties?.CFSAUID, e);
+          console.error("Error calculating or reprojecting centroid for Canadian feature:", originalFeature?.properties?.CFSAUID, e);
         }
         
         originalFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
