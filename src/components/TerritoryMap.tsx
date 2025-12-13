@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
 import { Star, Loader2 } from 'lucide-react';
@@ -310,19 +310,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       return;
     }
 
-    let needsReprojection = false;
-    const sampleFeature = featuresToLoad[0];
-    if (isCanada && sampleFeature?.geometry?.coordinates) {
-      const findCoord = (coords: any): any => {
-        if (typeof coords[0] === 'number') return coords;
-        return findCoord(coords[0]);
-      };
-      const sampleCoord = findCoord(sampleFeature.geometry.coordinates);
-      if (Math.abs(sampleCoord[0]) > 180 || Math.abs(sampleCoord[1]) > 90) {
-        needsReprojection = true;
-      }
-    }
-
     let processedFeatures;
 
     if (isCanada) {
@@ -338,10 +325,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         let centroidLat = null;
         let centroidLng = null;
 
-        if (needsReprojection) {
-          if (newFeature.geometry && newFeature.geometry.coordinates) {
-            newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
-          }
+        if (newFeature.geometry && newFeature.geometry.coordinates) {
+          newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
         }
 
         try {
@@ -518,6 +503,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       
+      <Pane name="polygons" style={{ zIndex: 450 }} />
       {filteredGeoJsonData && (
         <GeoJSON
           key={geoJsonStyleKey}
@@ -525,6 +511,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           data={filteredGeoJsonData as any}
           style={getZipCodeStyle}
           onEachFeature={onEachFeature}
+          pane="polygons"
         />
       )}
 
