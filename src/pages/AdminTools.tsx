@@ -9,22 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-// Import the local GeoJSON files
-import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
-import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
-
-// We need these for Canadian coordinate reprojection
-import * as turf from '@turf/turf';
-import proj4 from 'proj4';
-
-// Define projections
-proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
-proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
-
 const AdminToolsPage: React.FC = () => {
-  const [processingGeoJson, setProcessingGeoJson] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [total, setTotal] = useState(0);
   const [processingTerritories, setProcessingTerritories] = useState(false);
   const [processingStates, setProcessingStates] = useState(false);
   const [radius, setRadius] = useState<number>(50);
@@ -38,73 +23,6 @@ const AdminToolsPage: React.FC = () => {
       toast.success("You have been logged out.");
       navigate('/login');
     }
-  };
-
-  const handleProcessGeoJson = async (country: 'USA' | 'Canada') => {
-    setProcessingGeoJson(true);
-    setProgress(0);
-    const loadingToastId = toast.loading(`Starting to process ${country} GeoJSON data... This may take a while.`);
-
-    const isCanada = country === 'Canada';
-    const geoJson = isCanada ? canadaGeoJson : usGeoJson;
-    const features = geoJson.features;
-    setTotal(features.length);
-
-    const batchSize = 100;
-    let successCount = 0;
-    let errorCount = 0;
-
-    for (let i = 0; i < features.length; i += batchSize) {
-      const batch = features.slice(i, i + batchSize);
-      
-      const rpcCalls = batch.map(feature => {
-        const { properties, geometry } = feature;
-        const zipCode = isCanada ? properties.CFSAUID : properties.ZCTA5CE20;
-        const stateProvince = isCanada ? properties.PRNAME : (properties.STUSPS || 'Unknown');
-        
-        let centroidLatitude: number | null = null;
-        let centroidLongitude: number | null = null;
-
-        if (isCanada) {
-          const centroid = turf.centroid(feature);
-          const [projectedLng, projectedLat] = centroid.geometry.coordinates;
-          const [geographicLng, geographicLat] = proj4("EPSG:3857", "EPSG:4326", [projectedLng, projectedLat]);
-          centroidLatitude = geographicLat;
-          centroidLongitude = geographicLng;
-        } else {
-          centroidLatitude = parseFloat(properties.INTPTLAT20);
-          centroidLongitude = parseFloat(properties.INTPTLON20);
-        }
-
-        const geometryJsonString = geometry ? JSON.stringify(geometry) : null;
-
-        return supabase.rpc('upsert_zip_geometry', {
-          _zip_code: zipCode,
-          _state_province: stateProvince,
-          _geometry_geojson_string: geometryJsonString,
-          _centroid_latitude: isNaN(centroidLatitude!) ? null : centroidLatitude,
-          _centroid_longitude: isNaN(centroidLongitude!) ? null : centroidLongitude,
-          _is_canada: isCanada,
-        });
-      });
-
-      const results = await Promise.allSettled(rpcCalls);
-
-      results.forEach(result => {
-        if (result.status === 'fulfilled' && !result.value.error) {
-          successCount++;
-        } else {
-          errorCount++;
-          console.error("Error in batch:", result.status === 'rejected' ? result.reason : result.value.error);
-        }
-      });
-
-      setProgress(i + batch.length);
-      toast.loading(`Processing ${country}... ${i + batch.length} of ${features.length}`, { id: loadingToastId });
-    }
-
-    toast.success(`Processing complete for ${country}. Success: ${successCount}, Failed: ${errorCount}`, { id: loadingToastId, duration: 8000 });
-    setProcessingGeoJson(false);
   };
 
   const handleAssignTerritories = async () => {
@@ -143,7 +61,7 @@ const AdminToolsPage: React.FC = () => {
     setProcessingStates(false);
   };
 
-  const anyProcessRunning = processingGeoJson || processingTerritories || processingStates;
+  const anyProcessRunning = processingTerritories || processingStates;
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
@@ -204,36 +122,6 @@ const AdminToolsPage: React.FC = () => {
             <Button onClick={handleUpdateStates} disabled={anyProcessRunning}>
               {processingStates ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
               Update States
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Populate Geometries from Local Files</CardTitle>
-            <CardDescription>
-              Process the local GeoJSON files (US and Canada) and upsert the data into your database. This runs in your browser.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-gray-600">
-              This process can take several minutes. Please keep this browser tab open until it completes.
-            </p>
-            {processingGeoJson && (
-              <div>
-                <Progress value={(progress / total) * 100} className="w-full" />
-                <p className="text-sm text-center mt-2">{progress} / {total} records processed</p>
-              </div>
-            )}
-          </CardContent>
-          <CardFooter className="flex flex-col sm:flex-row gap-4">
-            <Button onClick={() => handleProcessGeoJson('USA')} disabled={anyProcessRunning}>
-              {processingGeoJson ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-              Process US Data
-            </Button>
-            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={anyProcessRunning}>
-              {processingGeoJson ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-              Process Canada Data
             </Button>
           </CardFooter>
         </Card>
