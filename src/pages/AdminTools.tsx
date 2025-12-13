@@ -3,9 +3,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Database, LogOut } from 'lucide-react';
+import { Loader2, ArrowLeft, Database, LogOut, MapPin, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 // Import the local GeoJSON files
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
@@ -20,9 +22,12 @@ proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
 
 const AdminToolsPage: React.FC = () => {
-  const [processing, setProcessing] = useState(false);
+  const [processingGeoJson, setProcessingGeoJson] = useState(false);
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
+  const [processingTerritories, setProcessingTerritories] = useState(false);
+  const [processingStates, setProcessingStates] = useState(false);
+  const [radius, setRadius] = useState<number>(50);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -36,7 +41,7 @@ const AdminToolsPage: React.FC = () => {
   };
 
   const handleProcessGeoJson = async (country: 'USA' | 'Canada') => {
-    setProcessing(true);
+    setProcessingGeoJson(true);
     setProgress(0);
     const loadingToastId = toast.loading(`Starting to process ${country} GeoJSON data... This may take a while.`);
 
@@ -99,8 +104,46 @@ const AdminToolsPage: React.FC = () => {
     }
 
     toast.success(`Processing complete for ${country}. Success: ${successCount}, Failed: ${errorCount}`, { id: loadingToastId, duration: 8000 });
-    setProcessing(false);
+    setProcessingGeoJson(false);
   };
+
+  const handleAssignTerritories = async () => {
+    if (radius <= 0) {
+      toast.error("Please enter a valid radius greater than 0.");
+      return;
+    }
+    setProcessingTerritories(true);
+    const loadingToastId = toast.loading(`Assigning territories for all US installers within a ${radius}-mile radius...`);
+    
+    const { data, error } = await supabase.rpc('assign_territories_for_all_us_installers', {
+      radius_miles: radius
+    });
+
+    if (error) {
+      console.error("Error assigning territories:", error);
+      toast.error(`Failed to assign territories: ${error.message}`, { id: loadingToastId });
+    } else {
+      toast.success(data || "Territory assignment process completed.", { id: loadingToastId });
+    }
+    setProcessingTerritories(false);
+  };
+
+  const handleUpdateStates = async () => {
+    setProcessingStates(true);
+    const loadingToastId = toast.loading("Updating state/province for all territory records...");
+
+    const { data, error } = await supabase.rpc('update_zip_code_states');
+
+    if (error) {
+      console.error("Error updating states:", error);
+      toast.error(`Failed to update states: ${error.message}`, { id: loadingToastId });
+    } else {
+      toast.success(data || "State update process completed.", { id: loadingToastId });
+    }
+    setProcessingStates(false);
+  };
+
+  const anyProcessRunning = processingGeoJson || processingTerritories || processingStates;
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
@@ -116,6 +159,55 @@ const AdminToolsPage: React.FC = () => {
         </Button>
       </div>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        
+        <Card>
+          <CardHeader>
+            <CardTitle>Assign Territories by Radius</CardTitle>
+            <CardDescription>
+              For every US installer with coordinates, assign all US ZIP codes within a specified radius. This can take a long time to run.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-4">
+              <Label htmlFor="radius-input" className="whitespace-nowrap">Radius (miles):</Label>
+              <Input 
+                id="radius-input"
+                type="number" 
+                value={radius} 
+                onChange={(e) => setRadius(Number(e.target.value))}
+                min="1"
+                disabled={anyProcessRunning}
+              />
+            </div>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={handleAssignTerritories} disabled={anyProcessRunning}>
+              {processingTerritories ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MapPin className="mr-2 h-4 w-4" />}
+              Run Assignment
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Update Territory States</CardTitle>
+            <CardDescription>
+              Run a script to update the `state_province` field for all US territory assignments based on their ZIP code.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600">
+              This is useful for correcting any missing or incorrect state data in the `installer_zip_codes` table.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={handleUpdateStates} disabled={anyProcessRunning}>
+              {processingStates ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Update States
+            </Button>
+          </CardFooter>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Populate Geometries from Local Files</CardTitle>
@@ -127,24 +219,25 @@ const AdminToolsPage: React.FC = () => {
             <p className="text-sm text-gray-600">
               This process can take several minutes. Please keep this browser tab open until it completes.
             </p>
-            {processing && (
+            {processingGeoJson && (
               <div>
                 <Progress value={(progress / total) * 100} className="w-full" />
                 <p className="text-sm text-center mt-2">{progress} / {total} records processed</p>
               </div>
             )}
           </CardContent>
-          <CardFooter className="flex gap-4">
-            <Button onClick={() => handleProcessGeoJson('USA')} disabled={processing}>
-              {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+          <CardFooter className="flex flex-col sm:flex-row gap-4">
+            <Button onClick={() => handleProcessGeoJson('USA')} disabled={anyProcessRunning}>
+              {processingGeoJson ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Process US Data
             </Button>
-            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={processing}>
-              {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={anyProcessRunning}>
+              {processingGeoJson ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Process Canada Data
             </Button>
           </CardFooter>
         </Card>
+
       </div>
     </div>
   );
