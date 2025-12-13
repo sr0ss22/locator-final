@@ -299,68 +299,70 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [onZipCodeClick]);
 
   useEffect(() => {
-    setLoadingGeoJson(true);
-    setGeoJsonError(null);
-    const featuresToLoad = isCanada ? canadaGeoJson.features : usGeoJson.features;
-    
-    if (!featuresToLoad || featuresToLoad.length === 0) {
-      const errorMessage = `CRITICAL ERROR: The GeoJSON data file for ${country} could not be loaded or is empty. Polygons cannot be displayed. Please contact support.`;
-      console.error(errorMessage);
-      toast.error(errorMessage, { duration: 10000 });
-      setGeoJsonError(errorMessage);
-      setLoadingGeoJson(false);
-      return;
-    }
-
-    let processedFeatures;
-
-    if (isCanada) {
-      processedFeatures = featuresToLoad.map(feature => {
-        const reprojectedFeature = JSON.parse(JSON.stringify(feature));
-        let centroidLat = null;
-        let centroidLng = null;
-
-        try {
-          // 1. Reproject the entire polygon geometry to WGS84 (lat/lng) first.
-          turf.coordEach(reprojectedFeature, (currentCoord) => {
-            const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
-            currentCoord[0] = lon;
-            currentCoord[1] = lat;
-          });
-
-          // 2. Now, calculate the centroid from the correctly projected geometry.
-          const centroidWGS84 = turf.centroid(reprojectedFeature.geometry);
-          if (centroidWGS84?.geometry?.coordinates) {
-            centroidLng = centroidWGS84.geometry.coordinates[0];
-            centroidLat = centroidWGS84.geometry.coordinates[1];
-          }
-        } catch (e) {
-          console.error("Error processing centroid for Canadian feature:", feature?.properties?.CFSAUID, e);
-        }
+    const loadGeoJson = async () => {
+      setLoadingGeoJson(true);
+      setGeoJsonError(null);
+      try {
+        const geoJsonModule = isCanada
+          ? await import('@/data/canada-postal-codes.json')
+          : await import('@/data/us-zip-codes.json');
         
-        // 3. Store the WGS84 centroid for filtering logic.
-        reprojectedFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
+        const geoJson = geoJsonModule.default;
 
-        return reprojectedFeature;
-      });
-    } else {
-      processedFeatures = featuresToLoad.map(feature => {
-        const newFeature = JSON.parse(JSON.stringify(feature));
-        const lat = parseFloat(feature.properties.INTPTLAT20);
-        const lng = parseFloat(feature.properties.INTPTLON20);
-        newFeature.properties.calculated_centroid = {
-          lat: isNaN(lat) ? null : lat,
-          lng: isNaN(lng) ? null : lng
-        };
-        return newFeature;
-      });
-    }
+        if (!geoJson || !geoJson.features) {
+          throw new Error(`GeoJSON for ${country} is missing or invalid.`);
+        }
 
-    setAllGeoJsonData({
-      type: 'FeatureCollection',
-      features: processedFeatures
-    });
-    setLoadingGeoJson(false);
+        let processedFeatures;
+        if (isCanada) {
+          processedFeatures = geoJson.features.map((feature: any) => {
+            const reprojectedFeature = JSON.parse(JSON.stringify(feature));
+            let centroidLat = null;
+            let centroidLng = null;
+            try {
+              turf.coordEach(reprojectedFeature, (currentCoord) => {
+                const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
+                currentCoord[0] = lon;
+                currentCoord[1] = lat;
+              });
+              const centroidWGS84 = turf.centroid(reprojectedFeature.geometry);
+              if (centroidWGS84?.geometry?.coordinates) {
+                centroidLng = centroidWGS84.geometry.coordinates[0];
+                centroidLat = centroidWGS84.geometry.coordinates[1];
+              }
+            } catch (e) {
+              console.error("Error processing centroid for Canadian feature:", feature?.properties?.CFSAUID, e);
+            }
+            reprojectedFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
+            return reprojectedFeature;
+          });
+        } else {
+          processedFeatures = geoJson.features.map((feature: any) => {
+            const newFeature = JSON.parse(JSON.stringify(feature));
+            const lat = parseFloat(feature.properties.INTPTLAT20);
+            const lng = parseFloat(feature.properties.INTPTLON20);
+            newFeature.properties.calculated_centroid = {
+              lat: isNaN(lat) ? null : lat,
+              lng: isNaN(lng) ? null : lng
+            };
+            return newFeature;
+          });
+        }
+
+        setAllGeoJsonData({
+          type: 'FeatureCollection',
+          features: processedFeatures
+        });
+      } catch (error: any) {
+        const errorMessage = `CRITICAL ERROR: Could not load GeoJSON data for ${country}. ${error.message}`;
+        console.error(errorMessage, error);
+        toast.error(errorMessage, { duration: 10000 });
+        setGeoJsonError(errorMessage);
+      } finally {
+        setLoadingGeoJson(false);
+      }
+    };
+    loadGeoJson();
   }, [isCanada, country]);
 
   const filteredGeoJsonData = useMemo(() => {
