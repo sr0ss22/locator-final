@@ -313,34 +313,29 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     let processedFeatures;
 
     if (isCanada) {
-      const reprojectCoordinatesRecursive = (coordinates: any[]): any[] => {
-        if (typeof coordinates[0] === 'number' && typeof coordinates[1] === 'number') {
-          return proj4('EPSG:3857', 'EPSG:4326', coordinates);
-        }
-        return coordinates.map(reprojectCoordinatesRecursive);
-      };
-
       processedFeatures = featuresToLoad.map(feature => {
-        const newFeature = JSON.parse(JSON.stringify(feature));
+        const reprojectedFeature = JSON.parse(JSON.stringify(feature));
+        
+        turf.coordEach(reprojectedFeature, (currentCoord) => {
+          const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
+          currentCoord[0] = lon;
+          currentCoord[1] = lat;
+        });
+
         let centroidLat = null;
         let centroidLng = null;
-
-        if (newFeature.geometry && newFeature.geometry.coordinates) {
-          newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
-        }
-
         try {
-          const centroid = turf.centroid(newFeature.geometry);
+          const centroid = turf.centroid(reprojectedFeature.geometry);
           if (centroid?.geometry?.coordinates) {
             centroidLng = centroid.geometry.coordinates[0];
             centroidLat = centroid.geometry.coordinates[1];
           }
         } catch (e) {
-          console.error("Error calculating centroid for Canadian feature:", newFeature?.properties?.CFSAUID, e);
+          console.error("Error calculating centroid for Canadian feature:", reprojectedFeature?.properties?.CFSAUID, e);
         }
         
-        newFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
-        return newFeature;
+        reprojectedFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
+        return reprojectedFeature;
       });
     } else {
       processedFeatures = featuresToLoad.map(feature => {
