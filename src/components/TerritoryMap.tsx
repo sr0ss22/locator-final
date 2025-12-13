@@ -220,7 +220,6 @@ function MapInteractionHandler({
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
       
-      // Re-enable everything on cleanup
       if (map.dragging && !map.dragging.enabled()) map.dragging.enable();
       if (map.doubleClickZoom && !map.doubleClickZoom.enabled()) map.doubleClickZoom.enable();
       if (map.scrollWheelZoom && !map.scrollWheelZoom.enabled()) map.scrollWheelZoom.enable();
@@ -304,36 +303,29 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     setLoadingGeoJson(true);
     const featuresToLoad = isCanada ? canadaGeoJson.features : usGeoJson.features;
     
-    // Check if we have features
     if (!featuresToLoad || featuresToLoad.length === 0) {
-      console.warn("No features found for map in", country);
+      console.error(`GeoJSON data for ${country} could not be loaded or is empty.`);
+      toast.error(`Map data for ${country} is missing. Polygons cannot be displayed.`);
       setLoadingGeoJson(false);
       return;
     }
 
-    // Heuristic to check if reprojection is needed
-    // Check the first coordinate of the first feature's geometry
     let needsReprojection = false;
     const sampleFeature = featuresToLoad[0];
-    if (sampleFeature && sampleFeature.geometry && sampleFeature.geometry.coordinates) {
-      // Drill down to a coordinate pair
+    if (isCanada && sampleFeature?.geometry?.coordinates) {
       const findCoord = (coords: any): any => {
         if (typeof coords[0] === 'number') return coords;
         return findCoord(coords[0]);
       };
       const sampleCoord = findCoord(sampleFeature.geometry.coordinates);
-      // If coordinates are large (e.g. > 180 or < -180), they are likely Web Mercator (meters)
       if (Math.abs(sampleCoord[0]) > 180 || Math.abs(sampleCoord[1]) > 90) {
         needsReprojection = true;
-        console.log("Detected projected coordinates (likely 3857), will reproject to 4326.");
-      } else {
-        console.log("Detected geographic coordinates (likely 4326), no reprojection needed.");
       }
     }
 
     let processedFeatures;
 
-    if (isCanada && needsReprojection) {
+    if (isCanada) {
       const reprojectCoordinatesRecursive = (coordinates: any[]): any[] => {
         if (typeof coordinates[0] === 'number' && typeof coordinates[1] === 'number') {
           return proj4('EPSG:3857', 'EPSG:4326', coordinates);
@@ -346,51 +338,33 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         let centroidLat = null;
         let centroidLng = null;
 
-        // Reproject geometry
-        if (newFeature.geometry && newFeature.geometry.coordinates) {
-          newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
+        if (needsReprojection) {
+          if (newFeature.geometry && newFeature.geometry.coordinates) {
+            newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
+          }
         }
 
-        // Calculate centroid on reprojected geometry
         try {
-          const centroid = turf.centerOfMass(newFeature.geometry);
-          if (centroid && centroid.geometry && centroid.geometry.coordinates) {
+          const centroid = turf.centroid(newFeature.geometry);
+          if (centroid?.geometry?.coordinates) {
             centroidLng = centroid.geometry.coordinates[0];
             centroidLat = centroid.geometry.coordinates[1];
           }
         } catch (e) {
-          console.error("Error calculating centroid for feature:", newFeature?.properties?.CFSAUID, e);
+          console.error("Error calculating centroid for Canadian feature:", newFeature?.properties?.CFSAUID, e);
         }
         
         newFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
         return newFeature;
       });
     } else {
-      // US data (assumed 4326) or Canada data if already 4326
       processedFeatures = featuresToLoad.map(feature => {
         const newFeature = JSON.parse(JSON.stringify(feature));
-        
-        // Try to find pre-calculated centroid or calculate it
-        let lat = null; 
-        let lng = null;
-
-        if (newFeature.properties.INTPTLAT20 && newFeature.properties.INTPTLON20) {
-           lat = parseFloat(newFeature.properties.INTPTLAT20);
-           lng = parseFloat(newFeature.properties.INTPTLON20);
-        } else {
-           // Calculate if missing (e.g. for Canadian data that doesn't need reprojection)
-           try {
-             const centroid = turf.centerOfMass(newFeature.geometry);
-             lng = centroid.geometry.coordinates[0];
-             lat = centroid.geometry.coordinates[1];
-           } catch (e) {
-             console.warn("Could not calculate centroid for feature", feature.properties);
-           }
-        }
-
+        const lat = parseFloat(feature.properties.INTPTLAT20);
+        const lng = parseFloat(feature.properties.INTPTLON20);
         newFeature.properties.calculated_centroid = {
-          lat: (lat !== null && !isNaN(lat)) ? lat : null,
-          lng: (lng !== null && !isNaN(lng)) ? lng : null
+          lat: isNaN(lat) ? null : lat,
+          lng: isNaN(lng) ? null : lng
         };
         return newFeature;
       });
@@ -401,7 +375,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       features: processedFeatures
     });
     setLoadingGeoJson(false);
-  }, [isCanada, country]); // Re-run if country changes
+  }, [isCanada, country]);
 
   const filteredGeoJsonData = useMemo(() => {
     if (!allGeoJsonData) return null;
@@ -421,7 +395,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           radiusInMeters
         );
       }
-      // If we can't determine centroid, keep it safe or exclude? Exclude to avoid clutter.
       return false;
     });
 
