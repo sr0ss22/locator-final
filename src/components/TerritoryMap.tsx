@@ -422,16 +422,16 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E'; // Green-500
-      fillOpacity = 0.05;
+      fillOpacity = 0.2; // 20% opacity fill
       color = '#166534'; // Green-800
       weight = 1;
-      opacity = 0.25;
+      opacity = 0.5; // 50% opacity border for selected
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316'; // Orange-500
-      fillOpacity = 0.05;
+      fillOpacity = 0.2; // 20% opacity fill
       color = '#9A3412'; // Orange-800
       weight = 1;
-      opacity = 0.25;
+      opacity = 0.5; // 50% opacity border for selected
     } else if (isTerritoryManagementPage) {
       if (status === 'Approved') {
         fillColor = '#D4EDDA'; // Light green
