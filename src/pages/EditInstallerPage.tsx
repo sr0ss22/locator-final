@@ -156,10 +156,16 @@ const EditInstallerPage: React.FC = () => {
         if (currentInstallerCountry === 'Canada') {
           zipCode = feature.properties.CFSAUID; state = feature.properties.PRNAME;
           try {
-            const centroid = turf.centroid(feature);
+            const reprojectedFeature = JSON.parse(JSON.stringify(feature));
+            turf.coordEach(reprojectedFeature, (currentCoord) => {
+              const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
+              currentCoord[0] = lon;
+              currentCoord[1] = lat;
+            });
+            const centroid = turf.centroid(reprojectedFeature.geometry);
             if (centroid?.geometry?.coordinates) {
-              const reprojectedCoords = proj4('EPSG:3857', 'EPSG:4326', centroid.geometry.coordinates);
-              lng = reprojectedCoords[0]; lat = reprojectedCoords[1];
+              lng = centroid.geometry.coordinates[0];
+              lat = centroid.geometry.coordinates[1];
             }
           } catch (e) { console.warn("Error calculating centroid for Canadian feature:", feature, e); }
         } else {
