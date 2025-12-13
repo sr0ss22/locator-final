@@ -288,6 +288,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 }) => {
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [loadingGeoJson, setLoadingGeoJson] = useState(true);
+  const [geoJsonError, setGeoJsonError] = useState<string | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   const { distanceUnit } = useCountrySettings();
 
@@ -301,11 +302,14 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   useEffect(() => {
     setLoadingGeoJson(true);
+    setGeoJsonError(null);
     const featuresToLoad = isCanada ? canadaGeoJson.features : usGeoJson.features;
     
     if (!featuresToLoad || featuresToLoad.length === 0) {
-      console.error(`GeoJSON data for ${country} could not be loaded or is empty.`);
-      toast.error(`Map data for ${country} is missing. Polygons cannot be displayed.`);
+      const errorMessage = `CRITICAL ERROR: The GeoJSON data file for ${country} could not be loaded or is empty. Polygons cannot be displayed. Please contact support.`;
+      console.error(errorMessage);
+      toast.error(errorMessage, { duration: 10000 });
+      setGeoJsonError(errorMessage);
       setLoadingGeoJson(false);
       return;
     }
@@ -385,59 +389,16 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [allGeoJsonData, isTerritoryManagementPage, currentDisplayRadius, centerLocation, isCanada]);
 
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
-    const zipCode = getPostalCode(feature, isCanada);
-    const highlightState = highlightedZipCodes.get(zipCode);
-
-    let fillColor = '#F0F0F0';
-    let color = '#94a3b8';
-    let weight = 1.5;
-    let fillOpacity = 0;
-    let opacity = 0.3;
-
-    if (highlightState === 'green') {
-      color = '#22C55E';
-      fillColor = '#DCFCE7';
-      weight = 1.5; 
-      fillOpacity = 0.65; 
-      opacity = 1;
-    } else if (highlightState === 'orange') {
-      color = '#F97316';
-      fillColor = '#FFEDD5';
-      weight = 1.5; 
-      fillOpacity = 0.65; 
-      opacity = 1;
-    } else {
-      const assignedStatus = territoryStatuses.get(zipCode) || null;
-
-      if (isTerritoryManagementPage) {
-        if (assignedStatus === 'Approved') {
-          fillColor = '#D4EDDA';
-          fillOpacity = 0.65;
-          color = '#22C55E';
-          weight = 1.5;
-          opacity = 1;
-        } else if (assignedStatus === 'Needs Approval') {
-          fillColor = '#FFF3CD';
-          fillOpacity = 0.65;
-          color = '#F97316';
-          weight = 1.5;
-          opacity = 1;
-        }
-      } else {
-        if (assignedStatus === 'Approved') {
-          color = '#a7f3d0';
-          weight = 1;
-          opacity = 1;
-        } else if (assignedStatus === 'Needs Approval') {
-          color = '#fed7aa';
-          weight = 1;
-          opacity = 1;
-        }
-      }
-    }
-
-    return { fillColor, weight, opacity, color, fillOpacity, interactive: true };
-  }, [territoryStatuses, highlightedZipCodes, isCanada, isTerritoryManagementPage]);
+    // Diagnostic: Force all polygons to be bright red
+    return {
+        fillColor: '#FF0000',
+        weight: 1,
+        opacity: 1,
+        color: '#FFFFFF',
+        fillOpacity: 0.6,
+        interactive: true,
+    };
+  }, []);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
@@ -467,6 +428,17 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const highlightedZipsString = Array.from(highlightedZipCodes.entries()).map(([k, v]) => `${k}:${v}`).join(',');
     return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
   }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
+
+  if (geoJsonError) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-red-100 text-red-800 p-4 border-4 border-dashed border-red-500">
+        <div className="text-center">
+          <h3 className="font-bold text-lg mb-2">Map Data Error</h3>
+          <p>{geoJsonError}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loadingGeoJson) {
     return (
