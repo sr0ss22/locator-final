@@ -53,21 +53,14 @@ async function migrateCanadaGeoJson() {
         const postalCode = properties.CFSAUID;
         const province = properties.PRNAME;
 
-        // Reproject geometry from EPSG:3857 to EPSG:4326
-        const reprojectedFeature = JSON.parse(JSON.stringify(feature));
-        turf.coordEach(reprojectedFeature, (currentCoord) => {
-          const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
-          currentCoord[0] = lon;
-          currentCoord[1] = lat;
-        });
+        // The Canadian GeoJSON is already in EPSG:4326, so no reprojection is needed.
+        const geometryJsonString = feature.geometry ? JSON.stringify(feature.geometry) : null;
 
-        const geometryJsonString = reprojectedFeature.geometry ? JSON.stringify(reprojectedFeature.geometry) : null;
-
-        // Calculate centroid from the reprojected geometry
+        // Calculate centroid from the original geometry
         let centroidLatitude = null;
         let centroidLongitude = null;
         try {
-          const centroid = turf.centroid(reprojectedFeature.geometry);
+          const centroid = turf.centroid(feature.geometry);
           if (centroid?.geometry?.coordinates) {
             centroidLongitude = centroid.geometry.coordinates[0];
             centroidLatitude = centroid.geometry.coordinates[1];

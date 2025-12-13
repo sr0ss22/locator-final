@@ -316,16 +316,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         let processedFeatures;
         if (isCanada) {
           processedFeatures = geoJson.features.map((feature: any) => {
-            const reprojectedFeature = JSON.parse(JSON.stringify(feature));
+            const newFeature = JSON.parse(JSON.stringify(feature));
             let centroidLat = null;
             let centroidLng = null;
             try {
-              turf.coordEach(reprojectedFeature, (currentCoord) => {
-                const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
-                currentCoord[0] = lon;
-                currentCoord[1] = lat;
-              });
-              const centroidWGS84 = turf.centroid(reprojectedFeature.geometry);
+              // The Canadian GeoJSON is already in EPSG:4326, so no reprojection is needed.
+              // We just need to calculate the centroid.
+              const centroidWGS84 = turf.centroid(newFeature.geometry);
               if (centroidWGS84?.geometry?.coordinates) {
                 centroidLng = centroidWGS84.geometry.coordinates[0];
                 centroidLat = centroidWGS84.geometry.coordinates[1];
@@ -333,8 +330,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
             } catch (e) {
               console.error("Error processing centroid for Canadian feature:", feature?.properties?.CFSAUID, e);
             }
-            reprojectedFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
-            return reprojectedFeature;
+            newFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
+            return newFeature;
           });
         } else {
           processedFeatures = geoJson.features.map((feature: any) => {
