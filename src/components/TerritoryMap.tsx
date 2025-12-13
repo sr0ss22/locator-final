@@ -363,24 +363,43 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   const filteredGeoJsonData = useMemo(() => {
     if (!allGeoJsonData) return null;
+    console.log(`[DIAGNOSTIC] Starting filter. Total features in allGeoJsonData: ${allGeoJsonData.features.length}`);
+
     if (isTerritoryManagementPage || currentDisplayRadius === 'all' || !centerLocation?.lat || !centerLocation?.lng) {
+      console.log(`[DIAGNOSTIC] Skipping radius filter. Returning all features.`);
       return allGeoJsonData;
     }
 
     const radiusInMeters = (currentDisplayRadius as number) * 1609.34;
+    console.log(`[DIAGNOSTIC] Filtering by radius. Center: ${centerLocation.lat}, ${centerLocation.lng}. Radius: ${radiusInMeters} meters.`);
+
+    let logCount = 0;
     const filteredFeatures = allGeoJsonData.features.filter((feature: any) => {
       const centroid = getCentroid(feature);
       if (centroid.lat != null && centroid.lng != null) {
-        return isPointInCircle(
+        const distanceMiles = calculateDistance(
           centroid.lat,
           centroid.lng,
           centerLocation.lat!,
-          centerLocation.lng!,
-          radiusInMeters
+          centerLocation.lng!
         );
+        const isInCircle = (distanceMiles * 1609.34) <= radiusInMeters;
+
+        if (logCount < 5) {
+            console.log(`[DIAGNOSTIC] Feature ${getPostalCode(feature, isCanada)}: Centroid (${centroid.lat}, ${centroid.lng}), Distance: ${distanceMiles.toFixed(2)} miles. In circle? ${isInCircle}`);
+            logCount++;
+        }
+
+        return isInCircle;
+      }
+      if (logCount < 5) {
+        console.log(`[DIAGNOSTIC] Feature ${getPostalCode(feature, isCanada)}: SKIPPED due to null centroid.`);
+        logCount++;
       }
       return false;
     });
+
+    console.log(`[DIAGNOSTIC] Filtering complete. Found ${filteredFeatures.length} features within radius.`);
 
     return {
       ...allGeoJsonData,
@@ -390,18 +409,48 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
     const zipCode = getPostalCode(feature, isCanada);
-    console.log(`[DIAGNOSTIC] Applying style to feature: ${zipCode}`);
-    
-    // Force a highly visible style for debugging
+    const isHighlighted = highlightedZipCodes.get(zipCode);
+    const isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
+    const status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
+
+    let fillColor = '#F0F0F0'; // Default unassigned
+    let fillOpacity = 0.3;
+    let color = '#94a3b8'; // Slate-400
+    let weight = 1;
+
+    if (isBulkSelecting) {
+      fillColor = '#BFDBFE'; // Light blue for bulk select mode
+      fillOpacity = 0.4;
+      color = '#1D4ED8'; // Darker blue
+    } else if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
+      fillColor = '#22C55E'; // Green-500
+      fillOpacity = 0.6;
+      color = '#166534'; // Green-800
+      weight = 2;
+    } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
+      fillColor = '#F97316'; // Orange-500
+      fillOpacity = 0.6;
+      color = '#9A3412'; // Orange-800
+      weight = 2;
+    } else if (isTerritoryManagementPage) {
+      if (status === 'Approved') {
+        fillColor = '#D4EDDA'; // Light green
+        fillOpacity = 0.5;
+      } else if (status === 'Needs Approval') {
+        fillColor = '#FFF3CD'; // Light yellow
+        fillOpacity = 0.5;
+      }
+    }
+
     return {
-        fillColor: '#FF0000', // Bright Red
-        weight: 2,
-        opacity: 1,
-        color: 'white',
-        fillOpacity: 0.7,
-        interactive: true,
+      fillColor,
+      weight,
+      opacity: 1,
+      color,
+      fillOpacity,
+      interactive: true,
     };
-  }, [isCanada]);
+  }, [isCanada, highlightedZipCodes, selectedZipCodes, territoryStatuses, isBulkSelecting, isTerritoryManagementPage]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
