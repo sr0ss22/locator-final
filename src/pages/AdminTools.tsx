@@ -3,10 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Database, LogOut, Download } from 'lucide-react';
+import { Loader2, ArrowLeft, Database, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Progress } from '@/components/ui/progress';
-import Papa from "papaparse";
 
 // Import the local GeoJSON files
 import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
@@ -24,8 +23,6 @@ const AdminToolsPage: React.FC = () => {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
-  const [assigningTerritories, setAssigningTerritories] = useState(false);
-  const [updatingStates, setUpdatingStates] = useState(false);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -105,88 +102,6 @@ const AdminToolsPage: React.FC = () => {
     setProcessing(false);
   };
 
-  const handleAutoAssignTerritories = async () => {
-    setAssigningTerritories(true);
-    const loadingToastId = toast.loading("Starting automated territory assignment for all US installers. This may take several minutes...");
-
-    const { data, error } = await supabase.rpc('assign_territories_for_all_us_installers', {
-      radius_miles: 25,
-    });
-
-    if (error) {
-      console.error("Error auto-assigning territories:", error);
-      toast.error(`An error occurred: ${error.message}`, { id: loadingToastId });
-    } else {
-      toast.success(`Territory assignment complete. ${data}`, { id: loadingToastId, duration: 8000 });
-    }
-
-    setAssigningTerritories(false);
-  };
-
-  const handleUpdateZipStates = async () => {
-    setUpdatingStates(true);
-    const loadingToastId = toast.loading("Updating state data for all US territories based on ZIP code ranges...");
-
-    const { data, error } = await supabase.rpc('update_zip_code_states');
-
-    if (error) {
-        console.error("Error updating ZIP states:", error);
-        toast.error(`An error occurred: ${error.message}`, { id: loadingToastId });
-    } else {
-        toast.success(data, { id: loadingToastId, duration: 8000 });
-    }
-
-    setUpdatingStates(false);
-  };
-
-  const handleExportShareableLinks = async () => {
-    setProcessing(true);
-    const loadingToastId = toast.loading("Fetching installer data for export...");
-
-    try {
-      const { data, error } = await supabase
-        .from('installers')
-        .select('id, name, email, state, territory_access_token');
-
-      if (error) {
-        throw new Error(`Failed to fetch installers: ${error.message}`);
-      }
-
-      if (!data || data.length === 0) {
-        toast.info("No installers found to export.", { id: loadingToastId });
-        setProcessing(false);
-        return;
-      }
-
-      const dataToExport = data.map(installer => {
-        const shareableLink = `${window.location.origin}/territory-editor/${installer.id}/${installer.territory_access_token}`;
-        return {
-          Name: installer.name,
-          Email: installer.email,
-          State: installer.state,
-          'Shareable Link': shareableLink,
-        };
-      });
-
-      const csv = Papa.unparse(dataToExport);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.setAttribute("download", "installer_shareable_links.csv");
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      toast.success("Shareable links exported successfully!", { id: loadingToastId });
-
-    } catch (err: any) {
-      console.error("Error exporting shareable links:", err);
-      toast.error(`Export failed: ${err.message}`, { id: loadingToastId });
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between gap-4 mb-8">
@@ -220,70 +135,13 @@ const AdminToolsPage: React.FC = () => {
             )}
           </CardContent>
           <CardFooter className="flex gap-4">
-            <Button onClick={() => handleProcessGeoJson('USA')} disabled={processing || assigningTerritories || updatingStates}>
+            <Button onClick={() => handleProcessGeoJson('USA')} disabled={processing}>
               {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Process US Data
             </Button>
-            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={processing || assigningTerritories || updatingStates}>
+            <Button onClick={() => handleProcessGeoJson('Canada')} disabled={processing}>
               {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
               Process Canada Data
-            </Button>
-          </CardFooter>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Automated Territory Assignment</CardTitle>
-            <CardDescription>
-              Automatically assign territories to all US-based installers. This will find all ZIP codes within a 25-mile radius of each installer's location and assign them.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-destructive">
-              <strong>Warning:</strong> This is a long-running process that will modify many records. It will not remove existing assignments, only add new ones.
-            </p>
-          </CardContent>
-          <CardFooter>
-            <Button onClick={handleAutoAssignTerritories} disabled={assigningTerritories || processing || updatingStates}>
-              {assigningTerritories ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-              Assign Territories (25-mile radius)
-            </Button>
-          </CardFooter>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Update Territory States</CardTitle>
-            <CardDescription>
-              Corrects the 'State/Province' for all US territories based on their ZIP code prefix. This uses the standard USPS ZIP code ranges.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-destructive">
-              <strong>Warning:</strong> This will overwrite existing state data for all US ZIP code assignments. This process cannot be undone.
-            </p>
-          </CardContent>
-          <CardFooter>
-            <Button onClick={handleUpdateZipStates} disabled={updatingStates || processing || assigningTerritories}>
-              {updatingStates ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
-              Update All US Territory States
-            </Button>
-          </CardFooter>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Export Sharable Links</CardTitle>
-            <CardDescription>
-              Export a CSV file containing the name, email, state, and unique territory editor link for every installer in the database.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-gray-600">
-              This file is useful for distributing territory management links to installers in bulk.
-            </p>
-          </CardContent>
-          <CardFooter>
-            <Button onClick={handleExportShareableLinks} disabled={processing || assigningTerritories || updatingStates}>
-              {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-              Export Links
             </Button>
           </CardFooter>
         </Card>
