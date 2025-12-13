@@ -334,7 +334,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         } catch (e) {
           console.error("Error processing centroid for Canadian feature:", feature?.properties?.CFSAUID, e);
         }
-
+        
         // 3. Store the correct WGS84 centroid for filtering logic
         reprojectedFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
 
@@ -375,25 +375,35 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     }
 
     const radiusInMeters = (currentDisplayRadius as number) * 1609.34;
-    const filteredFeatures = allGeoJsonData.features.filter((feature: any) => {
+    console.log(`[DIAGNOSTIC] Starting filter. Total features in allGeoJsonData: ${allGeoJsonData.features.length}`);
+    console.log(`[DIAGNOSTIC] Filtering by radius. Center: ${centerLocation.lat}, ${centerLocation.lng}. Radius: ${radiusInMeters.toFixed(0)} meters.`);
+
+    const filteredFeatures = allGeoJsonData.features.filter((feature: any, index: number) => {
       const centroid = getCentroid(feature);
       if (centroid.lat != null && centroid.lng != null) {
-        return isPointInCircle(
+        const isInCircle = isPointInCircle(
           centroid.lat,
           centroid.lng,
           centerLocation.lat!,
           centerLocation.lng!,
           radiusInMeters
         );
+        if (index < 5) { // Log first 5 features for inspection
+          const distance = calculateDistance(centroid.lat, centroid.lng, centerLocation.lat!, centerLocation.lng!);
+          console.log(`[DIAGNOSTIC] Feature ${getPostalCode(feature, isCanada)}: Centroid (${centroid.lat.toFixed(6)}, ${centroid.lng.toFixed(6)}), Distance: ${distance.toFixed(2)} miles. In circle? ${isInCircle}`);
+        }
+        return isInCircle;
       }
       return false;
     });
+    
+    console.log(`[DIAGNOSTIC] Filtering complete. Found ${filteredFeatures.length} features within radius.`);
 
     return {
       ...allGeoJsonData,
       features: filteredFeatures,
     };
-  }, [allGeoJsonData, isTerritoryManagementPage, currentDisplayRadius, centerLocation]);
+  }, [allGeoJsonData, isTerritoryManagementPage, currentDisplayRadius, centerLocation, isCanada]);
 
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
     const zipCode = getPostalCode(feature, isCanada);
