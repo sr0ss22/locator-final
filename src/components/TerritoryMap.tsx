@@ -389,16 +389,19 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [allGeoJsonData, isTerritoryManagementPage, currentDisplayRadius, centerLocation, isCanada]);
 
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
-    // Diagnostic: Force all polygons to be bright red
+    const zipCode = getPostalCode(feature, isCanada);
+    console.log(`[DIAGNOSTIC] Applying style to feature: ${zipCode}`);
+    
+    // Force a highly visible style for debugging
     return {
-        fillColor: '#FF0000',
-        weight: 1,
+        fillColor: '#FF0000', // Bright Red
+        weight: 2,
         opacity: 1,
-        color: '#FFFFFF',
-        fillOpacity: 0.6,
+        color: 'white',
+        fillOpacity: 0.7,
         interactive: true,
     };
-  }, []);
+  }, [isCanada]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
@@ -447,6 +450,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       </div>
     );
   }
+
+  console.log(`[DIAGNOSTIC] Rendering GeoJSON component with ${filteredGeoJsonData?.features?.length ?? 0} features.`);
 
   const greenCircleOptions = { color: '#22C55E', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
   const yellowCircleOptions = { color: '#FACC15', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
