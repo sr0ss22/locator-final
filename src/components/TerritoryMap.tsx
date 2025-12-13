@@ -320,8 +320,14 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
             let centroidLat = null;
             let centroidLng = null;
             try {
-              // The Canadian GeoJSON is already in EPSG:4326, so no reprojection is needed.
-              // We just need to calculate the centroid.
+              // Reproject geometry from EPSG:3857 to EPSG:4326 (WGS84)
+              turf.coordEach(newFeature.geometry, (currentCoord) => {
+                const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326').forward(currentCoord);
+                currentCoord[0] = lon;
+                currentCoord[1] = lat;
+              });
+
+              // Calculate centroid from the reprojected geometry
               const centroidWGS84 = turf.centroid(newFeature.geometry);
               if (centroidWGS84?.geometry?.coordinates) {
                 centroidLng = centroidWGS84.geometry.coordinates[0];

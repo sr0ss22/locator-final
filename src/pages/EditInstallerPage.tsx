@@ -156,8 +156,13 @@ const EditInstallerPage: React.FC = () => {
         if (currentInstallerCountry === 'Canada') {
           zipCode = feature.properties.CFSAUID; state = feature.properties.PRNAME;
           try {
-            // The Canadian GeoJSON is already in EPSG:4326, so no reprojection is needed.
-            const centroid = turf.centroid(feature.geometry);
+            const transformedGeometry = turf.clone(feature.geometry);
+            turf.coordEach(transformedGeometry, (currentCoord) => {
+              const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326').forward(currentCoord);
+              currentCoord[0] = lon;
+              currentCoord[1] = lat;
+            });
+            const centroid = turf.centroid(transformedGeometry);
             if (centroid?.geometry?.coordinates) {
               lng = centroid.geometry.coordinates[0];
               lat = centroid.geometry.coordinates[1];
