@@ -420,12 +420,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     let weight = 1;
     let opacity = 0.15; // 15% opacity for border
 
-    if (isBulkSelecting) {
-      fillColor = '#BFDBFE'; // Light blue for bulk select mode
-      fillOpacity = 0.4;
-      color = '#1D4ED8'; // Darker blue
-      opacity = 1; // Full opacity border for bulk select
-    } else if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
+    if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E'; // Green-500
       fillOpacity = 0.2; // 20% opacity fill
       color = '#166534'; // Green-800
@@ -459,7 +454,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       fillOpacity,
       interactive: true,
     };
-  }, [isCanada, highlightedZipCodes, selectedZipCodes, territoryStatuses, isBulkSelecting, isTerritoryManagementPage]);
+  }, [isCanada, highlightedZipCodes, selectedZipCodes, territoryStatuses, isTerritoryManagementPage]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
