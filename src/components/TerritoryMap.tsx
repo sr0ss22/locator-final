@@ -483,7 +483,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const selectedZipsString = selectedZipCodes.map(z => `${z.zipCode}:${z.assignedStatus}`).join(',');
     const highlightedZipsString = Array.from(highlightedZipCodes.entries()).map(([k, v]) => `${k}:${v}`).join(',');
     return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
-  }, [selectedZipCodes, highlightedZipsString, currentDisplayRadius, isBulkSelecting]);
+  }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
 
   if (geoJsonError) {
     return (
