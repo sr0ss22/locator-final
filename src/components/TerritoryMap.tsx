@@ -412,7 +412,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
 
     let fillColor = '#F0F0F0'; // Default unassigned
-    let fillOpacity = 0.3;
+    let fillOpacity = 0.5;
     let color = '#94a3b8'; // Slate-400
     let weight = 1;
 
