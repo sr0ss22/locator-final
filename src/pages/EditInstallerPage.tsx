@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
+proj4.defs("EPSG:3347", "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=63.390675 +lon_0=-91.86666666666666 +x_0=6200000 +y_0=3000000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
 
 const toBoolean = (value: any): boolean => {
   if (typeof value === 'string') return value.toLowerCase() === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
@@ -158,7 +159,7 @@ const EditInstallerPage: React.FC = () => {
           try {
             const transformedGeometry = turf.clone(feature.geometry);
             turf.coordEach(transformedGeometry, (currentCoord) => {
-              const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326').forward(currentCoord);
+              const [lon, lat] = proj4('EPSG:3347', 'EPSG:4326').forward(currentCoord);
               currentCoord[0] = lon;
               currentCoord[1] = lat;
             });
