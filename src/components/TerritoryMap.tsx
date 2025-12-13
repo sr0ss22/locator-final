@@ -15,6 +15,11 @@ import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
+// Import both GeoJSON files
+import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
+import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
+import proj4 from 'proj4';
+
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl,
@@ -37,6 +42,11 @@ interface TerritoryMapProps {
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
+
+// Define projection strings directly
+const MERCATOR_PROJ = "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs";
+const WGS84_PROJ = "+proj=longlat +datum=WGS84 +no_defs";
+
 
 // --- Country-Aware Helper Functions ---
 
@@ -293,67 +303,69 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [onZipCodeClick]);
 
   useEffect(() => {
-    const fetchGeometries = async () => {
-        setLoadingGeoJson(true);
-        setGeoJsonError(null);
-        setAllGeoJsonData(null);
+    setLoadingGeoJson(true);
+    setGeoJsonError(null);
+    const featuresToLoad = isCanada ? canadaGeoJson.features : usGeoJson.features;
+    
+    if (!featuresToLoad || featuresToLoad.length === 0) {
+      const errorMessage = `CRITICAL ERROR: The GeoJSON data file for ${country} could not be loaded or is empty. Polygons cannot be displayed. Please contact support.`;
+      console.error(errorMessage);
+      toast.error(errorMessage, { duration: 10000 });
+      setGeoJsonError(errorMessage);
+      setLoadingGeoJson(false);
+      return;
+    }
 
-        const isCanada = country === 'Canada';
+    let processedFeatures;
+
+    if (isCanada) {
+      processedFeatures = featuresToLoad.map(feature => {
+        const reprojectedFeature = JSON.parse(JSON.stringify(feature));
+        let centroidLat = null;
+        let centroidLng = null;
+
+        try {
+          // 1. Reproject the entire polygon geometry to WGS84 (lat/lng) first.
+          turf.coordEach(reprojectedFeature, (currentCoord) => {
+            const [lon, lat] = proj4(MERCATOR_PROJ, WGS84_PROJ, currentCoord);
+            currentCoord[0] = lon;
+            currentCoord[1] = lat;
+          });
+
+          // 2. Now, calculate the centroid from the correctly projected geometry.
+          const centroidWGS84 = turf.centroid(reprojectedFeature.geometry);
+          if (centroidWGS84?.geometry?.coordinates) {
+            centroidLng = centroidWGS84.geometry.coordinates[0];
+            centroidLat = centroidWGS84.geometry.coordinates[1];
+          }
+        } catch (e) {
+          console.error("Error processing centroid for Canadian feature:", feature?.properties?.CFSAUID, e);
+        }
         
-        let query = supabase
-            .from('zip_code_geometries')
-            .select('zip_code, state_province, geometry, centroid_latitude, centroid_longitude');
+        // 3. Store the WGS84 centroid for filtering logic.
+        reprojectedFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
 
-        if (isCanada) {
-            query = query.char_length('zip_code', 3);
-        } else {
-            query = query.char_length('zip_code', 5);
-        }
+        return reprojectedFeature;
+      });
+    } else {
+      processedFeatures = featuresToLoad.map(feature => {
+        const newFeature = JSON.parse(JSON.stringify(feature));
+        const lat = parseFloat(feature.properties.INTPTLAT20);
+        const lng = parseFloat(feature.properties.INTPTLON20);
+        newFeature.properties.calculated_centroid = {
+          lat: isNaN(lat) ? null : lat,
+          lng: isNaN(lng) ? null : lng
+        };
+        return newFeature;
+      });
+    }
 
-        const { data, error } = await query;
-
-        if (error) {
-            const errorMessage = `Failed to load map data for ${country}: ${error.message}`;
-            console.error(errorMessage);
-            toast.error(errorMessage, { duration: 10000 });
-            setGeoJsonError(errorMessage);
-            setLoadingGeoJson(false);
-            return;
-        }
-
-        if (!data || data.length === 0) {
-            const errorMessage = `No map data found for ${country} in the database. Please ensure the migration scripts have been run.`;
-            console.warn(errorMessage);
-            toast.warn(errorMessage, { duration: 10000 });
-            setGeoJsonError(errorMessage);
-            setLoadingGeoJson(false);
-            return;
-        }
-
-        const features = data.map(row => ({
-            type: 'Feature',
-            geometry: row.geometry,
-            properties: {
-                CFSAUID: isCanada ? row.zip_code : null,
-                ZCTA5CE20: !isCanada ? row.zip_code : null,
-                PRNAME: isCanada ? row.state_province : null,
-                STUSPS: !isCanada ? row.state_province : null,
-                calculated_centroid: {
-                    lat: row.centroid_latitude,
-                    lng: row.centroid_longitude,
-                }
-            }
-        }));
-
-        setAllGeoJsonData({
-            type: 'FeatureCollection',
-            features: features,
-        });
-        setLoadingGeoJson(false);
-    };
-
-    fetchGeometries();
-  }, [country]);
+    setAllGeoJsonData({
+      type: 'FeatureCollection',
+      features: processedFeatures
+    });
+    setLoadingGeoJson(false);
+  }, [isCanada, country]);
 
   const filteredGeoJsonData = useMemo(() => {
     if (!allGeoJsonData) return null;
