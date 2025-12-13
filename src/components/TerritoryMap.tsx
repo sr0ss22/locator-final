@@ -318,22 +318,34 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     if (isCanada) {
       processedFeatures = featuresToLoad.map(feature => {
-        const originalFeature = JSON.parse(JSON.stringify(feature));
+        const reprojectedFeature = JSON.parse(JSON.stringify(feature));
         let centroidLat = null;
         let centroidLng = null;
+
         try {
-          const centroid = turf.centroid(originalFeature.geometry);
-          if (centroid?.geometry?.coordinates) {
-            const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', centroid.geometry.coordinates);
+          // 1. Calculate centroid in original projection (EPSG:3857)
+          const centroidMercator = turf.centroid(feature.geometry);
+          if (centroidMercator?.geometry?.coordinates) {
+            // 2. Reproject the centroid point to WGS84 (lat/lng)
+            const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', centroidMercator.geometry.coordinates);
             centroidLng = lon;
             centroidLat = lat;
           }
         } catch (e) {
-          console.error("Error calculating or reprojecting centroid for Canadian feature:", originalFeature?.properties?.CFSAUID, e);
+          console.error("Error processing centroid for Canadian feature:", feature?.properties?.CFSAUID, e);
         }
-        
-        originalFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
-        return originalFeature;
+
+        // 3. Store the correct WGS84 centroid for filtering logic
+        reprojectedFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
+
+        // 4. Reproject the entire polygon geometry for Leaflet rendering
+        turf.coordEach(reprojectedFeature, (currentCoord) => {
+          const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
+          currentCoord[0] = lon;
+          currentCoord[1] = lat;
+        });
+
+        return reprojectedFeature;
       });
     } else {
       processedFeatures = featuresToLoad.map(feature => {
