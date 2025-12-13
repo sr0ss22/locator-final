@@ -322,26 +322,34 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       };
 
       processedFeatures = featuresToLoad.map(feature => {
-        const newFeature = JSON.parse(JSON.stringify(feature));
+        const newFeature = JSON.parse(JSON.stringify(feature)); // Deep copy to avoid mutation issues
         let centroidLat = null;
         let centroidLng = null;
-        try {
-          const centroid = turf.centroid(feature);
-          if (centroid && centroid.geometry && centroid.geometry.coordinates) {
-            const [lng, lat] = proj4('EPSG:3857', 'EPSG:4326', centroid.geometry.coordinates);
-            centroidLat = lat;
-            centroidLng = lng;
-          }
-        } catch (e) {
-          console.error("Error calculating centroid for Canadian feature:", feature, e);
-        }
-        newFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
+
+        // First, reproject the entire geometry to WGS84 (EPSG:4326)
         if (newFeature.geometry && newFeature.geometry.coordinates) {
           newFeature.geometry.coordinates = reprojectCoordinatesRecursive(newFeature.geometry.coordinates);
         }
+
+        // Now, calculate the centroid on the reprojected (WGS84) geometry
+        try {
+          // Using centerOfMass is often more robust for complex polygons
+          const centroid = turf.centerOfMass(newFeature.geometry);
+          if (centroid && centroid.geometry && centroid.geometry.coordinates) {
+            centroidLng = centroid.geometry.coordinates[0];
+            centroidLat = centroid.geometry.coordinates[1];
+          }
+        } catch (e) {
+          console.error("Error calculating centroid for reprojected Canadian feature:", newFeature, e);
+        }
+        
+        // Store the correctly calculated centroid
+        newFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
+        
         return newFeature;
       });
     } else {
+      // US data processing remains the same
       processedFeatures = featuresToLoad.map(feature => {
         const newFeature = JSON.parse(JSON.stringify(feature));
         const lat = parseFloat(feature.properties.INTPTLAT20);
