@@ -317,29 +317,27 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     let processedFeatures;
 
     if (isCanada) {
+      // The Canadian data is already in EPSG:4326 after the initial script run, but client-side processing is safer.
+      // The previous reprojection was faulty. Let's assume the source is EPSG:3857 and fix the reprojection.
+      // Correction: The logs show the source data is likely already WGS84 (lat/lng), and the reprojection was corrupting it.
+      // Let's remove the reprojection and calculate the centroid directly.
       processedFeatures = featuresToLoad.map(feature => {
-        const reprojectedFeature = JSON.parse(JSON.stringify(feature));
-        
-        turf.coordEach(reprojectedFeature, (currentCoord) => {
-          const [lon, lat] = proj4('EPSG:3857', 'EPSG:4326', currentCoord);
-          currentCoord[0] = lon;
-          currentCoord[1] = lat;
-        });
-
+        const originalFeature = JSON.parse(JSON.stringify(feature));
         let centroidLat = null;
         let centroidLng = null;
         try {
-          const centroid = turf.centroid(reprojectedFeature.geometry);
+          // Calculate centroid from the original geometry, assuming it's WGS84
+          const centroid = turf.centroid(originalFeature.geometry);
           if (centroid?.geometry?.coordinates) {
             centroidLng = centroid.geometry.coordinates[0];
             centroidLat = centroid.geometry.coordinates[1];
           }
         } catch (e) {
-          console.error("Error calculating centroid for Canadian feature:", reprojectedFeature?.properties?.CFSAUID, e);
+          console.error("Error calculating centroid for Canadian feature:", originalFeature?.properties?.CFSAUID, e);
         }
         
-        reprojectedFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
-        return reprojectedFeature;
+        originalFeature.properties.calculated_centroid = { lat: centroidLat, lng: centroidLng };
+        return originalFeature;
       });
     } else {
       processedFeatures = featuresToLoad.map(feature => {
@@ -363,49 +361,31 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   const filteredGeoJsonData = useMemo(() => {
     if (!allGeoJsonData) return null;
-    console.log(`[DIAGNOSTIC] Starting filter. Total features in allGeoJsonData: ${allGeoJsonData.features.length}`);
 
     if (isTerritoryManagementPage || currentDisplayRadius === 'all' || !centerLocation?.lat || !centerLocation?.lng) {
-      console.log(`[DIAGNOSTIC] Skipping radius filter. Returning all features.`);
       return allGeoJsonData;
     }
 
     const radiusInMeters = (currentDisplayRadius as number) * 1609.34;
-    console.log(`[DIAGNOSTIC] Filtering by radius. Center: ${centerLocation.lat}, ${centerLocation.lng}. Radius: ${radiusInMeters} meters.`);
-
-    let logCount = 0;
     const filteredFeatures = allGeoJsonData.features.filter((feature: any) => {
       const centroid = getCentroid(feature);
       if (centroid.lat != null && centroid.lng != null) {
-        const distanceMiles = calculateDistance(
+        return isPointInCircle(
           centroid.lat,
           centroid.lng,
           centerLocation.lat!,
-          centerLocation.lng!
+          centerLocation.lng!,
+          radiusInMeters
         );
-        const isInCircle = (distanceMiles * 1609.34) <= radiusInMeters;
-
-        if (logCount < 5) {
-            console.log(`[DIAGNOSTIC] Feature ${getPostalCode(feature, isCanada)}: Centroid (${centroid.lat}, ${centroid.lng}), Distance: ${distanceMiles.toFixed(2)} miles. In circle? ${isInCircle}`);
-            logCount++;
-        }
-
-        return isInCircle;
-      }
-      if (logCount < 5) {
-        console.log(`[DIAGNOSTIC] Feature ${getPostalCode(feature, isCanada)}: SKIPPED due to null centroid.`);
-        logCount++;
       }
       return false;
     });
-
-    console.log(`[DIAGNOSTIC] Filtering complete. Found ${filteredFeatures.length} features within radius.`);
 
     return {
       ...allGeoJsonData,
       features: filteredFeatures,
     };
-  }, [allGeoJsonData, isTerritoryManagementPage, currentDisplayRadius, centerLocation, isCanada]);
+  }, [allGeoJsonData, isTerritoryManagementPage, currentDisplayRadius, centerLocation]);
 
   const getZipCodeStyle = useCallback((feature: any): L.PathOptions => {
     const zipCode = getPostalCode(feature, isCanada);
@@ -499,8 +479,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       </div>
     );
   }
-
-  console.log(`[DIAGNOSTIC] Rendering GeoJSON component with ${filteredGeoJsonData?.features?.length ?? 0} features.`);
 
   const greenCircleOptions = { color: '#22C55E', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
   const yellowCircleOptions = { color: '#FACC15', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
