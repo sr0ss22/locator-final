@@ -416,7 +416,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     let fillOpacity = 0; // No fill for unselected
     let color = '#94a3b8'; // Slate-400
     let weight = 1;
-    let opacity = 0.25; // 25% opacity for border
+    let opacity = 0.15; // 15% opacity for border
 
     if (isBulkSelecting) {
       fillColor = '#BFDBFE'; // Light blue for bulk select mode
@@ -425,16 +425,16 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       opacity = 1; // Full opacity border for bulk select
     } else if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E'; // Green-500
-      fillOpacity = 0.3; // 30% opacity fill
+      fillOpacity = 0.2; // 20% opacity fill
       color = '#166534'; // Green-800
       weight = 1; // Same width as unselected
-      opacity = 1; // Full opacity border for selected
+      opacity = 0.6; // 60% opacity border for selected
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316'; // Orange-500
-      fillOpacity = 0.3; // 30% opacity fill
+      fillOpacity = 0.2; // 20% opacity fill
       color = '#9A3412'; // Orange-800
       weight = 1; // Same width as unselected
-      opacity = 1; // Full opacity border for selected
+      opacity = 0.6; // 60% opacity border for selected
     } else if (isTerritoryManagementPage) {
       if (status === 'Approved') {
         fillColor = '#D4EDDA'; // Light green
