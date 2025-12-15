@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
 import { Star, Loader2 } from 'lucide-react';
@@ -414,24 +414,32 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
 
     // Default style for unselected territories
-    let fillColor = '#F0F0F0';
-    let fillOpacity = 0; // No fill for unselected
-    let color = '#94a3b8'; // Slate-400
+    let fillColor = '#d1d5db'; // gray-300
+    let fillOpacity = 0;
+    let color = '#9ca3af'; // gray-400
     let weight = 1;
-    let opacity = 0.15; // 15% opacity for border
+    let opacity = 1;
+
+    if (!isCanada) {
+      // Revert to original US default style
+      fillColor = '#F0F0F0';
+      fillOpacity = 0;
+      color = '#94a3b8'; // Slate-400
+      opacity = 0.15;
+    }
 
     if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E'; // Green-500
-      fillOpacity = 0.2; // 20% opacity fill
+      fillOpacity = 0.2;
       color = '#166534'; // Green-800
       weight = 1;
-      opacity = 0.5; // 50% opacity border for selected
+      opacity = 0.5;
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316'; // Orange-500
-      fillOpacity = 0.2; // 20% opacity fill
+      fillOpacity = 0.2;
       color = '#9A3412'; // Orange-800
       weight = 1;
-      opacity = 0.5; // 50% opacity border for selected
+      opacity = 0.5;
     } else if (isTerritoryManagementPage) {
       if (status === 'Approved') {
         fillColor = '#D4EDDA'; // Light green
@@ -527,7 +535,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       />
       
       <Pane name="polygons" style={{ zIndex: 450 }} />
-      {filteredGeoJsonData && (
+      {filteredGeoJsonData && !isCanada && (
         <GeoJSON
           key={geoJsonStyleKey}
           ref={geoJsonLayerRef}
@@ -536,6 +544,39 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           onEachFeature={onEachFeature}
           pane="polygons"
         />
+      )}
+      {filteredGeoJsonData && isCanada && (
+        <Pane name="circles" style={{ zIndex: 450 }}>
+          {filteredGeoJsonData.features.map((feature: any) => {
+            const centroid = getCentroid(feature);
+            if (!centroid.lat || !centroid.lng) return null;
+
+            const postalCode = getPostalCode(feature, true);
+            const region = getRegion(feature, true);
+            const style = getZipCodeStyle(feature);
+
+            return (
+              <Circle
+                key={postalCode}
+                center={[centroid.lat, centroid.lng]}
+                radius={1000} // 1000 meters
+                pathOptions={style}
+                eventHandlers={{
+                  click: (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    if (!isBulkSelecting) {
+                      onZipCodeClickRef.current(postalCode, region);
+                    }
+                  },
+                }}
+              >
+                <Tooltip>
+                  {`FSA: ${postalCode} (${region})`}
+                </Tooltip>
+              </Circle>
+            );
+          })}
+        </Pane>
       )}
 
       {!isTerritoryManagementPage && centerLocation?.lat != null && centerLocation?.lng != null && (
