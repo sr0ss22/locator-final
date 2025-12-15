@@ -300,7 +300,7 @@ const CanadianPostalCodeLayer = ({ nearbyPostalCodes, getStyle, onZipCodeClickRe
     };
   }, [map]);
 
-  const showLabels = currentZoom >= 10;
+  const showLabels = currentZoom >= 13;
 
   return (
     <Pane name="circles" style={{ zIndex: 450 }}>
@@ -311,7 +311,7 @@ const CanadianPostalCodeLayer = ({ nearbyPostalCodes, getStyle, onZipCodeClickRe
           <Circle
             key={`${postalCodeData.POSTAL_CODE}-${index}`}
             center={[postalCodeData.LATITUDE, postalCodeData.LONGITUDE]}
-            radius={2500} // Updated radius
+            radius={2500}
             pathOptions={style}
             eventHandlers={{
               click: (e) => {
@@ -467,35 +467,42 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
     const status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
 
-    let fillColor = '#d1d5db'; // gray-300
+    // Default styles
+    let fillColor = '#d1d5db';
     let fillOpacity = 0;
-    let color = '#9ca3af'; // gray-400
+    let color = '#9ca3af';
     let weight = 1;
     let opacity = 1;
 
     if (isCanada) {
-      fillColor = 'transparent';
-      color = '#9ca3af'; // gray-400
-      opacity = 1;
+      // Default blue for unselected Canadian postal codes
+      fillColor = '#BFDBFE'; // tailwind blue-200
+      color = '#3B82F6'; // tailwind blue-500
+      fillOpacity = 0.4;
+      weight = 1.5;
+      opacity = 0.6;
     } else {
+      // Default for US zip codes
       fillColor = '#F0F0F0';
       color = '#94a3b8'; // Slate-400
       opacity = 0.15;
     }
 
+    // Override for selected/highlighted
     if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E'; // Green-500
-      fillOpacity = 0.2;
+      fillOpacity = 0.5;
       color = '#166534'; // Green-800
-      weight = 1;
-      opacity = 0.5;
+      weight = 2;
+      opacity = 0.8;
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316'; // Orange-500
-      fillOpacity = 0.2;
+      fillOpacity = 0.5;
       color = '#9A3412'; // Orange-800
-      weight = 1;
-      opacity = 0.5;
+      weight = 2;
+      opacity = 0.8;
     } else if (isTerritoryManagementPage) {
+      // Styles for the global territory management page
       if (status === 'Approved') {
         fillColor = '#D4EDDA';
         fillOpacity = 0.5;
