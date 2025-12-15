@@ -281,6 +281,61 @@ const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, r
   );
 };
 
+const CanadianPostalCodeLayer = ({ nearbyPostalCodes, getStyle, onZipCodeClickRef, isBulkSelecting }: {
+  nearbyPostalCodes: any[];
+  getStyle: (zipCode: string) => L.PathOptions;
+  onZipCodeClickRef: React.RefObject<(zipCode: string, stateProvince: string) => void>;
+  isBulkSelecting: boolean;
+}) => {
+  const map = useMap();
+  const [currentZoom, setCurrentZoom] = useState(map.getZoom());
+
+  useEffect(() => {
+    const handleZoom = () => {
+      setCurrentZoom(map.getZoom());
+    };
+    map.on('zoomend', handleZoom);
+    return () => {
+      map.off('zoomend', handleZoom);
+    };
+  }, [map]);
+
+  const showLabels = currentZoom >= 10;
+
+  return (
+    <Pane name="circles" style={{ zIndex: 450 }}>
+      {nearbyPostalCodes.map((postalCodeData: any, index: number) => {
+        if (!postalCodeData.LATITUDE || !postalCodeData.LONGITUDE) return null;
+        const style = getStyle(postalCodeData.POSTAL_CODE);
+        return (
+          <Circle
+            key={`${postalCodeData.POSTAL_CODE}-${index}`}
+            center={[postalCodeData.LATITUDE, postalCodeData.LONGITUDE]}
+            radius={2500} // Updated radius
+            pathOptions={style}
+            eventHandlers={{
+              click: (e) => {
+                L.DomEvent.stopPropagation(e);
+                if (!isBulkSelecting && onZipCodeClickRef.current) {
+                  onZipCodeClickRef.current(postalCodeData.POSTAL_CODE, postalCodeData.PROVINCE_ABBR);
+                }
+              },
+            }}
+          >
+            <Tooltip 
+              permanent={showLabels} 
+              direction="center" 
+              className="postal-code-label"
+            >
+              {postalCodeData.POSTAL_CODE.substring(0, 3)}
+            </Tooltip>
+          </Circle>
+        );
+      })}
+    </Pane>
+  );
+};
+
 const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onZipCodeClick,
   centerLocation,
@@ -539,32 +594,12 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         />
       )}
       {isCanada && !loadingPostalCodes && (
-        <Pane name="circles" style={{ zIndex: 450 }}>
-          {nearbyPostalCodes.map((postalCodeData: any) => {
-            if (!postalCodeData.LATITUDE || !postalCodeData.LONGITUDE) return null;
-            const style = getStyle(postalCodeData.POSTAL_CODE);
-            return (
-              <Circle
-                key={postalCodeData.POSTAL_CODE}
-                center={[postalCodeData.LATITUDE, postalCodeData.LONGITUDE]}
-                radius={1000} // 1000 meters
-                pathOptions={style}
-                eventHandlers={{
-                  click: (e) => {
-                    L.DomEvent.stopPropagation(e);
-                    if (!isBulkSelecting) {
-                      onZipCodeClickRef.current(postalCodeData.POSTAL_CODE, postalCodeData.PROVINCE_ABBR);
-                    }
-                  },
-                }}
-              >
-                <Tooltip>
-                  {`Postal Code: ${postalCodeData.POSTAL_CODE} (${postalCodeData.PROVINCE_ABBR})`}
-                </Tooltip>
-              </Circle>
-            );
-          })}
-        </Pane>
+        <CanadianPostalCodeLayer
+          nearbyPostalCodes={nearbyPostalCodes}
+          getStyle={getStyle}
+          onZipCodeClickRef={onZipCodeClickRef}
+          isBulkSelecting={isBulkSelecting}
+        />
       )}
 
       {!isTerritoryManagementPage && centerLocation?.lat != null && centerLocation?.lng != null && (

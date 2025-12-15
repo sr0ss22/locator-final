@@ -101,3 +101,19 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom style for permanent postal code labels on the map */
+.postal-code-label {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  color: #1f2937; /* gray-800 */
+  font-weight: 600; /* semibold */
+  font-size: 10px;
+  /* Add a white text-shadow to make it readable on any background */
+  text-shadow: 
+    -1px -1px 0 #fff,  
+     1px -1px 0 #fff,
+    -1px  1px 0 #fff,
+     1px  1px 0 #fff;
+}
