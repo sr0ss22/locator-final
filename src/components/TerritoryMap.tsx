@@ -281,43 +281,38 @@ const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, r
   );
 };
 
-const CanadianPostalCodeLayer = ({ nearbyPostalCodes, getStyle, onZipCodeClickRef, isBulkSelecting }: {
-  nearbyPostalCodes: any[];
-  getStyle: (zipCode: string) => L.PathOptions;
-  onZipCodeClickRef: React.RefObject<(zipCode: string, stateProvince: string) => void>;
+const CanadianFsaLayer = ({ fsaGroups, getStyle, isBulkSelecting }: {
+  fsaGroups: any[];
+  getStyle: (group: any) => L.PathOptions;
   isBulkSelecting: boolean;
 }) => {
   const map = useMap();
   const [currentZoom, setCurrentZoom] = useState(map.getZoom());
 
   useEffect(() => {
-    const handleZoom = () => {
-      setCurrentZoom(map.getZoom());
-    };
+    const handleZoom = () => setCurrentZoom(map.getZoom());
     map.on('zoomend', handleZoom);
-    return () => {
-      map.off('zoomend', handleZoom);
-    };
+    return () => { map.off('zoomend', handleZoom); };
   }, [map]);
 
-  const showLabels = currentZoom >= 13;
+  const showLabels = currentZoom >= 9;
 
   return (
-    <Pane name="circles" style={{ zIndex: 450 }}>
-      {nearbyPostalCodes.map((postalCodeData: any, index: number) => {
-        if (!postalCodeData.LATITUDE || !postalCodeData.LONGITUDE) return null;
-        const style = getStyle(postalCodeData.POSTAL_CODE);
+    <Pane name="fsa-circles" style={{ zIndex: 450 }}>
+      {fsaGroups.map((group: any) => {
+        const style = getStyle(group);
+
         return (
           <Circle
-            key={`${postalCodeData.POSTAL_CODE}-${index}`}
-            center={[postalCodeData.LATITUDE, postalCodeData.LONGITUDE]}
-            radius={2500}
+            key={group.fsa}
+            center={group.center}
+            radius={group.radius}
             pathOptions={style}
             eventHandlers={{
               click: (e) => {
                 L.DomEvent.stopPropagation(e);
-                if (!isBulkSelecting && onZipCodeClickRef.current) {
-                  onZipCodeClickRef.current(postalCodeData.POSTAL_CODE, postalCodeData.PROVINCE_ABBR);
+                if (!isBulkSelecting) {
+                  toast.info(`FSA ${group.fsa} contains ${group.postalCodes.length} postal codes. Use bulk select to assign.`);
                 }
               },
             }}
@@ -327,7 +322,13 @@ const CanadianPostalCodeLayer = ({ nearbyPostalCodes, getStyle, onZipCodeClickRe
               direction="center" 
               className="postal-code-label"
             >
-              {postalCodeData.POSTAL_CODE.substring(0, 3)}
+              {group.fsa}
+            </Tooltip>
+            <Tooltip direction="top">
+              <strong>FSA: {group.fsa}</strong><br />
+              {group.postalCodes.length > 15 
+                ? `Contains ${group.postalCodes.length} postal codes.`
+                : group.postalCodes.join(', ')}
             </Tooltip>
           </Circle>
         );
@@ -434,75 +435,96 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     }
   }, [isCanada, centerLocation]);
 
-  const filteredGeoJsonData = useMemo(() => {
-    if (!allGeoJsonData || isCanada) return null;
-
-    if (isTerritoryManagementPage || currentDisplayRadius === 'all' || !centerLocation?.lat || !centerLocation?.lng) {
-      return allGeoJsonData;
+  const fsaGroups = useMemo(() => {
+    if (!isCanada || !nearbyPostalCodes || nearbyPostalCodes.length === 0) {
+      return [];
     }
 
-    const radiusInMeters = (currentDisplayRadius as number) * 1609.34;
-    const filteredFeatures = allGeoJsonData.features.filter((feature: any) => {
-      const centroid = getCentroid(feature);
-      if (centroid.lat != null && centroid.lng != null) {
-        return isPointInCircle(
-          centroid.lat,
-          centroid.lng,
-          centerLocation.lat!,
-          centerLocation.lng!,
-          radiusInMeters
-        );
-      }
-      return false;
-    });
-    
-    return {
-      ...allGeoJsonData,
-      features: filteredFeatures,
-    };
-  }, [allGeoJsonData, isTerritoryManagementPage, currentDisplayRadius, centerLocation, isCanada]);
+    const groups: Map<string, { points: L.LatLng[], postalCodes: string[], province: string }> = new Map();
 
-  const getStyle = useCallback((zipCode: string): L.PathOptions => {
+    nearbyPostalCodes.forEach(pc => {
+      if (pc.LATITUDE && pc.LONGITUDE && pc.POSTAL_CODE) {
+        const fsa = pc.POSTAL_CODE.substring(0, 3);
+        if (!groups.has(fsa)) {
+          groups.set(fsa, { points: [], postalCodes: [], province: pc.PROVINCE_ABBR });
+        }
+        const group = groups.get(fsa)!;
+        group.points.push(L.latLng(pc.LATITUDE, pc.LONGITUDE));
+        group.postalCodes.push(pc.POSTAL_CODE);
+      }
+    });
+
+    return Array.from(groups.entries()).map(([fsa, groupData]) => {
+      const latLngs = groupData.points.map(p => [p.lat, p.lng]);
+      const turfPoints = turf.points(latLngs.map(p => [p[1], p[0]]));
+      const centerOfMass = turf.centerOfMass(turfPoints);
+      const center = L.latLng(centerOfMass.geometry.coordinates[1], centerOfMass.geometry.coordinates[0]);
+      const radius = 1000 + Math.sqrt(groupData.postalCodes.length) * 250;
+
+      return { fsa, center, radius, postalCodes: groupData.postalCodes, province: groupData.province };
+    });
+  }, [isCanada, nearbyPostalCodes]);
+
+  const getFsaStyle = useCallback((group: any): L.PathOptions => {
+    const postalCodesInGroup = new Set(group.postalCodes);
+    const selectedInGroup = selectedZipCodes.filter(z => postalCodesInGroup.has(z.zipCode));
+
+    let status: TerritoryStatus | 'unselected' = 'unselected';
+    if (selectedInGroup.length > 0) {
+      if (selectedInGroup.some(z => z.assignedStatus === 'Needs Approval')) {
+        status = 'Needs Approval';
+      } else {
+        status = 'Approved';
+      }
+    }
+
+    let fillColor = '#BFDBFE';
+    let color = '#3B82F6';
+    let fillOpacity = 0.4;
+    let weight = 1.5;
+    let opacity = 0.6;
+
+    if (status === 'Approved') {
+      fillColor = '#22C55E';
+      fillOpacity = 0.5;
+      color = '#166534';
+      weight = 2;
+      opacity = 0.8;
+    } else if (status === 'Needs Approval') {
+      fillColor = '#F97316';
+      fillOpacity = 0.5;
+      color = '#9A3412';
+      weight = 2;
+      opacity = 0.8;
+    }
+
+    return { fillColor, weight, opacity, color, fillOpacity, interactive: true };
+  }, [selectedZipCodes]);
+
+  const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
     const isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
     const status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
 
-    // Default styles
-    let fillColor = '#d1d5db';
+    let fillColor = '#F0F0F0';
+    let color = '#94a3b8';
     let fillOpacity = 0;
-    let color = '#9ca3af';
     let weight = 1;
-    let opacity = 1;
+    let opacity = 0.15;
 
-    if (isCanada) {
-      // Default blue for unselected Canadian postal codes
-      fillColor = '#BFDBFE'; // tailwind blue-200
-      color = '#3B82F6'; // tailwind blue-500
-      fillOpacity = 0.4;
-      weight = 1.5;
-      opacity = 0.6;
-    } else {
-      // Default for US zip codes
-      fillColor = '#F0F0F0';
-      color = '#94a3b8'; // Slate-400
-      opacity = 0.15;
-    }
-
-    // Override for selected/highlighted
     if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
-      fillColor = '#22C55E'; // Green-500
+      fillColor = '#22C55E';
       fillOpacity = 0.5;
-      color = '#166534'; // Green-800
+      color = '#166534';
       weight = 2;
       opacity = 0.8;
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
-      fillColor = '#F97316'; // Orange-500
+      fillColor = '#F97316';
       fillOpacity = 0.5;
-      color = '#9A3412'; // Orange-800
+      color = '#9A3412';
       weight = 2;
       opacity = 0.8;
     } else if (isTerritoryManagementPage) {
-      // Styles for the global territory management page
       if (status === 'Approved') {
         fillColor = '#D4EDDA';
         fillOpacity = 0.5;
@@ -517,7 +539,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     }
 
     return { fillColor, weight, opacity, color, fillOpacity, interactive: true };
-  }, [isCanada, highlightedZipCodes, selectedZipCodes, territoryStatuses, isTerritoryManagementPage]);
+  }, [highlightedZipCodes, selectedZipCodes, territoryStatuses, isTerritoryManagementPage]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
@@ -595,16 +617,15 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           key={geoJsonStyleKey}
           ref={geoJsonLayerRef}
           data={filteredGeoJsonData as any}
-          style={(feature) => getStyle(getPostalCode(feature, false))}
+          style={(feature) => getGeoJsonStyle(getPostalCode(feature, false))}
           onEachFeature={onEachFeature}
           pane="polygons"
         />
       )}
       {isCanada && !loadingPostalCodes && (
-        <CanadianPostalCodeLayer
-          nearbyPostalCodes={nearbyPostalCodes}
-          getStyle={getStyle}
-          onZipCodeClickRef={onZipCodeClickRef}
+        <CanadianFsaLayer
+          fsaGroups={fsaGroups}
+          getStyle={getFsaStyle}
           isBulkSelecting={isBulkSelecting}
         />
       )}
