@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.get_canadian_postal_code_details(text[]);

@@ -419,29 +419,29 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [isCanada, country]);
 
   useEffect(() => {
-    if (isCanada) {
-      const fetchAssignedPostalCodeDetails = async () => {
-        const assignedPostalCodes = selectedZipCodes.map(z => z.zipCode);
-        if (assignedPostalCodes.length === 0) {
-          setNearbyPostalCodes([]);
-          return;
-        }
+    if (isCanada && centerLocation?.lat && centerLocation?.lng) {
+      const fetchNearbyPostalCodes = async () => {
         setLoadingPostalCodes(true);
-        const { data, error } = await supabase.rpc('get_canadian_postal_code_details', {
-          postal_codes: assignedPostalCodes,
+        const radiusInMeters = 150 * 1609.34; // 150 miles
+        const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_radius', {
+          center_lat: centerLocation.lat,
+          center_lng: centerLocation.lng,
+          radius_meters: radiusInMeters,
         });
         if (error) {
-          console.error("Error fetching assigned Canadian postal code details:", error);
-          toast.error("Could not load assigned postal codes for the map.");
+          console.error("Error fetching nearby Canadian postal codes:", error);
+          toast.error("Could not load postal codes for the map.");
           setNearbyPostalCodes([]);
         } else {
           setNearbyPostalCodes(data || []);
         }
         setLoadingPostalCodes(false);
       };
-      fetchAssignedPostalCodeDetails();
+      fetchNearbyPostalCodes();
+    } else if (isCanada) {
+      setNearbyPostalCodes([]);
     }
-  }, [isCanada, selectedZipCodes]);
+  }, [isCanada, centerLocation]);
 
   const fsaGroups = useMemo(() => {
     if (!isCanada || !nearbyPostalCodes || nearbyPostalCodes.length === 0) {
