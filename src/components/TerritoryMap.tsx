@@ -570,6 +570,35 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
   }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
 
+  const filteredGeoJsonData = useMemo(() => {
+    if (!allGeoJsonData || isCanada) {
+      return null;
+    }
+
+    if (currentDisplayRadius === 'all' || !centerLocation?.lat || !centerLocation?.lng) {
+      return allGeoJsonData;
+    }
+
+    const featuresInRadius = allGeoJsonData.features.filter((feature: any) => {
+      const centroid = getCentroid(feature);
+      if (centroid.lat && centroid.lng) {
+        const distance = calculateDistance(
+          centerLocation.lat!,
+          centerLocation.lng!,
+          centroid.lat,
+          centroid.lng
+        );
+        return distance <= currentDisplayRadius;
+      }
+      return false;
+    });
+
+    return {
+      type: 'FeatureCollection',
+      features: featuresInRadius,
+    };
+  }, [allGeoJsonData, isCanada, currentDisplayRadius, centerLocation]);
+
   if (geoJsonError) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-red-100 text-red-800 p-4 border-4 border-dashed border-red-500">
