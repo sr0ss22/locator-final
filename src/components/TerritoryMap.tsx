@@ -295,7 +295,7 @@ const CanadianFsaLayer = ({ fsaGroups, getStyle, isBulkSelecting }: {
     return () => { map.off('zoomend', handleZoom); };
   }, [map]);
 
-  const showLabels = currentZoom >= 9;
+  const showLabels = currentZoom >= 7;
 
   return (
     <Pane name="fsa-circles" style={{ zIndex: 450 }}>
@@ -303,34 +303,42 @@ const CanadianFsaLayer = ({ fsaGroups, getStyle, isBulkSelecting }: {
         const style = getStyle(group);
 
         return (
-          <Circle
-            key={group.fsa}
-            center={group.center}
-            radius={group.radius}
-            pathOptions={style}
-            eventHandlers={{
-              click: (e) => {
-                L.DomEvent.stopPropagation(e);
-                if (!isBulkSelecting) {
-                  toast.info(`FSA ${group.fsa} contains ${group.postalCodes.length} postal codes. Use bulk select to assign.`);
-                }
-              },
-            }}
-          >
-            <Tooltip 
-              permanent={showLabels} 
-              direction="center" 
-              className="postal-code-label"
+          <React.Fragment key={group.fsa}>
+            <Circle
+              center={group.center}
+              radius={group.radius}
+              pathOptions={style}
+              eventHandlers={{
+                click: (e) => {
+                  L.DomEvent.stopPropagation(e);
+                  if (!isBulkSelecting) {
+                    toast.info(`FSA ${group.fsa} contains ${group.postalCodes.length} postal codes. Use bulk select to assign.`);
+                  }
+                },
+              }}
             >
-              {group.fsa}
-            </Tooltip>
-            <Tooltip direction="top">
-              <strong>FSA: {group.fsa}</strong><br />
-              {group.postalCodes.length > 15 
-                ? `Contains ${group.postalCodes.length} postal codes.`
-                : group.postalCodes.join(', ')}
-            </Tooltip>
-          </Circle>
+              <Tooltip direction="top">
+                <div style={{ maxWidth: '300px', wordWrap: 'break-word' }}>
+                  <strong>FSA: {group.fsa}</strong><br />
+                  {group.postalCodes.length > 15
+                    ? `Contains ${group.postalCodes.length} postal codes.`
+                    : group.postalCodes.join(', ')}
+                </div>
+              </Tooltip>
+            </Circle>
+            {showLabels && (
+              <Marker
+                position={group.center}
+                interactive={false}
+                icon={L.divIcon({
+                  html: `<span>${group.fsa}</span>`,
+                  className: 'fsa-label-icon',
+                  iconSize: [40, 20],
+                  iconAnchor: [20, 10],
+                })}
+              />
+            )}
+          </React.Fragment>
         );
       })}
     </Pane>
