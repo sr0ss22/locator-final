@@ -170,8 +170,8 @@ function MapInteractionHandler({
         
         if (isCanada) {
           nearbyPostalCodes.forEach((postalCodeData: any) => {
-            if (postalCodeData.latitude && postalCodeData.longitude && isPointInCircle(postalCodeData.latitude, postalCodeData.longitude, finalCenter.lat, finalCenter.lng, finalRadiusMeters)) {
-              selectedZips.push({ zipCode: postalCodeData.postal_code, stateProvince: postalCodeData.province });
+            if (postalCodeData.LATITUDE && postalCodeData.LONGITUDE && isPointInCircle(postalCodeData.LATITUDE, postalCodeData.LONGITUDE, finalCenter.lat, finalCenter.lng, finalRadiusMeters)) {
+              selectedZips.push({ zipCode: postalCodeData.POSTAL_CODE, stateProvince: postalCodeData.PROVINCE_ABBR });
             }
           });
         } else if (geoJsonData) { // USA case
@@ -541,25 +541,25 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       {isCanada && !loadingPostalCodes && (
         <Pane name="circles" style={{ zIndex: 450 }}>
           {nearbyPostalCodes.map((postalCodeData: any) => {
-            if (!postalCodeData.latitude || !postalCodeData.longitude) return null;
-            const style = getStyle(postalCodeData.postal_code);
+            if (!postalCodeData.LATITUDE || !postalCodeData.LONGITUDE) return null;
+            const style = getStyle(postalCodeData.POSTAL_CODE);
             return (
               <Circle
-                key={postalCodeData.postal_code}
-                center={[postalCodeData.latitude, postalCodeData.longitude]}
+                key={postalCodeData.POSTAL_CODE}
+                center={[postalCodeData.LATITUDE, postalCodeData.LONGITUDE]}
                 radius={1000} // 1000 meters
                 pathOptions={style}
                 eventHandlers={{
                   click: (e) => {
                     L.DomEvent.stopPropagation(e);
                     if (!isBulkSelecting) {
-                      onZipCodeClickRef.current(postalCodeData.postal_code, postalCodeData.province);
+                      onZipCodeClickRef.current(postalCodeData.POSTAL_CODE, postalCodeData.PROVINCE_ABBR);
                     }
                   },
                 }}
               >
                 <Tooltip>
-                  {`Postal Code: ${postalCodeData.postal_code} (${postalCodeData.province})`}
+                  {`Postal Code: ${postalCodeData.POSTAL_CODE} (${postalCodeData.PROVINCE_ABBR})`}
                 </Tooltip>
               </Circle>
             );
