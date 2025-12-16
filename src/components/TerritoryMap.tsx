@@ -423,7 +423,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       const fetchNearbyPostalCodes = async () => {
         setLoadingPostalCodes(true);
         const radiusInMeters = 150 * 1609.34; // 150 miles
-        const { data, error } = await supabase.rpc('get_canadian_geometries_in_radius', {
+        const { data, error } = await supabase.rpc('get_canadian_postal_codes_from_dedicated_table', {
           center_lat: centerLocation.lat,
           center_lng: centerLocation.lng,
           radius_meters: radiusInMeters,

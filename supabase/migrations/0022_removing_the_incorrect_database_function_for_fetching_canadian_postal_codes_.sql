@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.get_canadian_geometries_in_radius(double precision, double precision, double precision);
