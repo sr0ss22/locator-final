@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS canadian_postal_codes_geog_idx ON public.canadian_postal_codes USING GIST (geog);
