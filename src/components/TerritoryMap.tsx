@@ -7,14 +7,12 @@ import { calculateDistance } from '@/utils/distance';
 import { TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
 import * as turf from '@turf/turf';
-import { useCountrySettings } from "@/hooks/useCountrySettings";
-import { supabase } from '@/integrations/supabase/client';
+import proj4 from 'proj4';
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
-import proj4 from 'proj4';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -40,12 +38,8 @@ interface TerritoryMapProps {
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
 
 // Define projections for coordinate conversion
-proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
 proj4.defs("EPSG:3347", "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=63.390675 +lon_0=-91.86666666666666 +x_0=6200000 +y_0=3000000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
-
-
-// --- Country-Aware Helper Functions ---
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
   if (!feature || !feature.properties) return '';
@@ -99,9 +93,8 @@ function MapUpdater({ centerLocation, isOpen, country }: {
     if (centerLocation?.lat != null && centerLocation?.lng != null) {
       map.setView([centerLocation.lat, centerLocation.lng], 10);
     } else {
-      // Default views
       if (country === 'Canada') {
-        map.setView([56.1304, -106.3468], 3);
+        map.setView([56.1304, -106.3468], 4);
       } else {
         map.setView([39.8283, -98.5795], 4);
       }
@@ -114,13 +107,11 @@ function MapUpdater({ centerLocation, isOpen, country }: {
 function MapInteractionHandler({
   isBulkSelecting,
   geoJsonData,
-  nearbyPostalCodes,
   onBulkSelectionComplete,
   isCanada,
 }: {
   isBulkSelecting: boolean;
   geoJsonData: any;
-  nearbyPostalCodes: any[];
   onBulkSelectionComplete: ((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void) | undefined;
   isCanada: boolean;
 }) {
@@ -163,27 +154,19 @@ function MapInteractionHandler({
     };
 
     const handleMouseUp = () => {
-      if (isDrawingRef.current && drawStartLatLngRef.current && currentDrawCircleRef.current && onBulkSelectionCompleteRef.current) {
+      if (isDrawingRef.current && drawStartLatLngRef.current && currentDrawCircleRef.current && onBulkSelectionCompleteRef.current && geoJsonData) {
         const finalCenter = drawStartLatLngRef.current;
         const finalRadiusMeters = currentDrawCircleRef.current.getRadius();
         const selectedZips: Array<{ zipCode: string, stateProvince: string }> = [];
         
-        if (isCanada) {
-          nearbyPostalCodes.forEach((postalCodeData: any) => {
-            if (postalCodeData.LATITUDE && postalCodeData.LONGITUDE && isPointInCircle(postalCodeData.LATITUDE, postalCodeData.LONGITUDE, finalCenter.lat, finalCenter.lng, finalRadiusMeters)) {
-              selectedZips.push({ zipCode: postalCodeData.POSTAL_CODE, stateProvince: postalCodeData.PROVINCE_ABBR });
+        geoJsonData.features.forEach((feature: any) => {
+          if (feature.geometry) {
+            const centroid = getCentroid(feature);
+            if (centroid.lat && centroid.lng && isPointInCircle(centroid.lat, centroid.lng, finalCenter.lat, finalCenter.lng, finalRadiusMeters)) {
+              selectedZips.push({ zipCode: getPostalCode(feature, isCanada), stateProvince: getRegion(feature, isCanada) });
             }
-          });
-        } else if (geoJsonData) { // USA case
-          geoJsonData.features.forEach((feature: any) => {
-            if (feature.geometry) {
-              const centroid = getCentroid(feature);
-              if (centroid.lat && centroid.lng && isPointInCircle(centroid.lat, centroid.lng, finalCenter.lat, finalCenter.lng, finalRadiusMeters)) {
-                selectedZips.push({ zipCode: getPostalCode(feature, isCanada), stateProvince: getRegion(feature, isCanada) });
-              }
-            }
-          });
-        }
+          }
+        });
         onBulkSelectionCompleteRef.current(selectedZips);
       }
 
@@ -200,150 +183,23 @@ function MapInteractionHandler({
       map.on('mousemove', handleMouseMove);
       map.on('mouseup', handleMouseUp);
       map.dragging.disable();
-      map.doubleClickZoom.disable();
-      map.scrollWheelZoom.disable();
-      map.touchZoom.disable();
-      map.boxZoom.disable();
-      map.keyboard.disable();
     } else {
       map.off('mousedown', handleMouseDown);
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
-      
-      map.dragging.enable();
-      map.doubleClickZoom.enable();
-      map.scrollWheelZoom.enable();
-      map.touchZoom.enable();
-      map.boxZoom.enable();
-      map.keyboard.enable();
-
-      if (currentDrawCircleRef.current) {
-        map.removeLayer(currentDrawCircleRef.current);
-        currentDrawCircleRef.current = null;
-      }
+      if (map.dragging && !map.dragging.enabled()) map.dragging.enable();
     }
 
     return () => {
       map.off('mousedown', handleMouseDown);
       map.off('mousemove', handleMouseMove);
       map.off('mouseup', handleMouseUp);
-      
       if (map.dragging && !map.dragging.enabled()) map.dragging.enable();
-      if (map.doubleClickZoom && !map.doubleClickZoom.enabled()) map.doubleClickZoom.enable();
-      if (map.scrollWheelZoom && !map.scrollWheelZoom.enabled()) map.scrollWheelZoom.enable();
-      if (map.touchZoom && !map.touchZoom.enabled()) map.touchZoom.enable();
-      if (map.boxZoom && !map.boxZoom.enabled()) map.boxZoom.enable();
-      if (map.keyboard && !map.keyboard.enabled()) map.keyboard.enable();
-
-      if (currentDrawCircleRef.current) {
-        map.removeLayer(currentDrawCircleRef.current);
-        currentDrawCircleRef.current = null;
-      }
     };
-  }, [map, isBulkSelecting, geoJsonData, nearbyPostalCodes, isCanada]);
+  }, [map, isBulkSelecting, geoJsonData, isCanada]);
 
   return null;
 }
-
-interface RadiusCircleWithLabelProps {
-  center: L.LatLngExpression;
-  radiusMiles: number;
-  pathOptions: L.PathOptions;
-  distanceUnit: 'miles' | 'km';
-}
-
-const RadiusCircleWithLabel: React.FC<RadiusCircleWithLabelProps> = ({ center, radiusMiles, pathOptions, distanceUnit }) => {
-  const [lat, lng] = Array.isArray(center) ? center : [center.lat, center.lng];
-  const radiusMeters = radiusMiles * 1609.34;
-  const latOffsetDegrees = radiusMeters / 111139;
-  const labelLat = lat + latOffsetDegrees;
-  const displayRadius = distanceUnit === 'km' ? (radiusMiles * 1.60934).toFixed(0) : radiusMiles.toFixed(0);
-  const labelText = `${displayRadius} ${distanceUnit}`;
-  const textColor = '#333333';
-  const badgeBgColor = '#F0F0F0';
-
-  const labelIcon = L.divIcon({
-    html: `<div class="flex items-center justify-center">
-            <span style="background-color: ${badgeBgColor}; color: ${textColor};" class="text-xs font-semibold px-2.5 py-0.5 rounded-full shadow-sm whitespace-nowrap">
-              ${labelText}
-            </span>
-          </div>`,
-    className: 'custom-radius-label-icon',
-    iconSize: [labelText.length * 8 + 20, 20],
-    iconAnchor: [labelText.length * 4 + 10, 10],
-  });
-
-  return (
-    <>
-      <Circle center={center} radius={radiusMeters} pathOptions={pathOptions} />
-      <Marker position={[labelLat, lng]} icon={labelIcon} interactive={false} />
-    </>
-  );
-};
-
-const CanadianFsaLayer = ({ fsaGroups, getStyle, isBulkSelecting }: {
-  fsaGroups: any[];
-  getStyle: (group: any) => L.PathOptions;
-  isBulkSelecting: boolean;
-}) => {
-  const map = useMap();
-  const [currentZoom, setCurrentZoom] = useState(map.getZoom());
-
-  useEffect(() => {
-    const handleZoom = () => setCurrentZoom(map.getZoom());
-    map.on('zoomend', handleZoom);
-    return () => { map.off('zoomend', handleZoom); };
-  }, [map]);
-
-  const showLabels = currentZoom >= 7;
-
-  return (
-    <Pane name="fsa-circles" style={{ zIndex: 450 }}>
-      {fsaGroups.map((group: any) => {
-        const style = getStyle(group);
-
-        return (
-          <React.Fragment key={group.fsa}>
-            <Circle
-              center={group.center}
-              radius={group.radius}
-              pathOptions={style}
-              eventHandlers={{
-                click: (e) => {
-                  L.DomEvent.stopPropagation(e);
-                  if (!isBulkSelecting) {
-                    toast.info(`FSA ${group.fsa} contains ${group.postalCodes.length} postal codes. Use bulk select to assign.`);
-                  }
-                },
-              }}
-            >
-              <Tooltip direction="top">
-                <div style={{ maxWidth: '300px', wordWrap: 'break-word' }}>
-                  <strong>FSA: {group.fsa}</strong><br />
-                  {group.postalCodes.length > 15
-                    ? `Contains ${group.postalCodes.length} postal codes.`
-                    : group.postalCodes.join(', ')}
-                </div>
-              </Tooltip>
-            </Circle>
-            {showLabels && (
-              <Marker
-                position={group.center}
-                interactive={false}
-                icon={L.divIcon({
-                  html: `<span>${group.fsa}</span>`,
-                  className: 'fsa-label-icon',
-                  iconSize: [40, 20],
-                  iconAnchor: [20, 10],
-                })}
-              />
-            )}
-          </React.Fragment>
-        );
-      })}
-    </Pane>
-  );
-};
 
 const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onZipCodeClick,
@@ -361,10 +217,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [loadingGeoJson, setLoadingGeoJson] = useState(true);
   const [geoJsonError, setGeoJsonError] = useState<string | null>(null);
-  const [nearbyPostalCodes, setNearbyPostalCodes] = useState<any[]>([]);
-  const [loadingPostalCodes, setLoadingPostalCodes] = useState(false);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
-  const { distanceUnit } = useCountrySettings();
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
@@ -375,16 +228,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [onZipCodeClick]);
 
   useEffect(() => {
-    if (isCanada) {
-      setAllGeoJsonData(null); // Clear GeoJSON data for Canada
-      setLoadingGeoJson(false);
-      return;
-    }
     const loadGeoJson = async () => {
       setLoadingGeoJson(true);
       setGeoJsonError(null);
       try {
-        const geoJsonModule = await import('@/data/us-zip-codes.json');
+        const geoJsonModule = isCanada 
+          ? await import('@/data/canada-postal-codes.json') 
+          : await import('@/data/us-zip-codes.json');
         const geoJson = geoJsonModule.default;
 
         if (!geoJson || !geoJson.features) {
@@ -393,11 +243,30 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
         const processedFeatures = geoJson.features.map((feature: any) => {
           const newFeature = JSON.parse(JSON.stringify(feature));
-          const lat = parseFloat(feature.properties.INTPTLAT20);
-          const lng = parseFloat(feature.properties.INTPTLON20);
+          let lat: number | null = null;
+          let lng: number | null = null;
+
+          if (isCanada) {
+            turf.coordEach(newFeature.geometry, (currentCoord) => {
+              const [lon, lat] = proj4('EPSG:3347', 'EPSG:4326').forward(currentCoord);
+              currentCoord[0] = lon;
+              currentCoord[1] = lat;
+            });
+            try {
+              const centroid = turf.centroid(newFeature.geometry);
+              if (centroid?.geometry?.coordinates) {
+                lng = centroid.geometry.coordinates[0];
+                lat = centroid.geometry.coordinates[1];
+              }
+            } catch (e) { /* ignore */ }
+          } else {
+            lat = parseFloat(feature.properties.INTPTLAT20);
+            lng = parseFloat(feature.properties.INTPTLON20);
+          }
+
           newFeature.properties.calculated_centroid = {
-            lat: isNaN(lat) ? null : lat,
-            lng: isNaN(lng) ? null : lng
+            lat: isNaN(lat as number) ? null : lat,
+            lng: isNaN(lng as number) ? null : lng
           };
           return newFeature;
         });
@@ -417,97 +286,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     };
     loadGeoJson();
   }, [isCanada, country]);
-
-  useEffect(() => {
-    if (isCanada && centerLocation?.lat && centerLocation?.lng) {
-      const fetchNearbyPostalCodes = async () => {
-        setLoadingPostalCodes(true);
-        const radiusInMeters = 150 * 1609.34; // 150 miles
-        const { data, error } = await supabase.rpc('get_canadian_postal_codes_from_dedicated_table', {
-          center_lat: centerLocation.lat,
-          center_lng: centerLocation.lng,
-          radius_meters: radiusInMeters,
-        });
-        if (error) {
-          console.error("Error fetching nearby Canadian postal codes:", error);
-          toast.error("Could not load postal codes for the map.");
-          setNearbyPostalCodes([]);
-        } else {
-          setNearbyPostalCodes(data || []);
-        }
-        setLoadingPostalCodes(false);
-      };
-      fetchNearbyPostalCodes();
-    } else if (isCanada) {
-      setNearbyPostalCodes([]);
-    }
-  }, [isCanada, centerLocation]);
-
-  const fsaGroups = useMemo(() => {
-    if (!isCanada || !nearbyPostalCodes || nearbyPostalCodes.length === 0) {
-      return [];
-    }
-
-    const groups: Map<string, { points: L.LatLng[], postalCodes: string[], province: string }> = new Map();
-
-    nearbyPostalCodes.forEach(pc => {
-      if (pc.LATITUDE && pc.LONGITUDE && pc.POSTAL_CODE) {
-        const fsa = pc.POSTAL_CODE.substring(0, 3);
-        if (!groups.has(fsa)) {
-          groups.set(fsa, { points: [], postalCodes: [], province: pc.PROVINCE_ABBR });
-        }
-        const group = groups.get(fsa)!;
-        group.points.push(L.latLng(pc.LATITUDE, pc.LONGITUDE));
-        group.postalCodes.push(pc.POSTAL_CODE);
-      }
-    });
-
-    return Array.from(groups.entries()).map(([fsa, groupData]) => {
-      const latLngs = groupData.points.map(p => [p.lat, p.lng]);
-      const turfPoints = turf.points(latLngs.map(p => [p[1], p[0]]));
-      const centerOfMass = turf.centerOfMass(turfPoints);
-      const center = L.latLng(centerOfMass.geometry.coordinates[1], centerOfMass.geometry.coordinates[0]);
-      const radius = 1000 + Math.sqrt(groupData.postalCodes.length) * 250;
-
-      return { fsa, center, radius, postalCodes: groupData.postalCodes, province: groupData.province };
-    });
-  }, [isCanada, nearbyPostalCodes]);
-
-  const getFsaStyle = useCallback((group: any): L.PathOptions => {
-    const postalCodesInGroup = new Set(group.postalCodes);
-    const selectedInGroup = selectedZipCodes.filter(z => postalCodesInGroup.has(z.zipCode));
-
-    let status: TerritoryStatus | 'unselected' = 'unselected';
-    if (selectedInGroup.length > 0) {
-      if (selectedInGroup.some(z => z.assignedStatus === 'Needs Approval')) {
-        status = 'Needs Approval';
-      } else {
-        status = 'Approved';
-      }
-    }
-
-    let fillColor = '#BFDBFE';
-    let color = '#3B82F6';
-    let fillOpacity = 0.4;
-    let weight = 1.5;
-    let opacity = 0.6;
-
-    if (status === 'Approved') {
-      fillColor = '#22C55E';
-      fillOpacity = 0.5;
-      color = '#166534';
-      weight = 2;
-      opacity = 0.8;
-    } else if (status === 'Needs Approval') {
-      fillColor = '#F97316';
-      fillOpacity = 0.5;
-      color = '#9A3412';
-      weight = 2;
-      opacity = 0.8;
-    }
-
-    return { fillColor, weight, opacity, color, fillOpacity, interactive: true };
-  }, [selectedZipCodes]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
@@ -579,9 +357,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
 
   const filteredGeoJsonData = useMemo(() => {
-    if (!allGeoJsonData || isCanada) {
-      return null;
-    }
+    if (!allGeoJsonData) return null;
 
     if (currentDisplayRadius === 'all' || !centerLocation?.lat || !centerLocation?.lng) {
       return allGeoJsonData;
@@ -605,7 +381,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       type: 'FeatureCollection',
       features: featuresInRadius,
     };
-  }, [allGeoJsonData, isCanada, currentDisplayRadius, centerLocation]);
+  }, [allGeoJsonData, currentDisplayRadius, centerLocation]);
 
   if (geoJsonError) {
     return (
@@ -626,21 +402,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     );
   }
 
-  const greenCircleOptions = { color: '#22C55E', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
-  const yellowCircleOptions = { color: '#FACC15', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
-  const orangeCircleOptions = { color: '#F97316', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
-  const redCircleOptions = { color: '#EF4444', fillOpacity: 0, dashArray: '5, 5', weight: 2 };
-
   return (
     <MapContainer
       center={isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795]}
-      zoom={isCanada ? 3 : 4}
+      zoom={isCanada ? 4 : 4}
       minZoom={3}
       maxZoom={18}
       scrollWheelZoom={true}
-      zoomControl={true}
-      dragging={true}
-      doubleClickZoom={true}
       className="h-full w-full rounded-lg overflow-hidden shadow-sm"
     >
       <TileLayer
@@ -649,39 +417,23 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       />
       
       <Pane name="polygons" style={{ zIndex: 450 }} />
-      {filteredGeoJsonData && !isCanada && (
+      {filteredGeoJsonData && (
         <GeoJSON
           key={geoJsonStyleKey}
           ref={geoJsonLayerRef}
           data={filteredGeoJsonData as any}
-          style={(feature) => getGeoJsonStyle(getPostalCode(feature, false))}
+          style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))}
           onEachFeature={onEachFeature}
           pane="polygons"
         />
       )}
-      {isCanada && !loadingPostalCodes && (
-        <CanadianFsaLayer
-          fsaGroups={fsaGroups}
-          getStyle={getFsaStyle}
-          isBulkSelecting={isBulkSelecting}
-        />
-      )}
 
-      {!isTerritoryManagementPage && centerLocation?.lat != null && centerLocation?.lng != null && (
-        <>
-          <Marker position={[centerLocation.lat, centerLocation.lng]} icon={createStarIcon()}>
-            <Popup>Installer Location</Popup>
-          </Marker>
-          {showRadiusCircles && (
-            <>
-              <RadiusCircleWithLabel center={[centerLocation.lat, centerLocation.lng]} radiusMiles={25} pathOptions={greenCircleOptions} distanceUnit={distanceUnit} />
-              <RadiusCircleWithLabel center={[centerLocation.lat, centerLocation.lng]} radiusMiles={50} pathOptions={yellowCircleOptions} distanceUnit={distanceUnit} />
-              <RadiusCircleWithLabel center={[centerLocation.lat, centerLocation.lng]} radiusMiles={100} pathOptions={orangeCircleOptions} distanceUnit={distanceUnit} />
-              <RadiusCircleWithLabel center={[centerLocation.lat, centerLocation.lng]} radiusMiles={150} pathOptions={redCircleOptions} distanceUnit={distanceUnit} />
-            </>
-          )}
-        </>
+      {centerLocation?.lat != null && centerLocation?.lng != null && (
+        <Marker position={[centerLocation.lat, centerLocation.lng]} icon={createStarIcon()}>
+          <Popup>Installer Location</Popup>
+        </Marker>
       )}
+      
       <MapUpdater
         centerLocation={centerLocation}
         isOpen={isOpen}
@@ -690,7 +442,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       <MapInteractionHandler
         isBulkSelecting={isBulkSelecting}
         geoJsonData={allGeoJsonData}
-        nearbyPostalCodes={nearbyPostalCodes}
         onBulkSelectionComplete={onBulkSelectionComplete}
         isCanada={isCanada}
       />
