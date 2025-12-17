@@ -527,6 +527,25 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           <Popup>Installer Location</Popup>
         </Marker>
       )}
+
+      {showRadiusCircles && centerLocation?.lat != null && centerLocation?.lng != null && (
+        [25, 50, 100, 150].map(radius => (
+          <Circle
+            key={radius}
+            center={[centerLocation.lat!, centerLocation.lng!]}
+            radius={radius * 1609.34} // Convert miles to meters
+            pathOptions={{
+              color: '#3b82f6',
+              fillColor: '#bfdbfe',
+              fillOpacity: 0.1,
+              weight: 1,
+              interactive: false,
+            }}
+          >
+            <Tooltip sticky>{`${radius} miles`}</Tooltip>
+          </Circle>
+        ))
+      )}
       
       <MapUpdater
         centerLocation={centerLocation}
