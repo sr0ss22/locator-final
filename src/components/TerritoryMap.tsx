@@ -364,16 +364,16 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E';
-      fillOpacity = 0.2;
+      fillOpacity = 0.1;
       color = '#166534';
       weight = 2;
-      opacity = 0.6;
+      opacity = 0.4;
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316';
-      fillOpacity = 0.2;
+      fillOpacity = 0.1;
       color = '#9A3412';
       weight = 2;
-      opacity = 0.6;
+      opacity = 0.4;
     } else if (isTerritoryManagementPage) {
       if (status === 'Approved') {
         fillColor = '#D4EDDA';
@@ -507,7 +507,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         </Marker>
       )}
 
-      {showRadiusCircles && centerLocation?.lat != null && centerLocation?.lng != null && (
+      {showRadiusCircles && centerLocation?.lat != null && centerLocation?.lng != null && !isCanada && (
         [25, 50, 100, 150].map(radius => (
           <Circle
             key={radius}
@@ -522,6 +522,25 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
             }}
           >
             <Tooltip sticky>{`${radius} miles`}</Tooltip>
+          </Circle>
+        ))
+      )}
+      
+      {showRadiusCircles && centerLocation?.lat != null && centerLocation?.lng != null && isCanada && (
+        [35, 75, 100, 125].map(radius => (
+          <Circle
+            key={radius}
+            center={[centerLocation.lat!, centerLocation.lng!]}
+            radius={radius * 1000} // Convert km to meters
+            pathOptions={{
+              color: '#3b82f6',
+              fillColor: '#bfdbfe',
+              fillOpacity: 0.1,
+              weight: 1,
+              interactive: false,
+            }}
+          >
+            <Tooltip sticky>{`${radius} km`}</Tooltip>
           </Circle>
         ))
       )}
