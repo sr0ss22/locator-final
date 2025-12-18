@@ -130,3 +130,17 @@
   pointer-events: none; /* Ignore mouse events */
   text-shadow: 0 0 3px rgba(0,0,0,0.8); /* Make text readable */
 }
+
+.radius-tooltip {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  color: #374151; /* gray-700 */
+  font-weight: 600; /* semibold */
+  font-size: 12px;
+  text-shadow: 
+    -1px -1px 0 #fff,  
+     1px -1px 0 #fff,
+    -1px  1px 0 #fff,
+     1px  1px 0 #fff;
+}

@@ -447,6 +447,24 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     };
   }, [allGeoJsonData, currentDisplayRadius, centerLocation]);
 
+  const usRadii = [
+    { radius: 25, color: '#22c55e' },
+    { radius: 50, color: '#facc15' },
+    { radius: 100, color: '#f97316' },
+    { radius: 150, color: '#ef4444' },
+  ];
+
+  const caRadii = [
+    { radius: 35, color: '#22c55e' },
+    { radius: 75, color: '#facc15' },
+    { radius: 100, color: '#f97316' },
+    { radius: 125, color: '#ef4444' },
+  ];
+
+  const radiiConfig = isCanada ? caRadii : usRadii;
+  const unit = isCanada ? 'km' : 'miles';
+  const conversionFactor = isCanada ? 1000 : 1609.34;
+
   if (dataError) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-red-100 text-red-800 p-4 border-4 border-dashed border-red-500">
@@ -507,40 +525,21 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         </Marker>
       )}
 
-      {showRadiusCircles && centerLocation?.lat != null && centerLocation?.lng != null && !isCanada && (
-        [25, 50, 100, 150].map(radius => (
+      {showRadiusCircles && centerLocation?.lat != null && centerLocation?.lng != null && (
+        radiiConfig.map(({ radius, color }) => (
           <Circle
             key={radius}
             center={[centerLocation.lat!, centerLocation.lng!]}
-            radius={radius * 1609.34} // Convert miles to meters
+            radius={radius * conversionFactor}
             pathOptions={{
-              color: '#3b82f6',
-              fillColor: '#bfdbfe',
-              fillOpacity: 0.1,
-              weight: 1,
+              color: color,
+              fillOpacity: 0,
+              weight: 2,
+              dashArray: '5, 10',
               interactive: false,
             }}
           >
-            <Tooltip sticky>{`${radius} miles`}</Tooltip>
-          </Circle>
-        ))
-      )}
-      
-      {showRadiusCircles && centerLocation?.lat != null && centerLocation?.lng != null && isCanada && (
-        [35, 75, 100, 125].map(radius => (
-          <Circle
-            key={radius}
-            center={[centerLocation.lat!, centerLocation.lng!]}
-            radius={radius * 1000} // Convert km to meters
-            pathOptions={{
-              color: '#3b82f6',
-              fillColor: '#bfdbfe',
-              fillOpacity: 0.1,
-              weight: 1,
-              interactive: false,
-            }}
-          >
-            <Tooltip sticky>{`${radius} km`}</Tooltip>
+            <Tooltip sticky permanent className="radius-tooltip">{`${radius} ${unit}`}</Tooltip>
           </Circle>
         ))
       )}
