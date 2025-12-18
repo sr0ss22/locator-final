@@ -219,44 +219,14 @@ function MapInteractionHandler({
   return null;
 }
 
-const CanadianPostalCodeLayer = ({
-  points,
-  onZipCodeClick,
-  highlightedZipCodes,
-  centerLocation,
-  currentDisplayRadius,
-}: {
+const CanadianPostalCodeLayer = ({ points, onZipCodeClick, highlightedZipCodes }: {
   points: any[];
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
-  centerLocation?: { lat: number | null; lng: number | null };
-  currentDisplayRadius?: number | 'all';
 }) => {
-  const filteredPoints = useMemo(() => {
-    if (currentDisplayRadius === 'all' || !centerLocation?.lat || !centerLocation?.lng) {
-      return points;
-    }
-
-    const radiusInKm = currentDisplayRadius;
-
-    return points.filter(point => {
-      if (point.LATITUDE != null && point.LONGITUDE != null) {
-        const distanceInMiles = calculateDistance(
-          centerLocation.lat!,
-          centerLocation.lng!,
-          point.LATITUDE,
-          point.LONGITUDE
-        );
-        const distanceInKm = distanceInMiles * 1.60934;
-        return distanceInKm <= radiusInKm;
-      }
-      return false;
-    });
-  }, [points, centerLocation, currentDisplayRadius]);
-
   return (
     <MarkerClusterGroup>
-      {filteredPoints.map(point => {
+      {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
         let color = '#3b82f6'; // Blue
         let fillOpacity = 0.5;
@@ -292,6 +262,56 @@ const CanadianPostalCodeLayer = ({
   );
 };
 
+const CanadianPointsFetcher = ({ setPoints, setLoading }: {
+  setPoints: React.Dispatch<React.SetStateAction<any[]>>;
+  setLoading: React.Dispatch<React.SetStateAction<boolean>>;
+}) => {
+  const map = useMap();
+  const timeoutRef = useRef<number | null>(null);
+
+  const fetchData = useCallback(() => {
+    setLoading(true);
+    const bounds = map.getBounds();
+    supabase.rpc('get_canadian_postal_codes_in_bounds', {
+      min_lng: bounds.getWest(),
+      min_lat: bounds.getSouth(),
+      max_lng: bounds.getEast(),
+      max_lat: bounds.getNorth(),
+    }).then(({ data, error }) => {
+      if (error) {
+        toast.error("Could not load Canadian postal codes for this area.");
+        console.error(error);
+        setPoints([]);
+      } else {
+        setPoints(data || []);
+        if (data && data.length >= 5000) {
+          toast.info("Too many postal codes in this view. Zoom in to see more detail.");
+        }
+      }
+      setLoading(false);
+    });
+  }, [map, setLoading, setPoints]);
+
+  const debouncedFetchData = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    timeoutRef.current = window.setTimeout(() => {
+      fetchData();
+    }, 500);
+  }, [fetchData]);
+
+  useMapEvents({
+    moveend: debouncedFetchData,
+  });
+
+  useEffect(() => {
+    map.whenReady(fetchData);
+  }, [fetchData, map]);
+
+  return null;
+};
+
 const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onZipCodeClick,
   centerLocation,
@@ -320,79 +340,49 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [onZipCodeClick]);
 
   useEffect(() => {
-    const loadData = async () => {
+    const loadUSData = async () => {
+      if (isCanada) {
+        setAllGeoJsonData(null);
+        setLoadingData(false);
+        return;
+      }
+      
       setLoadingData(true);
       setDataError(null);
+      try {
+        const geoJsonModule = await import('@/data/us-zip-codes.json');
+        const geoJson = geoJsonModule.default;
 
-      if (isCanada) {
-        try {
-          const allPoints = [];
-          let page = 0;
-          const pageSize = 1000;
-
-          while (true) {
-            const { data, error } = await supabase
-              .from('canadian_postal_codes')
-              .select('id, POSTAL_CODE, PROVINCE_ABBR, LATITUDE, LONGITUDE')
-              .range(page * pageSize, (page + 1) * pageSize - 1);
-
-            if (error) {
-              throw error;
-            }
-
-            if (data) {
-              allPoints.push(...data);
-            }
-
-            if (!data || data.length < pageSize) {
-              break; // Last page
-            }
-
-            page++;
-          }
-          setCanadianPoints(allPoints);
-        } catch (error: any) {
-          console.error("Error fetching all Canadian postal codes:", error);
-          toast.error(`Could not load Canadian postal code data: ${error.message}`);
-          setCanadianPoints([]);
+        if (!geoJson || !geoJson.features) {
+          throw new Error(`GeoJSON for ${country} is missing or invalid.`);
         }
+
+        const processedFeatures = geoJson.features.map((feature: any) => {
+          const newFeature = JSON.parse(JSON.stringify(feature));
+          const lat = parseFloat(feature.properties.INTPTLAT20);
+          const lng = parseFloat(feature.properties.INTPTLON20);
+
+          newFeature.properties.calculated_centroid = {
+            lat: isNaN(lat) ? null : lat,
+            lng: isNaN(lng) ? null : lng
+          };
+          return newFeature;
+        });
+
+        setAllGeoJsonData({
+          type: 'FeatureCollection',
+          features: processedFeatures
+        });
+      } catch (error: any) {
+        const errorMessage = `CRITICAL ERROR: Could not load GeoJSON data for ${country}. ${error.message}`;
+        console.error(errorMessage, error);
+        toast.error(errorMessage, { duration: 10000 });
+        setDataError(errorMessage);
+      } finally {
         setLoadingData(false);
-      } else {
-        try {
-          const geoJsonModule = await import('@/data/us-zip-codes.json');
-          const geoJson = geoJsonModule.default;
-
-          if (!geoJson || !geoJson.features) {
-            throw new Error(`GeoJSON for ${country} is missing or invalid.`);
-          }
-
-          const processedFeatures = geoJson.features.map((feature: any) => {
-            const newFeature = JSON.parse(JSON.stringify(feature));
-            const lat = parseFloat(feature.properties.INTPTLAT20);
-            const lng = parseFloat(feature.properties.INTPTLON20);
-
-            newFeature.properties.calculated_centroid = {
-              lat: isNaN(lat) ? null : lat,
-              lng: isNaN(lng) ? null : lng
-            };
-            return newFeature;
-          });
-
-          setAllGeoJsonData({
-            type: 'FeatureCollection',
-            features: processedFeatures
-          });
-        } catch (error: any) {
-          const errorMessage = `CRITICAL ERROR: Could not load GeoJSON data for ${country}. ${error.message}`;
-          console.error(errorMessage, error);
-          toast.error(errorMessage, { duration: 10000 });
-          setDataError(errorMessage);
-        } finally {
-          setLoadingData(false);
-        }
       }
     };
-    loadData();
+    loadUSData();
   }, [isCanada, country]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
@@ -520,14 +510,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     );
   }
 
-  if (loadingData) {
-    return (
-      <div className="h-full w-full flex items-center justify-center text-gray-500">
-        <Loader2 className="h-8 w-8 animate-spin mr-2" /> Loading map data...
-      </div>
-    );
-  }
-
   return (
     <MapContainer
       center={isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795]}
@@ -545,13 +527,21 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       <Pane name="polygons" style={{ zIndex: 450 }} />
       
       {isCanada ? (
-        <CanadianPostalCodeLayer 
-          points={canadianPoints} 
-          onZipCodeClick={onZipCodeClick} 
-          highlightedZipCodes={highlightedZipCodes}
-          centerLocation={centerLocation}
-          currentDisplayRadius={currentDisplayRadius}
-        />
+        <>
+          <CanadianPointsFetcher setPoints={setCanadianPoints} setLoading={setLoadingData} />
+          {loadingData && (
+            <div className="leaflet-top leaflet-center bg-white bg-opacity-75 p-2 rounded-lg shadow-md mt-2">
+              <div className="flex items-center text-gray-700">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading postal codes...
+              </div>
+            </div>
+          )}
+          <CanadianPostalCodeLayer 
+            points={canadianPoints} 
+            onZipCodeClick={onZipCodeClick} 
+            highlightedZipCodes={highlightedZipCodes}
+          />
+        </>
       ) : (
         filteredGeoJsonData && (
           <GeoJSON
