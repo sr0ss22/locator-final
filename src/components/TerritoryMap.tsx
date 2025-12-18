@@ -283,7 +283,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [loadingData, setLoadingData] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
   const [canadianPoints, setCanadianPoints] = useState<any[]>([]);
-  const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
 
   const isCanada = country === 'Canada';
@@ -294,35 +293,26 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
 
-  const MapEvents = () => {
-    const map = useMapEvents({
-      moveend: () => setMapBounds(map.getBounds()),
-      load: () => setMapBounds(map.getBounds()),
-      zoomend: () => setMapBounds(map.getBounds()),
-    });
-    return null;
-  };
-
   useEffect(() => {
     const loadData = async () => {
       setLoadingData(true);
       setDataError(null);
 
       if (isCanada) {
-        if (mapBounds) {
+        if (centerLocation?.lat && centerLocation?.lng && currentDisplayRadius !== 'all') {
           try {
-            const bounds = mapBounds.toBBoxString().split(',').map(Number);
-            const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_bounds', {
-              min_lng: bounds[0],
-              min_lat: bounds[1],
-              max_lng: bounds[2],
-              max_lat: bounds[3],
+            const radiusInMeters = currentDisplayRadius * 1000; // currentDisplayRadius is in KM for Canada
+            const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_circle', {
+              center_lat: centerLocation.lat,
+              center_lng: centerLocation.lng,
+              radius_meters: radiusInMeters,
             });
 
             if (error) throw error;
             setCanadianPoints(data || []);
           } catch (error: any) {
-            console.error("Error fetching Canadian postal codes by bounds:", error);
+            console.error("Error fetching Canadian postal codes by radius:", error);
+            toast.error("Failed to load postal codes for the selected radius.");
             setCanadianPoints([]);
           }
         } else {
@@ -365,7 +355,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     };
     loadData();
-  }, [isCanada, country, mapBounds]);
+  }, [isCanada, country, centerLocation, currentDisplayRadius]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
@@ -583,7 +573,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         isOpen={isOpen}
         country={country}
       />
-      <MapEvents />
       <MapInteractionHandler
         isBulkSelecting={isBulkSelecting}
         geoJsonData={allGeoJsonData}
