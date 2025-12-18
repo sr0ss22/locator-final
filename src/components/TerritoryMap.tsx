@@ -218,57 +218,13 @@ function MapInteractionHandler({
   return null;
 }
 
-const CanadianPostalCodeLayer = ({ onZipCodeClick, highlightedZipCodes }: {
+const CanadianPostalCodeLayer = ({ points, onZipCodeClick, highlightedZipCodes }: {
+  points: any[];
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
 }) => {
-  const map = useMap();
-  const [points, setPoints] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [zoom, setZoom] = useState(map.getZoom());
-
-  const fetchPoints = useCallback(async () => {
-    if (zoom < 8) {
-      setPoints([]);
-      return;
-    }
-    setLoading(true);
-    const bounds = map.getBounds();
-    const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_bounds', {
-      min_lng: bounds.getWest(),
-      min_lat: bounds.getSouth(),
-      max_lng: bounds.getEast(),
-      max_lat: bounds.getNorth(),
-    });
-
-    if (error) {
-      console.error("Error fetching Canadian postal codes:", error);
-      toast.error("Could not load postal code points.");
-    } else {
-      setPoints(data || []);
-    }
-    setLoading(false);
-  }, [map, zoom]);
-
-  useMapEvents({
-    zoomend: (e) => setZoom(e.target.getZoom()),
-    moveend: () => fetchPoints(),
-  });
-
-  useEffect(() => {
-    fetchPoints();
-  }, [fetchPoints]);
-
   return (
     <>
-      {loading && (
-        <div className="leaflet-top leaflet-center bg-white bg-opacity-70 p-2 rounded-lg shadow-md">
-          <div className="flex items-center">
-            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            <span>Loading postal codes...</span>
-          </div>
-        </div>
-      )}
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
         let color = '#3b82f6'; // Blue
@@ -319,8 +275,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   country = 'USA',
 }) => {
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
-  const [loadingGeoJson, setLoadingGeoJson] = useState(true);
-  const [geoJsonError, setGeoJsonError] = useState<string | null>(null);
+  const [loadingData, setLoadingData] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [canadianPoints, setCanadianPoints] = useState<any[]>([]);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
 
   const isCanada = country === 'Canada';
@@ -332,49 +289,67 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [onZipCodeClick]);
 
   useEffect(() => {
-    if (isCanada) {
-      setLoadingGeoJson(false);
-      setAllGeoJsonData(null); // We don't need GeoJSON for Canada points view
-      return;
-    }
-    const loadGeoJson = async () => {
-      setLoadingGeoJson(true);
-      setGeoJsonError(null);
-      try {
-        const geoJsonModule = await import('@/data/us-zip-codes.json');
-        const geoJson = geoJsonModule.default;
+    const loadData = async () => {
+      setLoadingData(true);
+      setDataError(null);
 
-        if (!geoJson || !geoJson.features) {
-          throw new Error(`GeoJSON for ${country} is missing or invalid.`);
+      if (isCanada) {
+        if (centerLocation?.lat && centerLocation?.lng && currentDisplayRadius !== 'all') {
+          const radiusMeters = currentDisplayRadius * 1609.34;
+          const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_circle', {
+            center_lat: centerLocation.lat,
+            center_lng: centerLocation.lng,
+            radius_meters: radiusMeters,
+          });
+
+          if (error) {
+            console.error("Error fetching Canadian postal codes in radius:", error);
+            toast.error("Could not load postal code points for the selected radius.");
+            setCanadianPoints([]);
+          } else {
+            setCanadianPoints(data || []);
+          }
+        } else {
+          setCanadianPoints([]);
         }
+        setLoadingData(false);
+      } else {
+        try {
+          const geoJsonModule = await import('@/data/us-zip-codes.json');
+          const geoJson = geoJsonModule.default;
 
-        const processedFeatures = geoJson.features.map((feature: any) => {
-          const newFeature = JSON.parse(JSON.stringify(feature));
-          const lat = parseFloat(feature.properties.INTPTLAT20);
-          const lng = parseFloat(feature.properties.INTPTLON20);
+          if (!geoJson || !geoJson.features) {
+            throw new Error(`GeoJSON for ${country} is missing or invalid.`);
+          }
 
-          newFeature.properties.calculated_centroid = {
-            lat: isNaN(lat) ? null : lat,
-            lng: isNaN(lng) ? null : lng
-          };
-          return newFeature;
-        });
+          const processedFeatures = geoJson.features.map((feature: any) => {
+            const newFeature = JSON.parse(JSON.stringify(feature));
+            const lat = parseFloat(feature.properties.INTPTLAT20);
+            const lng = parseFloat(feature.properties.INTPTLON20);
 
-        setAllGeoJsonData({
-          type: 'FeatureCollection',
-          features: processedFeatures
-        });
-      } catch (error: any) {
-        const errorMessage = `CRITICAL ERROR: Could not load GeoJSON data for ${country}. ${error.message}`;
-        console.error(errorMessage, error);
-        toast.error(errorMessage, { duration: 10000 });
-        setGeoJsonError(errorMessage);
-      } finally {
-        setLoadingGeoJson(false);
+            newFeature.properties.calculated_centroid = {
+              lat: isNaN(lat) ? null : lat,
+              lng: isNaN(lng) ? null : lng
+            };
+            return newFeature;
+          });
+
+          setAllGeoJsonData({
+            type: 'FeatureCollection',
+            features: processedFeatures
+          });
+        } catch (error: any) {
+          const errorMessage = `CRITICAL ERROR: Could not load GeoJSON data for ${country}. ${error.message}`;
+          console.error(errorMessage, error);
+          toast.error(errorMessage, { duration: 10000 });
+          setDataError(errorMessage);
+        } finally {
+          setLoadingData(false);
+        }
       }
     };
-    loadGeoJson();
-  }, [isCanada, country]);
+    loadData();
+  }, [isCanada, country, centerLocation, currentDisplayRadius]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
@@ -472,18 +447,18 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     };
   }, [allGeoJsonData, currentDisplayRadius, centerLocation]);
 
-  if (geoJsonError) {
+  if (dataError) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-red-100 text-red-800 p-4 border-4 border-dashed border-red-500">
         <div className="text-center">
           <h3 className="font-bold text-lg mb-2">Map Data Error</h3>
-          <p>{geoJsonError}</p>
+          <p>{dataError}</p>
         </div>
       </div>
     );
   }
 
-  if (loadingGeoJson) {
+  if (loadingData) {
     return (
       <div className="h-full w-full flex items-center justify-center text-gray-500">
         <Loader2 className="h-8 w-8 animate-spin mr-2" /> Loading map data...
@@ -508,7 +483,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       <Pane name="polygons" style={{ zIndex: 450 }} />
       
       {isCanada ? (
-        <CanadianPostalCodeLayer onZipCodeClick={onZipCodeClick} highlightedZipCodes={highlightedZipCodes} />
+        <CanadianPostalCodeLayer 
+          points={canadianPoints} 
+          onZipCodeClick={onZipCodeClick} 
+          highlightedZipCodes={highlightedZipCodes} 
+        />
       ) : (
         filteredGeoJsonData && (
           <GeoJSON
