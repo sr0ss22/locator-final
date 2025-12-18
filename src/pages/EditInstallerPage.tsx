@@ -78,7 +78,6 @@ const EditInstallerPage: React.FC = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
-  const [mapDisplayRadius, setMapDisplayRadius] = useState<number | 'all'>(150);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
   const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
   const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | null>(null);
@@ -101,6 +100,8 @@ const EditInstallerPage: React.FC = () => {
     if (country === 'CANADA' || country === 'CA' || country === 'CAN') return 'Canada';
     return 'USA';
   }, [currentInstaller?.rawSupabaseData?.country]);
+
+  const mapDisplayRadius = useMemo(() => (installerCountry === 'Canada' ? 125 : 150), [installerCountry]);
 
   const columnDisplayNames: { [key: string]: string } = useMemo(() => ({
     name: "Name", email: "Email", primary_phone: "Phone", secondary_phone: "Secondary Phone", address1: "Address Line 1",
@@ -619,15 +620,6 @@ const EditInstallerPage: React.FC = () => {
     }
   };
 
-  const usRadii = [
-    { radius: 25 }, { radius: 50 }, { radius: 100 }, { radius: 150 },
-  ];
-  const caRadii = [
-    { radius: 35 }, { radius: 75 }, { radius: 100 }, { radius: 125 },
-  ];
-  const radiiConfig = installerCountry === 'Canada' ? caRadii : usRadii;
-  const unit = installerCountry === 'Canada' ? 'km' : 'miles';
-
   if (loading || sessionLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-500" /><p className="text-gray-500 ml-2">Loading installer data...</p></div>;
   }
@@ -761,13 +753,6 @@ const EditInstallerPage: React.FC = () => {
                     <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Needs Approval" : "Bulk Needs Approval"}</Button>
                     <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
                   </div>
-                </div>
-                <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
-                  <h4 className="font-semibold text-lg mb-3">Filter Map Display by Radius (from Installer)</h4>
-                  <RadioGroup value={String(mapDisplayRadius)} onValueChange={(value) => setMapDisplayRadius(value === 'all' ? 'all' : Number(value))} className="flex flex-wrap gap-4">
-                    {radiiConfig.map(r => (<div key={r.radius} className="flex items-center space-x-2"><RadioGroupItem value={String(r.radius)} id={`map-radius-${r.radius}`} /><Label htmlFor={`map-radius-${r.radius}`}>{r.radius} {unit}</Label></div>))}
-                    <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="map-radius-all" /><Label htmlFor={`map-radius-all`}>All</Label></div>
-                  </RadioGroup>
                 </div>
                 <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border mt-4">
                   <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={bulkActionType !== null} onBulkSelectionComplete={handleBulkSelectionComplete} />
