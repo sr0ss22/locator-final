@@ -283,6 +283,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [loadingData, setLoadingData] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
   const [canadianPoints, setCanadianPoints] = useState<any[]>([]);
+  const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
 
   const isCanada = country === 'Canada';
@@ -293,32 +294,39 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
 
+  const MapEvents = () => {
+    const map = useMapEvents({
+      moveend: () => setMapBounds(map.getBounds()),
+      load: () => setMapBounds(map.getBounds()),
+      zoomend: () => setMapBounds(map.getBounds()),
+    });
+    return null;
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoadingData(true);
       setDataError(null);
 
       if (isCanada) {
-        if (centerLocation?.lat && centerLocation?.lng) {
-          const radiusInKm = currentDisplayRadius === 'all' ? 125 : (currentDisplayRadius || 125);
-          const radiusInMeters = radiusInKm * 1000;
-
+        if (mapBounds) {
           try {
-            const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_circle', {
-              center_lat: centerLocation.lat,
-              center_lng: centerLocation.lng,
-              radius_meters: radiusInMeters,
+            const bounds = mapBounds.toBBoxString().split(',').map(Number);
+            const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_bounds', {
+              min_lng: bounds[0],
+              min_lat: bounds[1],
+              max_lng: bounds[2],
+              max_lat: bounds[3],
             });
 
             if (error) throw error;
             setCanadianPoints(data || []);
           } catch (error: any) {
-            console.error("Error fetching Canadian postal codes by radius:", error);
-            toast.error(`Could not load Canadian postal code data: ${error.message}`);
+            console.error("Error fetching Canadian postal codes by bounds:", error);
             setCanadianPoints([]);
           }
         } else {
-          setCanadianPoints([]); // Clear points if no center location
+          setCanadianPoints([]);
         }
         setLoadingData(false);
       } else {
@@ -357,7 +365,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     };
     loadData();
-  }, [isCanada, country, centerLocation, currentDisplayRadius]);
+  }, [isCanada, country, mapBounds]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
@@ -484,14 +492,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     );
   }
 
-  if (loadingData) {
-    return (
-      <div className="h-full w-full flex items-center justify-center text-gray-500">
-        <Loader2 className="h-8 w-8 animate-spin mr-2" /> Loading map data...
-      </div>
-    );
-  }
-
   return (
     <MapContainer
       center={isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795]}
@@ -524,7 +524,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           />
         </>
       ) : (
-        filteredGeoJsonData && (
+        loadingData ? (
+          <div className="h-full w-full flex items-center justify-center text-gray-500">
+            <Loader2 className="h-8 w-8 animate-spin mr-2" /> Loading map data...
+          </div>
+        ) : filteredGeoJsonData && (
           <GeoJSON
             key={geoJsonStyleKey}
             ref={geoJsonLayerRef}
@@ -579,6 +583,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         isOpen={isOpen}
         country={country}
       />
+      <MapEvents />
       <MapInteractionHandler
         isBulkSelecting={isBulkSelecting}
         geoJsonData={allGeoJsonData}
