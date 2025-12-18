@@ -243,7 +243,7 @@ const CanadianPostalCodeLayer = ({ points, onZipCodeClick, highlightedZipCodes }
 
         return (
           <CircleMarker
-            key={point.POSTAL_CODE}
+            key={point.id} // Use unique ID for key
             center={[point.LATITUDE, point.LONGITUDE]}
             radius={radius}
             pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
@@ -294,23 +294,16 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       setDataError(null);
 
       if (isCanada) {
-        if (centerLocation?.lat && centerLocation?.lng && currentDisplayRadius !== 'all') {
-          const radiusMeters = currentDisplayRadius * 1609.34;
-          const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_circle', {
-            center_lat: centerLocation.lat,
-            center_lng: centerLocation.lng,
-            radius_meters: radiusMeters,
-          });
+        const { data, error } = await supabase
+          .from('canadian_postal_codes')
+          .select('id, POSTAL_CODE, PROVINCE_ABBR, LATITUDE, LONGITUDE');
 
-          if (error) {
-            console.error("Error fetching Canadian postal codes in radius:", error);
-            toast.error("Could not load postal code points for the selected radius.");
-            setCanadianPoints([]);
-          } else {
-            setCanadianPoints(data || []);
-          }
-        } else {
+        if (error) {
+          console.error("Error fetching all Canadian postal codes:", error);
+          toast.error("Could not load Canadian postal code data.");
           setCanadianPoints([]);
+        } else {
+          setCanadianPoints(data || []);
         }
         setLoadingData(false);
       } else {
@@ -349,7 +342,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     };
     loadData();
-  }, [isCanada, country, centerLocation, currentDisplayRadius]);
+  }, [isCanada, country]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
