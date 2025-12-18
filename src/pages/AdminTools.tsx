@@ -8,6 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Progress } from '@/components/ui/progress';
+import Papa from "papaparse";
 
 const AdminToolsPage: React.FC = () => {
   const [processingTerritories, setProcessingTerritories] = useState(false);
@@ -16,6 +18,7 @@ const AdminToolsPage: React.FC = () => {
   const [canadaCsvFile, setCanadaCsvFile] = useState<File | null>(null);
   const [canadaImportMode, setCanadaImportMode] = useState<'overwrite' | 'append'>('append');
   const [radius, setRadius] = useState<number>(50);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -71,33 +74,72 @@ const AdminToolsPage: React.FC = () => {
     }
 
     setIsImportingCanada(true);
-    const loadingToastId = toast.loading(`Uploading and processing file in '${canadaImportMode}' mode... This may take several minutes.`);
+    setImportProgress(0);
+    const loadingToastId = toast.loading("Starting import...");
 
     try {
-      const fileContent = await canadaCsvFile.text();
-      
-      const { data, error } = await supabase.functions.invoke('import-canada-csv', {
-        body: {
-          csvContent: fileContent,
-          importMode: canadaImportMode,
-        },
+      if (canadaImportMode === 'overwrite') {
+        toast.info("Clearing existing Canadian postal codes...", { id: loadingToastId });
+        const { error: rpcError } = await supabase.rpc('truncate_canadian_postal_codes');
+        if (rpcError) {
+          throw new Error(`Failed to clear table: ${rpcError.message}`);
+        }
+        toast.success("Existing data cleared. Starting upload.", { id: loadingToastId });
+      }
+
+      const results = await new Promise<any[]>((resolve, reject) => {
+        Papa.parse(canadaCsvFile, {
+          header: true,
+          skipEmptyLines: true,
+          worker: true,
+          complete: (res) => resolve(res.data),
+          error: (err) => reject(err),
+        });
       });
 
-      if (error) {
-        throw new Error(error.message);
-      }
-      
-      if (data.error) {
-        throw new Error(data.error);
+      const recordsToInsert = results.map((row: any) => ({
+        "POSTAL_CODE": row.POSTAL_CODE,
+        "CITY": row.CITY,
+        "PROVINCE_ABBR": row.PROVINCE_ABBR,
+        "TIME_ZONE": row.TIME_ZONE,
+        "LATITUDE": parseFloat(row.LATITUDE),
+        "LONGITUDE": parseFloat(row.LONGITUDE),
+      })).filter(row => row.POSTAL_CODE && !isNaN(row.LATITUDE) && !isNaN(row.LONGITUDE));
+
+      const chunkSize = 1000;
+      const totalChunks = Math.ceil(recordsToInsert.length / chunkSize);
+      let totalInserted = 0;
+      let totalDuplicates = 0;
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = recordsToInsert.slice(i * chunkSize, (i + 1) * chunkSize);
+        const { data, error } = await supabase.functions.invoke('import-canada-csv', {
+          body: { records: chunk },
+        });
+
+        if (error) {
+          throw new Error(`Error processing chunk ${i + 1}: ${error.message}`);
+        }
+        if (data.error) {
+          throw new Error(`Error from function on chunk ${i + 1}: ${data.error}`);
+        }
+
+        totalInserted += data.inserted || 0;
+        totalDuplicates += data.duplicates || 0;
+
+        const progress = Math.round(((i + 1) / totalChunks) * 100);
+        setImportProgress(progress);
+        toast.info(`Processed chunk ${i + 1} of ${totalChunks}...`, { id: loadingToastId });
       }
 
-      toast.success(data.message || "Successfully imported Canadian postal codes!", { id: loadingToastId });
+      toast.success(`Import complete! Inserted ${totalInserted} new records. Found ${totalDuplicates} duplicates.`, { id: loadingToastId, duration: 8000 });
 
     } catch (err: any) {
       console.error("Import failed:", err);
-      toast.error(`Import failed: ${err.message}`, { id: loadingToastId });
+      toast.error(`Import failed: ${err.message}`, { id: loadingToastId, duration: 8000 });
     } finally {
       setIsImportingCanada(false);
+      setImportProgress(null);
     }
   };
 
@@ -136,6 +178,13 @@ const AdminToolsPage: React.FC = () => {
                 disabled={anyProcessRunning}
               />
             </div>
+            {isImportingCanada && importProgress !== null && (
+              <div className="space-y-2">
+                <Label>Import Progress</Label>
+                <Progress value={importProgress} className="w-full" />
+                <p className="text-sm text-muted-foreground">{importProgress}% complete</p>
+              </div>
+            )}
             <div>
               <Label>Import Mode</Label>
               <RadioGroup
