@@ -229,7 +229,7 @@ const CanadianPostalCodeLayer = ({
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
 }) => {
   return (
-    <>
+    <MarkerClusterGroup>
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
         let color = '#3b82f6'; // Blue
@@ -262,7 +262,7 @@ const CanadianPostalCodeLayer = ({
           </CircleMarker>
         );
       })}
-    </>
+    </MarkerClusterGroup>
   );
 };
 
