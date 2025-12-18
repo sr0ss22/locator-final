@@ -266,56 +266,6 @@ const CanadianPostalCodeLayer = ({
   );
 };
 
-const CanadianPointsFetcher = ({ setPoints, setLoading }: {
-  setPoints: React.Dispatch<React.SetStateAction<any[]>>;
-  setLoading: React.Dispatch<React.SetStateAction<boolean>>;
-}) => {
-  const map = useMap();
-  const timeoutRef = useRef<number | null>(null);
-
-  const fetchData = useCallback(() => {
-    setLoading(true);
-    const bounds = map.getBounds();
-    supabase.rpc('get_canadian_postal_codes_in_bounds', {
-      min_lng: bounds.getWest(),
-      min_lat: bounds.getSouth(),
-      max_lng: bounds.getEast(),
-      max_lat: bounds.getNorth(),
-    }).then(({ data, error }) => {
-      if (error) {
-        toast.error("Could not load Canadian postal codes for this area.");
-        console.error(error);
-        setPoints([]);
-      } else {
-        setPoints(data || []);
-        if (data && data.length >= 5000) {
-          toast.info("Too many postal codes in this view. Zoom in to see more detail.");
-        }
-      }
-      setLoading(false);
-    });
-  }, [map, setLoading, setPoints]);
-
-  const debouncedFetchData = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    timeoutRef.current = window.setTimeout(() => {
-      fetchData();
-    }, 500);
-  }, [fetchData]);
-
-  useMapEvents({
-    moveend: debouncedFetchData,
-  });
-
-  useEffect(() => {
-    map.whenReady(fetchData);
-  }, [fetchData, map]);
-
-  return null;
-};
-
 const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onZipCodeClick,
   centerLocation,
@@ -344,80 +294,70 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [onZipCodeClick]);
 
   useEffect(() => {
-    const loadUSData = async () => {
-      if (isCanada) {
-        setAllGeoJsonData(null);
-        setLoadingData(false);
-        return;
-      }
-      
+    const loadData = async () => {
       setLoadingData(true);
       setDataError(null);
-      try {
-        const geoJsonModule = await import('@/data/us-zip-codes.json');
-        const geoJson = geoJsonModule.default;
 
-        if (!geoJson || !geoJson.features) {
-          throw new Error(`GeoJSON for ${country} is missing or invalid.`);
-        }
+      if (isCanada) {
+        if (centerLocation?.lat && centerLocation?.lng) {
+          const radiusInKm = currentDisplayRadius === 'all' ? 125 : (currentDisplayRadius || 125);
+          const radiusInMeters = radiusInKm * 1000;
 
-        const processedFeatures = geoJson.features.map((feature: any) => {
-          const newFeature = JSON.parse(JSON.stringify(feature));
-          const lat = parseFloat(feature.properties.INTPTLAT20);
-          const lng = parseFloat(feature.properties.INTPTLON20);
+          try {
+            const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_circle', {
+              center_lat: centerLocation.lat,
+              center_lng: centerLocation.lng,
+              radius_meters: radiusInMeters,
+            });
 
-          newFeature.properties.calculated_centroid = {
-            lat: isNaN(lat) ? null : lat,
-            lng: isNaN(lng) ? null : lng
-          };
-          return newFeature;
-        });
-
-        setAllGeoJsonData({
-          type: 'FeatureCollection',
-          features: processedFeatures
-        });
-      } catch (error: any) {
-        const errorMessage = `CRITICAL ERROR: Could not load GeoJSON data for ${country}. ${error.message}`;
-        console.error(errorMessage, error);
-        toast.error(errorMessage, { duration: 10000 });
-        setDataError(errorMessage);
-      } finally {
-        setLoadingData(false);
-      }
-    };
-    loadUSData();
-  }, [isCanada, country]);
-
-  useEffect(() => {
-    const fetchByRadius = async () => {
-      if (isCanada && centerLocation?.lat && centerLocation?.lng && typeof currentDisplayRadius === 'number') {
-        setLoadingData(true);
-        const radiusInMeters = currentDisplayRadius * 1000; // currentDisplayRadius is in km for Canada
-        const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_circle', {
-          center_lat: centerLocation.lat,
-          center_lng: centerLocation.lng,
-          radius_meters: radiusInMeters,
-        });
-  
-        if (error) {
-          toast.error("Could not load Canadian postal codes for this area.");
-          console.error(error);
-          setCanadianPoints([]);
+            if (error) throw error;
+            setCanadianPoints(data || []);
+          } catch (error: any) {
+            console.error("Error fetching Canadian postal codes by radius:", error);
+            toast.error(`Could not load Canadian postal code data: ${error.message}`);
+            setCanadianPoints([]);
+          }
         } else {
-          setCanadianPoints(data || []);
+          setCanadianPoints([]); // Clear points if no center location
         }
         setLoadingData(false);
-      } else if (isCanada && currentDisplayRadius !== 'all') {
-        // If radius is not 'all' but location is missing, clear points
-        setCanadianPoints([]);
+      } else {
+        try {
+          const geoJsonModule = await import('@/data/us-zip-codes.json');
+          const geoJson = geoJsonModule.default;
+
+          if (!geoJson || !geoJson.features) {
+            throw new Error(`GeoJSON for ${country} is missing or invalid.`);
+          }
+
+          const processedFeatures = geoJson.features.map((feature: any) => {
+            const newFeature = JSON.parse(JSON.stringify(feature));
+            const lat = parseFloat(feature.properties.INTPTLAT20);
+            const lng = parseFloat(feature.properties.INTPTLON20);
+
+            newFeature.properties.calculated_centroid = {
+              lat: isNaN(lat) ? null : lat,
+              lng: isNaN(lng) ? null : lng
+            };
+            return newFeature;
+          });
+
+          setAllGeoJsonData({
+            type: 'FeatureCollection',
+            features: processedFeatures
+          });
+        } catch (error: any) {
+          const errorMessage = `CRITICAL ERROR: Could not load GeoJSON data for ${country}. ${error.message}`;
+          console.error(errorMessage, error);
+          toast.error(errorMessage, { duration: 10000 });
+          setDataError(errorMessage);
+        } finally {
+          setLoadingData(false);
+        }
       }
     };
-  
-    if (isCanada && currentDisplayRadius !== 'all') {
-      fetchByRadius();
-    }
-  }, [isCanada, centerLocation, currentDisplayRadius]);
+    loadData();
+  }, [isCanada, country, centerLocation, currentDisplayRadius]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
@@ -544,7 +484,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     );
   }
 
-  if (loadingData && !isCanada) {
+  if (loadingData) {
     return (
       <div className="h-full w-full flex items-center justify-center text-gray-500">
         <Loader2 className="h-8 w-8 animate-spin mr-2" /> Loading map data...
@@ -570,9 +510,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       
       {isCanada ? (
         <>
-          {currentDisplayRadius === 'all' && (
-            <CanadianPointsFetcher setPoints={setCanadianPoints} setLoading={setLoadingData} />
-          )}
           {loadingData && (
             <div className="leaflet-top leaflet-center bg-white bg-opacity-75 p-2 rounded-lg shadow-md mt-2">
               <div className="flex items-center text-gray-700">
@@ -606,22 +543,35 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       )}
 
       {showRadiusCircles && centerLocation?.lat != null && centerLocation?.lng != null && (
-        radiiConfig.map(({ radius, color }) => (
-          <Circle
-            key={radius}
-            center={[centerLocation.lat!, centerLocation.lng!]}
-            radius={radius * conversionFactor}
-            pathOptions={{
-              color: color,
-              fillOpacity: 0,
-              weight: 2,
-              dashArray: '5, 10',
-              interactive: false,
-            }}
-          >
-            <Tooltip permanent direction="right" offset={[10, 0]} className="radius-tooltip">{`${radius} ${unit}`}</Tooltip>
-          </Circle>
-        ))
+        radiiConfig.map(({ radius, color }) => {
+          const centerPoint = turf.point([centerLocation.lng!, centerLocation.lat!]);
+          const radiusInKmForLabel = isCanada ? radius : radius * 1.60934;
+          const topPoint = turf.destination(centerPoint, radiusInKmForLabel, 0, { units: 'kilometers' });
+          const labelPosition: [number, number] = [topPoint.geometry.coordinates[1], topPoint.geometry.coordinates[0]];
+
+          const labelIcon = L.divIcon({
+            className: 'radius-label-icon',
+            html: `<div>${radius} ${unit}</div>`,
+            iconAnchor: [25, 10],
+          });
+
+          return (
+            <React.Fragment key={radius}>
+              <Circle
+                center={[centerLocation.lat!, centerLocation.lng!]}
+                radius={radius * conversionFactor}
+                pathOptions={{
+                  color: color,
+                  fillOpacity: 0,
+                  weight: 2,
+                  dashArray: '5, 10',
+                  interactive: false,
+                }}
+              />
+              <Marker position={labelPosition} icon={labelIcon} interactive={false} />
+            </React.Fragment>
+          );
+        })
       )}
       
       <MapUpdater

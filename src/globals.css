@@ -133,10 +133,15 @@
   text-shadow: 0 0 3px rgba(0,0,0,0.8); /* Make text readable */
 }
 
-.radius-tooltip {
+.radius-label-icon {
   background-color: transparent;
   border: none;
   box-shadow: none;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.radius-label-icon div {
   color: #374151; /* gray-700 */
   font-weight: 600; /* semibold */
   font-size: 12px;
