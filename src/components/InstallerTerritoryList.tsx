@@ -97,7 +97,7 @@ const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
             <CollapsibleTrigger asChild>
               <CardHeader className="pb-3 cursor-pointer flex flex-row items-center justify-between">
                 <CardTitle className="text-lg font-semibold text-green-700 flex items-center">
-                  <CheckCircle2 className="h-5 w-5 mr-2 text-green-600" /> Approved Territories ({approvedZips.length})
+                  <CheckCircle2 className="h-5 w-5 mr-2 text-green-600" /> Free Mileage ({approvedZips.length})
                 </CardTitle>
                 {isApprovedOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
               </CardHeader>
@@ -120,7 +120,7 @@ const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
                     </Badge>
                   ))
                 ) : (
-                  <p className="text-sm text-gray-500">No approved territories assigned or matching search/filter.</p>
+                  <p className="text-sm text-gray-500">No free mileage territories assigned or matching search/filter.</p>
                 )}
               </CardContent>
             </CollapsibleContent>
@@ -132,7 +132,7 @@ const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
             <CollapsibleTrigger asChild>
               <CardHeader className="pb-3 cursor-pointer flex flex-row items-center justify-between">
                 <CardTitle className="text-lg font-semibold text-orange-700 flex items-center">
-                  <Clock className="h-5 w-5 mr-2 text-orange-600" /> Needs Approval Territories ({needsApprovalZips.length})
+                  <Clock className="h-5 w-5 mr-2 text-orange-600" /> Paid Mileage ({needsApprovalZips.length})
                 </CardTitle>
                 {isNeedsApprovalOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
               </CardHeader>
@@ -155,7 +155,7 @@ const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
                     </Badge>
                   ))
                 ) : (
-                  <p className="text-sm text-gray-500">No territories needing approval assigned or matching search/filter.</p>
+                  <p className="text-sm text-gray-500">No paid mileage territories assigned or matching search/filter.</p>
                 )}
               </CardContent>
             </CollapsibleContent>
