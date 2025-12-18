@@ -219,7 +219,11 @@ function MapInteractionHandler({
   return null;
 }
 
-const CanadianPostalCodeLayer = ({ points, onZipCodeClick, highlightedZipCodes }: {
+const CanadianPostalCodeLayer = ({
+  points,
+  onZipCodeClick,
+  highlightedZipCodes,
+}: {
   points: any[];
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
@@ -385,6 +389,36 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     loadUSData();
   }, [isCanada, country]);
 
+  useEffect(() => {
+    const fetchByRadius = async () => {
+      if (isCanada && centerLocation?.lat && centerLocation?.lng && typeof currentDisplayRadius === 'number') {
+        setLoadingData(true);
+        const radiusInMeters = currentDisplayRadius * 1000; // currentDisplayRadius is in km for Canada
+        const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_circle', {
+          center_lat: centerLocation.lat,
+          center_lng: centerLocation.lng,
+          radius_meters: radiusInMeters,
+        });
+  
+        if (error) {
+          toast.error("Could not load Canadian postal codes for this area.");
+          console.error(error);
+          setCanadianPoints([]);
+        } else {
+          setCanadianPoints(data || []);
+        }
+        setLoadingData(false);
+      } else if (isCanada && currentDisplayRadius !== 'all') {
+        // If radius is not 'all' but location is missing, clear points
+        setCanadianPoints([]);
+      }
+    };
+  
+    if (isCanada && currentDisplayRadius !== 'all') {
+      fetchByRadius();
+    }
+  }, [isCanada, centerLocation, currentDisplayRadius]);
+
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
     const isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
@@ -510,6 +544,14 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     );
   }
 
+  if (loadingData && !isCanada) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-gray-500">
+        <Loader2 className="h-8 w-8 animate-spin mr-2" /> Loading map data...
+      </div>
+    );
+  }
+
   return (
     <MapContainer
       center={isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795]}
@@ -528,7 +570,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       
       {isCanada ? (
         <>
-          <CanadianPointsFetcher setPoints={setCanadianPoints} setLoading={setLoadingData} />
+          {currentDisplayRadius === 'all' && (
+            <CanadianPointsFetcher setPoints={setCanadianPoints} setLoading={setLoadingData} />
+          )}
           {loadingData && (
             <div className="leaflet-top leaflet-center bg-white bg-opacity-75 p-2 rounded-lg shadow-md mt-2">
               <div className="flex items-center text-gray-700">
