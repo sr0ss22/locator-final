@@ -58,6 +58,16 @@ const certificationCheckboxes = [
 const otherFields = ["installer_vendor_id", "star_rating", "shipment"];
 const textAreaFields = ["comments", "specialnote"];
 
+const defaultFormState = {
+  name: "", email: "", primary_phone: "", secondary_phone: "", address1: "", add2: "", city: "", state: "", postalcode: "", country: "USA",
+  hunter_douglas: false, alta: false, carole: false, architectural: false, levolor: false, three_day_blinds: false,
+  blinds_and_shades: false, power_view: false, service_call: false, shutters: false, draperies: false,
+  tall_window: false, fixture_displays: false, outdoor: false, high_voltage_hardwired: false,
+  pip_certification_level: "", shutter_certification_level: "", powerview_certification: "", draperies_certification_level: "",
+  installer_vendor_id: "", shipment: false, star_rating: "", specialnote: "", comments: "",
+  is_active: true,
+};
+
 const EditInstallerPage: React.FC = () => {
   const { installerId } = useParams<{ installerId: string }>();
   const navigate = useNavigate();
@@ -609,6 +619,15 @@ const EditInstallerPage: React.FC = () => {
     }
   };
 
+  const usRadii = [
+    { radius: 25 }, { radius: 50 }, { radius: 100 }, { radius: 150 },
+  ];
+  const caRadii = [
+    { radius: 35 }, { radius: 75 }, { radius: 100 }, { radius: 125 },
+  ];
+  const radiiConfig = installerCountry === 'Canada' ? caRadii : usRadii;
+  const unit = installerCountry === 'Canada' ? 'km' : 'miles';
+
   if (loading || sessionLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-500" /><p className="text-gray-500 ml-2">Loading installer data...</p></div>;
   }
@@ -743,7 +762,14 @@ const EditInstallerPage: React.FC = () => {
                     <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
                   </div>
                 </div>
-                <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border">
+                <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
+                  <h4 className="font-semibold text-lg mb-3">Filter Map Display by Radius (from Installer)</h4>
+                  <RadioGroup value={String(mapDisplayRadius)} onValueChange={(value) => setMapDisplayRadius(value === 'all' ? 'all' : Number(value))} className="flex flex-wrap gap-4">
+                    {radiiConfig.map(r => (<div key={r.radius} className="flex items-center space-x-2"><RadioGroupItem value={String(r.radius)} id={`map-radius-${r.radius}`} /><Label htmlFor={`map-radius-${r.radius}`}>{r.radius} {unit}</Label></div>))}
+                    <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="map-radius-all" /><Label htmlFor={`map-radius-all`}>All</Label></div>
+                  </RadioGroup>
+                </div>
+                <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border mt-4">
                   <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={bulkActionType !== null} onBulkSelectionComplete={handleBulkSelectionComplete} />
                 </div>
                 <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them to this installer. In bulk select mode, click and drag to select multiple ZIP codes.</p>

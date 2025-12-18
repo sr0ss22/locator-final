@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { supabase } from "@/integrations/supabase/client";
+import MarkerClusterGroup from '@changey/react-leaflet-markercluster';
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -218,14 +219,44 @@ function MapInteractionHandler({
   return null;
 }
 
-const CanadianPostalCodeLayer = ({ points, onZipCodeClick, highlightedZipCodes }: {
+const CanadianPostalCodeLayer = ({
+  points,
+  onZipCodeClick,
+  highlightedZipCodes,
+  centerLocation,
+  currentDisplayRadius,
+}: {
   points: any[];
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
+  centerLocation?: { lat: number | null; lng: number | null };
+  currentDisplayRadius?: number | 'all';
 }) => {
+  const filteredPoints = useMemo(() => {
+    if (currentDisplayRadius === 'all' || !centerLocation?.lat || !centerLocation?.lng) {
+      return points;
+    }
+
+    const radiusInKm = currentDisplayRadius;
+
+    return points.filter(point => {
+      if (point.LATITUDE != null && point.LONGITUDE != null) {
+        const distanceInMiles = calculateDistance(
+          centerLocation.lat!,
+          centerLocation.lng!,
+          point.LATITUDE,
+          point.LONGITUDE
+        );
+        const distanceInKm = distanceInMiles * 1.60934;
+        return distanceInKm <= radiusInKm;
+      }
+      return false;
+    });
+  }, [points, centerLocation, currentDisplayRadius]);
+
   return (
-    <>
-      {points.map(point => {
+    <MarkerClusterGroup>
+      {filteredPoints.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
         let color = '#3b82f6'; // Blue
         let fillOpacity = 0.5;
@@ -243,7 +274,7 @@ const CanadianPostalCodeLayer = ({ points, onZipCodeClick, highlightedZipCodes }
 
         return (
           <CircleMarker
-            key={point.id} // Use unique ID for key
+            key={point.id}
             center={[point.LATITUDE, point.LONGITUDE]}
             radius={radius}
             pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
@@ -257,7 +288,7 @@ const CanadianPostalCodeLayer = ({ points, onZipCodeClick, highlightedZipCodes }
           </CircleMarker>
         );
       })}
-    </>
+    </MarkerClusterGroup>
   );
 };
 
@@ -497,7 +528,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         <CanadianPostalCodeLayer 
           points={canadianPoints} 
           onZipCodeClick={onZipCodeClick} 
-          highlightedZipCodes={highlightedZipCodes} 
+          highlightedZipCodes={highlightedZipCodes}
+          centerLocation={centerLocation}
+          currentDisplayRadius={currentDisplayRadius}
         />
       ) : (
         filteredGeoJsonData && (
