@@ -26,19 +26,8 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Fetch existing postal codes from the incoming chunk to check for duplicates
-    const incomingPostalCodes = records.map(r => r.POSTAL_CODE);
-    const { data: existingCodesData, error: fetchError } = await supabaseAdmin
-      .from('canadian_postal_codes')
-      .select('POSTAL_CODE')
-      .in('POSTAL_CODE', incomingPostalCodes);
-
-    if (fetchError) {
-      throw new Error(`Failed to check for existing postal codes: ${fetchError.message}`);
-    }
-
-    const existingCodes = new Set(existingCodesData.map(item => item.POSTAL_CODE));
-    const dataToInsert = records.filter(row => !existingCodes.has(row.POSTAL_CODE));
+    // The duplicate check has been removed. All records from the chunk will be inserted.
+    const dataToInsert = records;
 
     if (dataToInsert.length > 0) {
       const { error: insertError } = await supabaseAdmin
@@ -51,9 +40,9 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ 
-      message: `Processed ${records.length} records. Inserted ${dataToInsert.length} new records.`,
+      message: `Processed and inserted ${dataToInsert.length} new records.`,
       inserted: dataToInsert.length,
-      duplicates: records.length - dataToInsert.length,
+      duplicates: 0, // Duplicate check is removed, so this is now 0.
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
