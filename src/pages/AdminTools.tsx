@@ -8,13 +8,11 @@ import { useNavigate } from 'react-router-dom';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import Papa from 'papaparse';
 
 const AdminToolsPage: React.FC = () => {
   const [processingTerritories, setProcessingTerritories] = useState(false);
   const [processingStates, setProcessingStates] = useState(false);
   const [isImportingCanada, setIsImportingCanada] = useState(false);
-  const [importProgress, setImportProgress] = useState(0);
   const [canadaCsvFile, setCanadaCsvFile] = useState<File | null>(null);
   const [radius, setRadius] = useState<number>(50);
   const navigate = useNavigate();
@@ -72,60 +70,29 @@ const AdminToolsPage: React.FC = () => {
     }
 
     setIsImportingCanada(true);
-    setImportProgress(0);
-    const loadingToastId = toast.loading("Starting Canadian postal code import...");
+    const loadingToastId = toast.loading("Uploading and processing file... This may take several minutes. Please do not navigate away.");
 
     try {
-      // 1. Clear the table first using the secure RPC call
-      toast.info("Clearing existing Canadian postal code data...", { id: loadingToastId });
-      const { error: truncateError } = await supabase.rpc('truncate_canadian_postal_codes');
-      if (truncateError) throw new Error(`Failed to clear table: ${truncateError.message}`);
-
-      // 2. Parse and upload in chunks
-      let totalChunks = 0;
-      let chunksProcessed = 0;
-
-      Papa.parse(canadaCsvFile, {
-        header: true,
-        skipEmptyLines: true,
-        chunkSize: 500, // Process 500 rows at a time
-        chunk: async (results, parser) => {
-          parser.pause(); // Pause parsing to wait for the upload
-          totalChunks++;
-          const chunkData = results.data.map((row: any) => ({
-            "POSTAL_CODE": row.POSTAL_CODE,
-            "CITY": row.CITY,
-            "PROVINCE_ABBR": row.PROVINCE_ABBR,
-            "TIME_ZONE": row.TIME_ZONE,
-            "LATITUDE": parseFloat(row.LATITUDE),
-            "LONGITUDE": parseFloat(row.LONGITUDE),
-          })).filter(row => !isNaN(row.LATITUDE) && !isNaN(row.LONGITUDE));
-
-          const { error } = await supabase.from('canadian_postal_codes').insert(chunkData);
-
-          if (error) {
-            parser.abort();
-            throw new Error(`Error inserting chunk: ${error.message}`);
-          }
-
-          chunksProcessed++;
-          const progress = Math.round((chunksProcessed / totalChunks) * 100);
-          setImportProgress(progress);
-          toast.info(`Processing... ${progress}% complete.`, { id: loadingToastId });
-          parser.resume();
-        },
-        complete: () => {
-          toast.success("Successfully imported all Canadian postal codes!", { id: loadingToastId });
-          setIsImportingCanada(false);
-        },
-        error: (error) => {
-          throw new Error(`CSV Parsing Error: ${error.message}`);
-        }
+      const fileContent = await canadaCsvFile.text();
+      
+      const { data, error } = await supabase.functions.invoke('import-canada-csv', {
+        body: fileContent,
       });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      toast.success(data.message || "Successfully imported Canadian postal codes!", { id: loadingToastId });
 
     } catch (err: any) {
       console.error("Import failed:", err);
       toast.error(`Import failed: ${err.message}`, { id: loadingToastId });
+    } finally {
       setIsImportingCanada(false);
     }
   };
@@ -151,7 +118,7 @@ const AdminToolsPage: React.FC = () => {
           <CardHeader>
             <CardTitle>Import Canadian Postal Codes</CardTitle>
             <CardDescription>
-              Upload the `CanadianPostalCodes202403.csv` file here. This tool will clear existing data and import the new file in chunks to prevent timeouts.
+              Upload the `CanadianPostalCodes202403.csv` file here. This tool will clear existing data and import the new file. This process can take several minutes.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -165,7 +132,6 @@ const AdminToolsPage: React.FC = () => {
                 disabled={anyProcessRunning}
               />
             </div>
-            {isImportingCanada && <Progress value={importProgress} className="w-full" />}
           </CardContent>
           <CardFooter>
             <Button onClick={handleCanadaImport} disabled={anyProcessRunning || !canadaCsvFile}>
