@@ -325,16 +325,36 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       setDataError(null);
 
       if (isCanada) {
-        const { data, error } = await supabase
-          .from('canadian_postal_codes')
-          .select('id, POSTAL_CODE, PROVINCE_ABBR, LATITUDE, LONGITUDE');
+        try {
+          const allPoints = [];
+          let page = 0;
+          const pageSize = 1000;
 
-        if (error) {
+          while (true) {
+            const { data, error } = await supabase
+              .from('canadian_postal_codes')
+              .select('id, POSTAL_CODE, PROVINCE_ABBR, LATITUDE, LONGITUDE')
+              .range(page * pageSize, (page + 1) * pageSize - 1);
+
+            if (error) {
+              throw error;
+            }
+
+            if (data) {
+              allPoints.push(...data);
+            }
+
+            if (!data || data.length < pageSize) {
+              break; // Last page
+            }
+
+            page++;
+          }
+          setCanadianPoints(allPoints);
+        } catch (error: any) {
           console.error("Error fetching all Canadian postal codes:", error);
-          toast.error("Could not load Canadian postal code data.");
+          toast.error(`Could not load Canadian postal code data: ${error.message}`);
           setCanadianPoints([]);
-        } else {
-          setCanadianPoints(data || []);
         }
         setLoadingData(false);
       } else {
