@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_canadian_postal_codes_postal_code ON public.canadian_postal_codes("POSTAL_CODE");

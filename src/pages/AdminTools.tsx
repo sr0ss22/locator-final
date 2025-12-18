@@ -5,15 +5,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, ArrowLeft, Database, LogOut, MapPin, RefreshCw, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 const AdminToolsPage: React.FC = () => {
   const [processingTerritories, setProcessingTerritories] = useState(false);
   const [processingStates, setProcessingStates] = useState(false);
   const [isImportingCanada, setIsImportingCanada] = useState(false);
   const [canadaCsvFile, setCanadaCsvFile] = useState<File | null>(null);
+  const [canadaImportMode, setCanadaImportMode] = useState<'overwrite' | 'append'>('append');
   const [radius, setRadius] = useState<number>(50);
   const navigate = useNavigate();
 
@@ -70,13 +71,16 @@ const AdminToolsPage: React.FC = () => {
     }
 
     setIsImportingCanada(true);
-    const loadingToastId = toast.loading("Uploading and processing file... This may take several minutes. Please do not navigate away.");
+    const loadingToastId = toast.loading(`Uploading and processing file in '${canadaImportMode}' mode... This may take several minutes.`);
 
     try {
       const fileContent = await canadaCsvFile.text();
       
       const { data, error } = await supabase.functions.invoke('import-canada-csv', {
-        body: fileContent,
+        body: {
+          csvContent: fileContent,
+          importMode: canadaImportMode,
+        },
       });
 
       if (error) {
@@ -118,7 +122,7 @@ const AdminToolsPage: React.FC = () => {
           <CardHeader>
             <CardTitle>Import Canadian Postal Codes</CardTitle>
             <CardDescription>
-              Upload the `CanadianPostalCodes202403.csv` file here. This tool will clear existing data and import the new file. This process can take several minutes.
+              Upload the `CanadianPostalCodes202403.csv` file. This process can take several minutes.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -131,6 +135,23 @@ const AdminToolsPage: React.FC = () => {
                 onChange={(e) => setCanadaCsvFile(e.target.files ? e.target.files[0] : null)}
                 disabled={anyProcessRunning}
               />
+            </div>
+            <div>
+              <Label>Import Mode</Label>
+              <RadioGroup
+                value={canadaImportMode}
+                onValueChange={(value: 'overwrite' | 'append') => setCanadaImportMode(value)}
+                className="mt-2 space-y-2"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="append" id="append" />
+                  <Label htmlFor="append">Append (ignore duplicates)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="overwrite" id="overwrite" />
+                  <Label htmlFor="overwrite">Overwrite (replace all)</Label>
+                </div>
+              </RadioGroup>
             </div>
           </CardContent>
           <CardFooter>
