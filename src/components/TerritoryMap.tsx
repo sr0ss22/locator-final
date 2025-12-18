@@ -539,7 +539,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
               interactive: false,
             }}
           >
-            <Tooltip sticky permanent className="radius-tooltip">{`${radius} ${unit}`}</Tooltip>
+            <Tooltip permanent direction="right" offset={[10, 0]} className="radius-tooltip">{`${radius} ${unit}`}</Tooltip>
           </Circle>
         ))
       )}
