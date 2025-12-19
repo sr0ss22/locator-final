@@ -772,54 +772,53 @@ const EditInstallerPage: React.FC = () => {
       toast.error("Installer location is not set. Cannot auto-approve.");
       return;
     }
-
+  
     setLoading(true);
     const isCanada = installerCountry === 'Canada';
     const radiusMiles = isCanada ? 35 / 1.60934 : 25;
     const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
-    const loadingToastId = toast.loading(`Finding territories within ${isCanada ? '35km' : '25 miles'}...`);
-
+    
+    let loadingToastId: string | number | undefined;
+  
     try {
       let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
-
+  
       if (isCanada) {
+        loadingToastId = toast.loading("Fetching Canadian postal codes in radius...");
         let allPoints: any[] = [];
         let page = 0;
         const pageSize = 1000;
         let hasMore = true;
-        
-        toast.info("Fetching Canadian postal codes in radius...", { id: loadingToastId });
-
-        while(hasMore) {
+  
+        while (hasMore) {
           const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
             center_lat: currentInstaller.latitude,
             center_lng: currentInstaller.longitude,
             radius_meters: radiusMeters,
           }).range(page * pageSize, (page + 1) * pageSize - 1);
-
+  
           if (error) {
             throw new Error(`Failed to fetch Canadian postal codes (page ${page + 1}): ${error.message}`);
           }
-
+  
           if (data) {
             allPoints = allPoints.concat(data);
           }
-
+  
           if (!data || data.length < pageSize) {
             hasMore = false;
           } else {
             page++;
-            toast.info(`Fetched ${allPoints.length} postal codes so far...`, { id: loadingToastId });
           }
         }
-
+        toast.dismiss(loadingToastId);
+  
         zipsToApprove = (allPoints || []).map((p: any) => ({
           zipCode: p.POSTAL_CODE,
           stateProvince: p.PROVINCE_ABBR,
           centroid_latitude: p.LATITUDE,
           centroid_longitude: p.LONGITUDE,
         }));
-
       } else { // USA
         for (const [zipCode, { lat, lng, state }] of zipCodeCentroids.entries()) {
           if (lat !== null && lng !== null) {
@@ -840,10 +839,7 @@ const EditInstallerPage: React.FC = () => {
           }
         }
       }
-
-      toast.dismiss(loadingToastId);
-      toast.info(`Found ${zipsToApprove.length} territories. Merging and saving... This may take a moment.`);
-
+  
       const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
       zipsToApprove.forEach(zipInfo => {
         newSelectedMap.set(zipInfo.zipCode, {
@@ -852,12 +848,16 @@ const EditInstallerPage: React.FC = () => {
         });
       });
       const finalListOfZips = Array.from(newSelectedMap.values());
-
+  
       await handleSubmit(finalListOfZips);
-
+  
     } catch (err: any) {
       console.error("Error during auto-approve:", err);
-      toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
+      if (loadingToastId) {
+        toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
+      } else {
+        toast.error(`Auto-approve failed: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
