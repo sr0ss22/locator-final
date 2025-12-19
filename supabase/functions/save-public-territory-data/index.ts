@@ -40,33 +40,54 @@ serve(async (req) => {
       })
     }
 
-    // Proceed with territory update
-    // 1. Delete existing territories for this installer
-    const { error: deleteError } = await supabaseAdmin
+    // 1. Get current territories from DB
+    const { data: currentZipsData, error: fetchError } = await supabaseAdmin
       .from('installer_zip_codes')
-      .delete()
-      .eq('installer_id', installerId)
+      .select('zip_code')
+      .eq('installer_id', installerId);
 
-    if (deleteError) {
-      throw deleteError
+    if (fetchError) {
+      throw new Error(`Failed to fetch current territories: ${fetchError.message}`);
     }
 
-    // 2. Insert new territories if any
-    if (zipCodes.length > 0) {
-      const zipsToInsert = zipCodes.map((item: any) => ({
-        installer_id: installerId,
-        zip_code: item.zipCode,
-        state_province: item.stateProvince,
-        status: item.assignedStatus,
-      }));
+    const currentZipSet = new Set((currentZipsData || []).map(z => z.zip_code));
+    const finalZipSet = new Set(zipCodes.map((z: any) => z.zipCode));
 
-      const { error: insertError } = await supabaseAdmin
+    // 2. Determine which zips to delete
+    const zipsToDelete = Array.from(currentZipSet).filter(zip => !finalZipSet.has(zip));
+
+    // 3. Determine which zips to upsert (all final zips)
+    const zipsToUpsert = zipCodes.map((item: any) => ({
+      installer_id: installerId,
+      zip_code: item.zipCode,
+      state_province: item.stateProvince,
+      status: item.assignedStatus,
+    }));
+
+    // 4. Perform DELETE operation for removed territories
+    if (zipsToDelete.length > 0) {
+      const { error: deleteError } = await supabaseAdmin
         .from('installer_zip_codes')
-        .insert(zipsToInsert)
+        .delete()
+        .eq('installer_id', installerId)
+        .in('zip_code', zipsToDelete);
 
-      if (insertError) {
-        throw insertError
+      if (deleteError) {
+        throw new Error(`Failed to delete territories: ${deleteError.message}`);
       }
+    }
+
+    // 5. Perform UPSERT operation for added or modified territories
+    if (zipsToUpsert.length > 0) {
+      const { error: upsertError } = await supabaseAdmin
+        .from('installer_zip_codes')
+        .upsert(zipsToUpsert, { onConflict: 'installer_id,zip_code' });
+
+      if (upsertError) {
+        throw new Error(`Failed to upsert territories: ${upsertError.message}`);
+      }
+    } else if (zipsToDelete.length > 0) {
+      // This is a valid case where all territories are removed.
     }
 
     return new Response(JSON.stringify({ message: 'Territories updated successfully.' }), {

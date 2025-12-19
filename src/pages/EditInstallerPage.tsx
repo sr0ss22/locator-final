@@ -435,22 +435,57 @@ const EditInstallerPage: React.FC = () => {
       if (updateInstallerError) throw new Error(`Supabase Update Error: ${updateInstallerError.message}`);
       
       if (canEdit) {
-        const { data: currentAssignmentsData, error: fetchAssignmentsError } = await supabase.from('installer_zip_codes').select('zip_code, field_ops_rep_id, field_service_manager_id').eq('installer_id', currentInstaller.id);
-        if (fetchAssignmentsError) throw new Error(`Failed to fetch current assignments: ${fetchAssignmentsError.message}`);
+        const { data: currentAssignmentsData, error: fetchAssignmentsError } = await supabase
+          .from('installer_zip_codes')
+          .select('zip_code, field_ops_rep_id, field_service_manager_id')
+          .eq('installer_id', currentInstaller.id);
+
+        if (fetchAssignmentsError) {
+          throw new Error(`Failed to fetch current assignments: ${fetchAssignmentsError.message}`);
+        }
+        
         const currentAssignmentsMap = new Map((currentAssignmentsData || []).map(item => [item.zip_code, item]));
-        const { error: deleteError } = await supabase.from('installer_zip_codes').delete().eq('installer_id', currentInstaller.id);
-        if (deleteError) throw new Error(`Failed to clear existing territories: ${deleteError.message}`);
-        const zipsToInsert = selectedMapZipCodes.map(item => {
+        const initialZipSet = new Set(currentAssignmentsMap.keys());
+        const finalZipSet = new Set(selectedMapZipCodes.map(z => z.zipCode));
+
+        const zipsToDelete = Array.from(initialZipSet).filter(zip => !finalZipSet.has(zip));
+
+        const zipsToUpsert = selectedMapZipCodes.map(item => {
           const existingAssignment = currentAssignmentsMap.get(item.zipCode);
           return {
-            installer_id: currentInstaller.id, zip_code: item.zipCode, state_province: item.stateProvince, status: item.assignedStatus,
+            installer_id: currentInstaller.id,
+            zip_code: item.zipCode,
+            state_province: item.stateProvince,
+            status: item.assignedStatus,
             field_ops_rep_id: existingAssignment ? existingAssignment.field_ops_rep_id : null,
             field_service_manager_id: existingAssignment ? existingAssignment.field_service_manager_id : null,
           };
         });
-        if (zipsToInsert.length > 0) {
-          const { error: insertError } = await supabase.from('installer_zip_codes').insert(zipsToInsert);
-          if (insertError) throw new Error(`Failed to save new territories: ${insertError.message}`);
+
+        if (zipsToDelete.length > 0) {
+          toast.info(`Deleting ${zipsToDelete.length} territories...`, { id: loadingToastId });
+          const { error: deleteError } = await supabase
+            .from('installer_zip_codes')
+            .delete()
+            .eq('installer_id', currentInstaller.id)
+            .in('zip_code', zipsToDelete);
+          
+          if (deleteError) {
+            throw new Error(`Failed to delete territories: ${deleteError.message}`);
+          }
+        }
+
+        if (zipsToUpsert.length > 0) {
+          toast.info(`Upserting ${zipsToUpsert.length} territories...`, { id: loadingToastId });
+          const { error: upsertError } = await supabase
+            .from('installer_zip_codes')
+            .upsert(zipsToUpsert, { onConflict: 'installer_id,zip_code' });
+
+          if (upsertError) {
+            throw new Error(`Failed to save new/updated territories: ${upsertError.message}`);
+          }
+        } else if (zipsToDelete.length > 0) {
+          // This handles the case where all territories are removed.
         }
       }
       toast.success("Changes saved successfully! Refreshing data...", { id: loadingToastId });
