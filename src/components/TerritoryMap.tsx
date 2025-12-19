@@ -10,6 +10,7 @@ import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { supabase } from "@/integrations/supabase/client";
 import LoadingSayings from './LoadingSayings';
+import MarkerClusterGroup from '@changey/react-leaflet-markercluster';
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -230,7 +231,7 @@ const CanadianPostalCodeLayer = ({
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
 }) => {
   return (
-    <>
+    <MarkerClusterGroup>
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
         let color = '#3b82f6'; // Blue for unselected
@@ -263,7 +264,7 @@ const CanadianPostalCodeLayer = ({
           </CircleMarker>
         );
       })}
-    </>
+    </MarkerClusterGroup>
   );
 };
 
