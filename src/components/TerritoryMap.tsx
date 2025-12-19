@@ -349,7 +349,7 @@ const DynamicPointsLayer = ({
     }
   }, [map, country]);
 
-  const handleFetch = useCallback(() => {
+  useEffect(() => {
     currentFetchId.current += 1;
     const fetchId = currentFetchId.current;
 
@@ -363,13 +363,19 @@ const DynamicPointsLayer = ({
   }, [country, centerLocation, radius, fetchDataInChunks, fetchDataForBounds]);
 
   useMapEvents({
-    moveend: handleFetch,
-    zoomend: handleFetch,
+    zoomend: () => {
+      if (!centerLocation || !radius || radius === 'all') {
+        currentFetchId.current += 1;
+        fetchDataForBounds(currentFetchId.current);
+      }
+    },
+    moveend: () => {
+      if (!centerLocation || !radius || radius === 'all') {
+        currentFetchId.current += 1;
+        fetchDataForBounds(currentFetchId.current);
+      }
+    }
   });
-
-  useEffect(() => {
-    handleFetch();
-  }, [handleFetch]);
 
   return (
     <>
