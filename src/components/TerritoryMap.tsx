@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, Tooltip, CircleMarker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
-import { Star } from 'lucide-react';
+import { Star, Loader2 } from 'lucide-react';
 import { calculateDistance } from '@/utils/distance';
 import { TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
@@ -215,6 +215,16 @@ function MapInteractionHandler({
   return null;
 }
 
+const LoadingProgress = ({ loaded, total }: { loaded: number; total: number }) => (
+  <div className="absolute inset-0 flex items-center justify-center bg-white/75 z-[1000]">
+    <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg">
+      <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-4" />
+      <p className="font-semibold text-lg">Loading Territories...</p>
+      {total > 0 && <p className="text-sm text-gray-500">{`(${loaded.toLocaleString()} of ${total.toLocaleString()} loaded)`}</p>}
+    </div>
+  </div>
+);
+
 const DynamicPointsLayer = ({ 
   country, 
   onZipCodeClick, 
@@ -230,69 +240,154 @@ const DynamicPointsLayer = ({
 }) => {
   const [points, setPoints] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<{ loaded: number, total: number } | null>(null);
   const map = useMap();
+  const currentFetchId = useRef(0);
 
-  const fetchData = useCallback(async () => {
+  const fetchDataInChunks = useCallback(async (fetchId: number) => {
+    if (!centerLocation?.lat || !centerLocation?.lng || !radius || radius === 'all') {
+      setPoints([]);
+      return;
+    }
+
+    setLoading(true);
+    setPoints([]);
+    setProgress({ loaded: 0, total: 0 });
+
+    const radiusMeters = radius * 1000;
+
+    try {
+      const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data', {
+        body: { 
+          country, 
+          getCount: true,
+          center: centerLocation,
+          radius: radiusMeters,
+        },
+      });
+
+      if (fetchId !== currentFetchId.current) return;
+      if (countError) throw countError;
+      if (countData.error) throw new Error(countData.error);
+
+      const total = countData.count || 0;
+      if (total === 0) {
+        setPoints([]);
+        setProgress(null);
+        setLoading(false);
+        return;
+      }
+      
+      setProgress({ loaded: 0, total });
+
+      const PAGE_SIZE = 1500;
+      const totalPages = Math.ceil(total / PAGE_SIZE);
+      let allPoints: any[] = [];
+
+      for (let page = 1; page <= totalPages; page++) {
+        if (fetchId !== currentFetchId.current) return;
+
+        const { data: chunkData, error: chunkError } = await supabase.functions.invoke('get-map-data', {
+          body: { 
+            country, 
+            zoom: map.getZoom(),
+            bounds: map.getBounds(),
+            center: centerLocation,
+            radius: radiusMeters,
+            pageSize: PAGE_SIZE,
+            pageNumber: page,
+          },
+        });
+
+        if (fetchId !== currentFetchId.current) return;
+        if (chunkError) throw chunkError;
+        if (chunkData.error) throw new Error(chunkData.error);
+
+        if (chunkData.data) {
+          allPoints = [...allPoints, ...chunkData.data];
+          setPoints(allPoints);
+          setProgress({ loaded: allPoints.length, total });
+        }
+      }
+    } catch (err: any) {
+      if (fetchId === currentFetchId.current) {
+        console.error("Error fetching map data in chunks:", err);
+        toast.error("Could not load map data.");
+      }
+    } finally {
+      if (fetchId === currentFetchId.current) {
+        setLoading(false);
+        setProgress(null);
+      }
+    }
+  }, [map, country, centerLocation, radius]);
+
+  const fetchDataForBounds = useCallback(async (fetchId: number) => {
     setLoading(true);
     const bounds = map.getBounds();
     const zoom = map.getZoom();
 
-    let radiusMeters: number | undefined = undefined;
-    if (radius && radius !== 'all' && centerLocation?.lat && centerLocation?.lng) {
-        // Radius prop is in km for Canada (from EditInstallerPage logic)
-        // If it were USA, it would be miles.
-        // We handle conversion here for Canada to meters.
-        radiusMeters = radius * 1000;
-    }
-
     try {
       const { data, error } = await supabase.functions.invoke('get-map-data', {
-        body: { 
-            country, 
-            zoom, 
-            bounds, 
-            center: centerLocation,
-            radius: radiusMeters 
-        },
+        body: { country, zoom, bounds },
       });
 
+      if (fetchId !== currentFetchId.current) return;
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
       setPoints(data.data || []);
     } catch (err: any) {
-      console.error("Error fetching map data:", err);
-      toast.error("Could not load map data.");
+      if (fetchId === currentFetchId.current) {
+        console.error("Error fetching map data for bounds:", err);
+        toast.error("Could not load map data.");
+      }
     } finally {
-      setLoading(false);
+      if (fetchId === currentFetchId.current) {
+        setLoading(false);
+      }
     }
-  }, [map, country, centerLocation, radius]);
+  }, [map, country]);
+
+  const handleFetch = useCallback(() => {
+    currentFetchId.current += 1;
+    const fetchId = currentFetchId.current;
+
+    if (country === 'Canada' && centerLocation && radius && radius !== 'all') {
+      fetchDataInChunks(fetchId);
+    } else if (country === 'Canada') {
+      fetchDataForBounds(fetchId);
+    } else {
+      setPoints([]);
+    }
+  }, [country, centerLocation, radius, fetchDataInChunks, fetchDataForBounds]);
 
   useMapEvents({
-    moveend: fetchData,
-    zoomend: fetchData,
+    moveend: handleFetch,
+    zoomend: handleFetch,
   });
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    handleFetch();
+  }, [handleFetch]);
 
   return (
     <>
+      {(loading || progress) && <LoadingProgress loaded={progress?.loaded || 0} total={progress?.total || 0} />}
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
-        let color = '#3b82f6'; // Blue for unselected
+        let color = '#3b82f6';
         let fillOpacity = 0.5;
-        let radius = 2;
+        let pointRadius = 2;
 
         if (status === 'green') {
           color = '#22c55e';
           fillOpacity = 0.7;
-          radius = 3;
+          pointRadius = 3;
         } else if (status === 'orange') {
           color = '#f97316';
           fillOpacity = 0.7;
-          radius = 3;
+          pointRadius = 3;
         }
 
         if (point.is_cluster) {
@@ -307,7 +402,7 @@ const DynamicPointsLayer = ({
               })}
               eventHandlers={{
                 click: () => {
-                  map.setView([point.LATITUDE, point.LONGITUDE], map.getZoom() + 1);
+                  map.setView([point.LATITUDE, point.LONGITUDE], map.getZoom() + 2);
                 },
               }}
             />
@@ -318,7 +413,7 @@ const DynamicPointsLayer = ({
           <CircleMarker
             key={point.id}
             center={[point.LATITUDE, point.LONGITUDE]}
-            radius={radius}
+            radius={pointRadius}
             pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
             eventHandlers={{
               click: () => {
