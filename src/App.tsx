@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { CountrySettingsProvider } from "./hooks/useCountrySettings";
 import { SessionContextProvider } from "./components/SessionContextProvider";
-import { Loader2 } from "lucide-react";
+import LoadingSayings from "./components/LoadingSayings";
 
 // Eagerly load public-facing and essential components
 import PublicLocator from "./pages/PublicLocator";
@@ -28,7 +28,7 @@ const queryClient = new QueryClient();
 
 const LoadingFallback = () => (
   <div className="min-h-screen w-full flex items-center justify-center bg-background">
-    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    <LoadingSayings />
   </div>
 );
 

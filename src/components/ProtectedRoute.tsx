@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useSession } from './SessionContextProvider';
 import { Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import LoadingSayings from './LoadingSayings';
 
 const ProtectedRoute: React.FC = () => {
   const { user, profile, loading: sessionLoading } = useSession();
@@ -52,8 +52,7 @@ const ProtectedRoute: React.FC = () => {
   if (sessionLoading || loadingInstallerId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
-        <p className="ml-2 text-gray-500">Loading user session...</p>
+        <LoadingSayings />
       </div>
     );
   }

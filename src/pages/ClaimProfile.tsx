@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Loader2, LogOut } from 'lucide-react';
+import LoadingSayings from '@/components/LoadingSayings';
 
 const ClaimProfilePage: React.FC = () => {
   const { user, profile, loading: sessionLoading } = useSession();
@@ -113,7 +114,7 @@ const ClaimProfilePage: React.FC = () => {
   if (sessionLoading || checkingProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+        <LoadingSayings />
       </div>
     );
   }

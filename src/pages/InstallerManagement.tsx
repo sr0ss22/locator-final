@@ -45,6 +45,7 @@ import { Input } from "@/components/ui/input";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 import { useNavigate } from "react-router-dom";
 import InstallerFilterModal from "@/components/InstallerFilterModal";
+import LoadingSayings from "@/components/LoadingSayings";
 
 interface TableColumn {
   key: keyof Installer | 'actions' | 'city' | 'state' | 'blindsAndShades' | 'pipCertification' | 'motorization' | 'motorizationCertification' | 'draperies' | 'draperiesCertification' | 'shutters' | 'shutterCertificationLevel' | 'alta' | 'altaMotorization' | 'hunterDouglas' | 'carole' | 'architectural' | 'levolor' | 'threeDayBlinds' | 'tallWindow' | 'fixtureDisplays' | 'outdoor' | 'highVoltageHardwired';
@@ -660,7 +661,7 @@ const InstallerManagement: React.FC = () => {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={columns.filter(col => visibleColumns.has(col.key)).length} className="h-24 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-gray-500" /><p className="text-gray-500 mt-2">Loading installers...</p></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={columns.filter(col => visibleColumns.has(col.key)).length} className="h-24 text-center"><LoadingSayings /></TableCell></TableRow>
                 ) : installers.length === 0 ? (
                   <TableRow><TableCell colSpan={columns.filter(col => visibleColumns.has(col.key)).length} className="h-24 text-center text-gray-500">{searchTerm || filterBrands.length > 0 || filterProductSkills.length > 0 || filterCertifications.length > 0 || filterStates.length > 0 || filterAcceptsShipments !== 'any' ? "No installers found matching your criteria." : "No installers found. Click 'Add New Installer' to get started."}</TableCell></TableRow>
                 ) : (

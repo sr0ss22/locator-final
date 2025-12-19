@@ -18,6 +18,7 @@ import MultiSelect from "@/components/MultiSelect";
 import InstallerSummary from "@/components/InstallerSummary";
 import { calculateDistance } from "@/utils/distance";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import LoadingSayings from "@/components/LoadingSayings";
 
 const Locator: React.FC = () => {
   const [searchedZipCode, setSearchedZipCode] = useState<string>("");
@@ -310,11 +311,9 @@ const Locator: React.FC = () => {
             </div>
             <div className="mt-8">
               {isLoadingData ? (
-                <p className="text-center text-gray-500 mt-8">
-                  {loadingInstallers ? "Loading installers..." : ""}
-                  {loadingUserLocation && searchedZipCode && (!showAdditionalFilters || selectedStatesProvinces.length === 0) ? `Getting location for ${searchedZipCode}...` : ""}
-                  {loadingOrs && searchedZipCode && userLocation?.lat !== null && (!showAdditionalFilters || selectedStatesProvinces.length === 0) ? "Calculating driving distances..." : ""}
-                </p>
+                <div className="text-center text-gray-500 mt-8">
+                  <LoadingSayings />
+                </div>
               ) : (
                 <InstallerList 
                   installers={filteredAndSortedInstallers} 

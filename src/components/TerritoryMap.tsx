@@ -2,13 +2,14 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, Tooltip, CircleMarker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
-import { Star, Loader2 } from 'lucide-react';
+import { Star } from 'lucide-react';
 import { calculateDistance } from '@/utils/distance';
 import { TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { supabase } from "@/integrations/supabase/client";
+import LoadingSayings from './LoadingSayings';
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -497,9 +498,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       
       {loadingData && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/75 z-[1000]">
-          <div className="flex items-center text-gray-700 bg-white p-4 rounded-lg shadow-lg">
-            <Loader2 className="h-6 w-6 animate-spin mr-3" />
-            <span className="text-lg font-medium">Loading map data...</span>
+          <div className="flex flex-col items-center text-gray-700 bg-white p-4 rounded-lg shadow-lg">
+            <LoadingSayings />
           </div>
         </div>
       )}

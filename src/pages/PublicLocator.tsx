@@ -17,6 +17,7 @@ import { useSession } from "@/components/SessionContextProvider"; // Import useS
 import { Button } from "@/components/ui/button"; // Ensure Button is imported
 import { calculateDistance } from "@/utils/distance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import LoadingSayings from "@/components/LoadingSayings";
 
 const PublicLocator: React.FC = () => {
   const [searchText, setSearchText] = useState<string>("");
@@ -205,11 +206,9 @@ const PublicLocator: React.FC = () => {
             </div>
             <div className="space-y-4">
               {isLoadingData ? (
-                <p className="text-center text-gray-500 mt-8">
-                  {loadingInstallers ? "Loading installers..." : ""}
-                  {loadingLocation && searchText ? `Getting location for ${searchText}...` : ""}
-                  {loadingLocation && !searchText ? "Detecting your location..." : ""}
-                </p>
+                <div className="text-center text-gray-500 mt-8">
+                  <LoadingSayings />
+                </div>
               ) : (
                 <InstallerList 
                   installers={filteredAndSortedInstallers} 
