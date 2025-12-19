@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { supabase } from "@/integrations/supabase/client";
+import canadaFsaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -285,6 +286,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [dataError, setDataError] = useState<string | null>(null);
   const [pointsInRadius, setPointsInRadius] = useState<any[]>([]);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
+  const [transformedCanadaFsaGeoJson, setTransformedCanadaFsaGeoJson] = useState<any>(null);
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
@@ -293,6 +295,62 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   useEffect(() => {
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
+
+  useEffect(() => {
+    if (isCanada && !transformedCanadaFsaGeoJson) {
+        try {
+            const transformedFeatures = canadaFsaGeoJson.features.map(feature => {
+                const transformedGeometry = turf.clone(feature.geometry);
+                turf.coordEach(transformedGeometry, (currentCoord) => {
+                    const [lon, lat] = proj4('EPSG:3347', 'EPSG:4326').forward(currentCoord);
+                    currentCoord[0] = lon;
+                    currentCoord[1] = lat;
+                });
+                return { ...feature, geometry: transformedGeometry };
+            });
+            setTransformedCanadaFsaGeoJson({ type: 'FeatureCollection', features: transformedFeatures });
+        } catch (e) {
+            console.error("Error transforming Canadian GeoJSON:", e);
+            toast.error("Could not process Canadian map data.");
+        }
+    }
+  }, [isCanada, transformedCanadaFsaGeoJson]);
+
+  const canadianMapLayers = useMemo(() => {
+    if (!isCanada || !centerLocation?.lat || !centerLocation?.lng || !transformedCanadaFsaGeoJson) {
+        return { fsaPolygons: [], individualPoints: pointsInRadius, fsaChildrenMap: new Map() };
+    }
+
+    const fsaChildrenMap = new Map<string, any[]>();
+    pointsInRadius.forEach(p => {
+        const fsaId = p.POSTAL_CODE.substring(0, 3);
+        if (!fsaChildrenMap.has(fsaId)) {
+            fsaChildrenMap.set(fsaId, []);
+        }
+        fsaChildrenMap.get(fsaId)!.push(p);
+    });
+
+    const circle35km = turf.circle([centerLocation.lng, centerLocation.lat], 35, { units: 'kilometers' });
+    
+    const fullyContainedFsas: any[] = [];
+    const fullyContainedFsaIds = new Set<string>();
+
+    transformedCanadaFsaGeoJson.features.forEach((fsaFeature: any) => {
+        try {
+            if (turf.booleanContains(circle35km, fsaFeature)) {
+                fullyContainedFsas.push(fsaFeature);
+                fullyContainedFsaIds.add(getPostalCode(fsaFeature, true));
+            }
+        } catch (e) {
+            console.warn(`Error checking containment for FSA ${getPostalCode(fsaFeature, true)}:`, e);
+        }
+    });
+
+    const individualPoints = pointsInRadius.filter(p => !fullyContainedFsaIds.has(p.POSTAL_CODE.substring(0, 3)));
+
+    return { fsaPolygons: fullyContainedFsas, individualPoints, fsaChildrenMap };
+
+  }, [isCanada, centerLocation, pointsInRadius, transformedCanadaFsaGeoJson]);
 
   // This effect now ONLY loads the base US GeoJSON file.
   useEffect(() => {
@@ -485,11 +543,80 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       )}
 
       {isCanada ? (
-        <CanadianPostalCodeLayer 
-          points={pointsInRadius} 
-          onZipCodeClick={onZipCodeClick} 
-          highlightedZipCodes={highlightedZipCodes}
-        />
+        <>
+          <CanadianPostalCodeLayer 
+              points={canadianMapLayers.individualPoints} 
+              onZipCodeClick={onZipCodeClick} 
+              highlightedZipCodes={highlightedZipCodes}
+          />
+          {canadianMapLayers.fsaPolygons.length > 0 && (
+              <GeoJSON
+                  key={`fsa-${geoJsonStyleKey}`}
+                  data={{ type: 'FeatureCollection', features: canadianMapLayers.fsaPolygons }}
+                  style={(feature) => {
+                      const fsaId = getPostalCode(feature, true);
+                      const children = canadianMapLayers.fsaChildrenMap.get(fsaId) || [];
+                      if (children.length === 0) return getGeoJsonStyle(fsaId);
+
+                      const statuses = children.map(child => highlightedZipCodes.get(child.POSTAL_CODE));
+                      const hasGreen = statuses.some(s => s === 'green');
+                      const hasOrange = statuses.some(s => s === 'orange');
+
+                      let styleOptions: L.PathOptions = {};
+                      if (hasGreen && !hasOrange) {
+                          styleOptions = { fillColor: '#22C55E', fillOpacity: 0.4, color: '#166534', weight: 1 };
+                      } else if (!hasGreen && hasOrange) {
+                          styleOptions = { fillColor: '#F97316', fillOpacity: 0.4, color: '#9A3412', weight: 1 };
+                      } else if (hasGreen && hasOrange) {
+                          styleOptions = { fillColor: '#3b82f6', fillOpacity: 0.4, color: '#1e40af', weight: 1 };
+                      } else {
+                          return getGeoJsonStyle(fsaId);
+                      }
+                      return styleOptions;
+                  }}
+                  onEachFeature={(feature, layer) => {
+                      const fsaId = getPostalCode(feature, true);
+                      const stateProvince = getRegion(feature, true);
+                      layer.on({
+                          click: (e) => {
+                              L.DomEvent.stopPropagation(e);
+                              if (isBulkSelecting || !onBulkZipCodeUpdate) {
+                                  onZipCodeClickRef.current(fsaId, stateProvince);
+                                  return;
+                              }
+                              
+                              const children = canadianMapLayers.fsaChildrenMap.get(fsaId) || [];
+                              if (children.length === 0) {
+                                  toast.info(`No postal codes found within FSA ${fsaId} in the current view.`);
+                                  return;
+                              }
+
+                              const statuses = children.map(child => highlightedZipCodes.get(child.POSTAL_CODE));
+                              const allAreGreen = statuses.length > 0 && statuses.every(s => s === 'green');
+                              const allAreOrange = statuses.length > 0 && statuses.every(s => s === 'orange');
+
+                              let newStatus: TerritoryStatus | null;
+                              if (allAreGreen) {
+                                  newStatus = 'Needs Approval';
+                              } else if (allAreOrange) {
+                                  newStatus = null;
+                              } else {
+                                  newStatus = 'Approved';
+                              }
+
+                              const updates = children.map(child => ({
+                                  zipCode: child.POSTAL_CODE,
+                                  stateProvince: child.PROVINCE_ABBR,
+                                  newStatus: newStatus,
+                              }));
+                              onBulkZipCodeUpdate(updates);
+                          }
+                      });
+                      layer.bindTooltip(`FSA: ${fsaId} (${stateProvince})`, { permanent: false, direction: 'auto' });
+                  }}
+              />
+          )}
+        </>
       ) : (
         allGeoJsonData && (
           <GeoJSON
