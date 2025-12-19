@@ -9,7 +9,6 @@ import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { supabase } from "@/integrations/supabase/client";
-import MarkerClusterGroup from '@changey/react-leaflet-markercluster';
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -77,26 +76,6 @@ const createStarIcon = () => L.divIcon({
   iconAnchor: [20, 40],
   popupAnchor: [0, -35],
 });
-
-const createClusterCustomIcon = (cluster: any) => {
-  const count = cluster.getChildCount();
-  let size = 40;
-  let className = 'bg-blue-400';
-  if (count >= 10) {
-    size = 50;
-    className = 'bg-blue-500';
-  }
-  if (count >= 100) {
-    size = 60;
-    className = 'bg-blue-600';
-  }
-
-  return L.divIcon({
-    html: `<div class="flex items-center justify-center ${className} text-white font-bold rounded-full w-full h-full" style="width: ${size}px; height: ${size}px; border: 4px solid rgba(255,255,255,0.5)">${count}</div>`,
-    className: 'marker-cluster-custom',
-    iconSize: [size, size],
-  });
-};
 
 function MapUpdater({ centerLocation, isOpen, country }: {
   centerLocation?: { lat: number | null; lng: number | null };
@@ -244,69 +223,16 @@ const CanadianPostalCodeLayer = ({
   points,
   onZipCodeClick,
   highlightedZipCodes,
-  onBulkZipCodeUpdate,
 }: {
   points: any[];
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
-  onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
 }) => {
-  const clusterRef = useRef<any>(null);
-
-  useEffect(() => {
-    const clusterLayer = clusterRef.current;
-    if (!clusterLayer || !onBulkZipCodeUpdate) return;
-
-    const handleClusterClick = (e: any) => {
-      L.DomEvent.stop(e);
-      L.DomEvent.stopPropagation(e);
-
-      const cluster = e.layer;
-      const markers = cluster.getAllChildMarkers();
-      if (!markers || markers.length === 0) return;
-
-      const postalCodesInCluster = markers.map((marker: any) => marker.postalCodeInfo).filter(Boolean);
-      const currentStates = postalCodesInCluster.map((info: any) => highlightedZipCodes.get(info.zipCode));
-      
-      const allApproved = currentStates.length > 0 && currentStates.every(state => state === 'green');
-      const allNeedsApproval = currentStates.length > 0 && currentStates.every(state => state === 'orange');
-
-      let newStatus: TerritoryStatus | null;
-      if (allApproved) {
-        newStatus = 'Needs Approval';
-      } else if (allNeedsApproval) {
-        newStatus = null; // Deselect
-      } else {
-        newStatus = 'Approved';
-      }
-
-      const updates = postalCodesInCluster.map((info: any) => ({
-        zipCode: info.zipCode,
-        stateProvince: info.stateProvince,
-        newStatus: newStatus,
-      }));
-
-      onBulkZipCodeUpdate(updates);
-    };
-
-    clusterLayer.on('clusterclick', handleClusterClick);
-
-    return () => {
-      if (clusterLayer) {
-        clusterLayer.off('clusterclick', handleClusterClick);
-      }
-    };
-  }, [onBulkZipCodeUpdate, highlightedZipCodes]);
-
   return (
-    <MarkerClusterGroup
-      ref={clusterRef}
-      iconCreateFunction={createClusterCustomIcon}
-      zoomToBoundsOnClick={!onBulkZipCodeUpdate}
-    >
+    <>
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
-        let color = '#3b82f6'; // Blue
+        let color = '#3b82f6'; // Blue for unselected
         let fillOpacity = 0.5;
         let radius = 4;
 
@@ -327,9 +253,6 @@ const CanadianPostalCodeLayer = ({
             radius={radius}
             pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
             eventHandlers={{
-              add: (e: any) => {
-                e.target.postalCodeInfo = { zipCode: point.POSTAL_CODE, stateProvince: point.PROVINCE_ABBR };
-              },
               click: () => {
                 onZipCodeClick(point.POSTAL_CODE, point.PROVINCE_ABBR);
               },
@@ -339,7 +262,7 @@ const CanadianPostalCodeLayer = ({
           </CircleMarker>
         );
       })}
-    </MarkerClusterGroup>
+    </>
   );
 };
 
@@ -566,7 +489,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           points={pointsInRadius} 
           onZipCodeClick={onZipCodeClick} 
           highlightedZipCodes={highlightedZipCodes}
-          onBulkZipCodeUpdate={onBulkZipCodeUpdate}
         />
       ) : (
         allGeoJsonData && (
