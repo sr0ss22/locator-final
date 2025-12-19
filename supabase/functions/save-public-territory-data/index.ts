@@ -40,17 +40,35 @@ serve(async (req) => {
       })
     }
 
-    // 1. Get current territories from DB
-    const { data: currentZipsData, error: fetchError } = await supabaseAdmin
-      .from('installer_zip_codes')
-      .select('zip_code')
-      .eq('installer_id', installerId);
+    // 1. Get ALL current territories from DB using pagination
+    let allCurrentZipsData: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
 
-    if (fetchError) {
-      throw new Error(`Failed to fetch current territories: ${fetchError.message}`);
+    while (hasMore) {
+      const { data: currentZipsData, error: fetchError } = await supabaseAdmin
+        .from('installer_zip_codes')
+        .select('zip_code')
+        .eq('installer_id', installerId)
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch current territories: ${fetchError.message}`);
+      }
+
+      if (currentZipsData) {
+        allCurrentZipsData = allCurrentZipsData.concat(currentZipsData);
+      }
+
+      if (!currentZipsData || currentZipsData.length < pageSize) {
+        hasMore = false;
+      } else {
+        page++;
+      }
     }
 
-    const currentZipSet = new Set((currentZipsData || []).map(z => z.zip_code));
+    const currentZipSet = new Set((allCurrentZipsData || []).map(z => z.zip_code));
     const finalZipSet = new Set(zipCodes.map((z: any) => z.zipCode));
 
     // 2. Determine which zips to delete

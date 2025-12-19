@@ -223,12 +223,34 @@ const EditInstallerPage: React.FC = () => {
       });
     }
 
-    const { data: zipData, error: zipError } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', installerId);
-    if (zipError) {
-      console.error("Error fetching installer zip codes:", zipError);
-      toast.error("Failed to load installer's assigned ZIP codes.");
+    let allZipData: any[] = [];
+    let page = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while(hasMore) {
+      const { data: zipData, error: zipError } = await supabase
+        .from('installer_zip_codes')
+        .select('zip_code, status, state_province')
+        .eq('installer_id', installerId)
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (zipError) {
+        console.error("Error fetching installer zip codes:", zipError);
+        toast.error("Failed to load installer's assigned ZIP codes.");
+        hasMore = false;
+      } else {
+        if (zipData) {
+          allZipData = allZipData.concat(zipData);
+        }
+        if (!zipData || zipData.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
     }
-    const enrichedZips = (zipData || []).map(item => {
+
+    const enrichedZips = (allZipData || []).map(item => {
       const centroid = centroids.get(item.zip_code);
       return {
         zipCode: item.zip_code, assignedStatus: item.status as TerritoryStatus, stateProvince: item.state_province,
