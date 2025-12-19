@@ -343,13 +343,32 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       const maxRadiusMeters = 125 * 1000; // 125km
 
       try {
-        const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
-          center_lat: centerLocation.lat,
-          center_lng: centerLocation.lng,
-          radius_meters: maxRadiusMeters,
-        });
-        if (error) throw error;
-        setPointsInRadius(data || []);
+        // Fetch all results by paginating through the RPC call to bypass the default 1000-row limit
+        let allPoints: any[] = [];
+        let page = 0;
+        const pageSize = 1000; // Supabase's default limit
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
+            center_lat: centerLocation.lat,
+            center_lng: centerLocation.lng,
+            radius_meters: maxRadiusMeters,
+          }).range(page * pageSize, (page + 1) * pageSize - 1);
+
+          if (error) throw error;
+
+          if (data) {
+            allPoints = allPoints.concat(data);
+          }
+
+          if (!data || data.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        }
+        setPointsInRadius(allPoints);
       } catch (error: any) {
         console.error("Error fetching Canadian postal codes by radius:", error);
         toast.error("Failed to load postal codes within the radius.");
