@@ -234,16 +234,16 @@ const CanadianPostalCodeLayer = ({
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
         let color = '#3b82f6'; // Blue for unselected
         let fillOpacity = 0.5;
-        let radius = 4;
+        let radius = 2; // Base radius for unselected dots
 
         if (status === 'green') {
           color = '#22c55e'; // Green
           fillOpacity = 0.7;
-          radius = 5;
+          radius = 3; // Slightly larger radius for selected dots
         } else if (status === 'orange') {
           color = '#f97316'; // Orange
           fillOpacity = 0.7;
-          radius = 5;
+          radius = 3; // Slightly larger radius for selected dots
         }
 
         return (
