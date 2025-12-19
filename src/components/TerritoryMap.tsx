@@ -34,6 +34,7 @@ interface TerritoryMapProps {
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
   isBulkSelecting?: boolean;
   onBulkSelectionComplete?: (selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void;
+  onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
   country?: 'USA' | 'Canada';
 }
 
@@ -76,6 +77,26 @@ const createStarIcon = () => L.divIcon({
   iconAnchor: [20, 40],
   popupAnchor: [0, -35],
 });
+
+const createClusterCustomIcon = (cluster: any) => {
+  const count = cluster.getChildCount();
+  let size = 40;
+  let className = 'bg-blue-400';
+  if (count >= 10) {
+    size = 50;
+    className = 'bg-blue-500';
+  }
+  if (count >= 100) {
+    size = 60;
+    className = 'bg-blue-600';
+  }
+
+  return L.divIcon({
+    html: `<div class="flex items-center justify-center ${className} text-white font-bold rounded-full w-full h-full" style="width: ${size}px; height: ${size}px; border: 4px solid rgba(255,255,255,0.5)">${count}</div>`,
+    className: 'marker-cluster-custom',
+    iconSize: [size, size],
+  });
+};
 
 function MapUpdater({ centerLocation, isOpen, country }: {
   centerLocation?: { lat: number | null; lng: number | null };
@@ -223,13 +244,64 @@ const CanadianPostalCodeLayer = ({
   points,
   onZipCodeClick,
   highlightedZipCodes,
+  onBulkZipCodeUpdate,
 }: {
   points: any[];
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
+  onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
 }) => {
+  const clusterRef = useRef<L.MarkerClusterGroup>(null);
+
+  const handleClusterClick = useCallback((e: any) => {
+    const cluster = e.layer;
+    if (!onBulkZipCodeUpdate) {
+      cluster.zoomToBounds();
+      return;
+    }
+
+    const markers = cluster.getAllChildMarkers();
+    if (!markers || markers.length === 0) return;
+
+    const postalCodesInCluster = markers.map((marker: any) => marker.postalCodeInfo).filter(Boolean);
+    const currentStates = postalCodesInCluster.map(info => highlightedZipCodes.get(info.zipCode));
+    
+    const allApproved = currentStates.length > 0 && currentStates.every(state => state === 'green');
+    const allNeedsApproval = currentStates.length > 0 && currentStates.every(state => state === 'orange');
+
+    let newStatus: TerritoryStatus | null;
+    if (allApproved) {
+      newStatus = 'Needs Approval';
+    } else if (allNeedsApproval) {
+      newStatus = null; // Deselect
+    } else {
+      newStatus = 'Approved';
+    }
+
+    const updates = postalCodesInCluster.map(info => ({
+      zipCode: info.zipCode,
+      stateProvince: info.stateProvince,
+      newStatus: newStatus,
+    }));
+
+    onBulkZipCodeUpdate(updates);
+  }, [onBulkZipCodeUpdate, highlightedZipCodes]);
+
+  useEffect(() => {
+    const clusterLayer = clusterRef.current;
+    if (clusterLayer && onBulkZipCodeUpdate) {
+      clusterLayer.on('clusterclick', handleClusterClick);
+      return () => {
+        clusterLayer.off('clusterclick', handleClusterClick);
+      };
+    }
+  }, [onBulkZipCodeUpdate, handleClusterClick]);
+
   return (
-    <MarkerClusterGroup>
+    <MarkerClusterGroup
+      ref={clusterRef}
+      iconCreateFunction={createClusterCustomIcon}
+    >
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
         let color = '#3b82f6'; // Blue
@@ -253,6 +325,9 @@ const CanadianPostalCodeLayer = ({
             radius={radius}
             pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
             eventHandlers={{
+              add: (e: any) => {
+                e.target.postalCodeInfo = { zipCode: point.POSTAL_CODE, stateProvince: point.PROVINCE_ABBR };
+              },
               click: () => {
                 onZipCodeClick(point.POSTAL_CODE, point.PROVINCE_ABBR);
               },
@@ -277,6 +352,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   highlightedZipCodes,
   isBulkSelecting = false,
   onBulkSelectionComplete,
+  onBulkZipCodeUpdate,
   country = 'USA',
 }) => {
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
@@ -488,6 +564,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           points={pointsInRadius} 
           onZipCodeClick={onZipCodeClick} 
           highlightedZipCodes={highlightedZipCodes}
+          onBulkZipCodeUpdate={onBulkZipCodeUpdate}
         />
       ) : (
         allGeoJsonData && (

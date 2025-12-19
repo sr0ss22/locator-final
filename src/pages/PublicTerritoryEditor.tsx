@@ -190,6 +190,27 @@ const PublicTerritoryEditor: React.FC = () => {
     });
   }, [zipCodeCentroids]);
 
+  const handleBulkZipCodeUpdate = useCallback((updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => {
+    setSelectedMapZipCodes(prevSelected => {
+      const newSelectedMap = new Map(prevSelected.map(item => [item.zipCode, item]));
+      updates.forEach(update => {
+        if (update.newStatus === null) {
+          newSelectedMap.delete(update.zipCode);
+        } else {
+          const centroid = zipCodeCentroids.get(update.zipCode);
+          newSelectedMap.set(update.zipCode, {
+            zipCode: update.zipCode,
+            assignedStatus: update.newStatus,
+            stateProvince: update.stateProvince,
+            centroid_latitude: centroid?.lat || null,
+            centroid_longitude: centroid?.lng || null,
+          });
+        }
+      });
+      return Array.from(newSelectedMap.values());
+    });
+  }, [zipCodeCentroids]);
+
   const handleBulkSelectionComplete = useCallback((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => {
     setSelectedMapZipCodes(prevSelected => {
       const prevSelectedMap = new Map(prevSelected.map(item => [item.zipCode, item]));
@@ -281,7 +302,20 @@ const PublicTerritoryEditor: React.FC = () => {
               </div>
             </div>
             <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border">
-              <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={bulkActionType !== null} onBulkSelectionComplete={handleBulkSelectionComplete} />
+              <TerritoryMap
+                country={installerCountry}
+                isOpen={true}
+                centerLocation={memoizedCenterLocation}
+                onZipCodeClick={handleMapZipCodeClick}
+                onBulkZipCodeUpdate={handleBulkZipCodeUpdate}
+                selectedZipCodes={selectedMapZipCodes}
+                currentDisplayRadius={mapDisplayRadius}
+                showRadiusCircles={true}
+                territoryStatuses={territoryStatuses}
+                highlightedZipCodes={highlightedZipCodes}
+                isBulkSelecting={bulkActionType !== null}
+                onBulkSelectionComplete={handleBulkSelectionComplete}
+              />
             </div>
             <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them. In bulk select mode, click and drag to select multiple ZIP codes.</p>
             <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">

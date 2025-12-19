@@ -101,6 +101,39 @@ const EditInstallerPage: React.FC = () => {
     return 'USA';
   }, [currentInstaller?.rawSupabaseData?.country]);
 
+  const zipCodeCentroids = useMemo(() => {
+    const map = new Map<string, { lat: number, lng: number, state: string }>();
+    const geoJsonToProcess = installerCountry === 'Canada' ? canadaGeoJson : usGeoJson;
+    if (geoJsonToProcess && geoJsonToProcess.features) {
+      geoJsonToProcess.features.forEach(feature => {
+        let zipCode: string | null = null, state: string | null = null, lat: number | null = null, lng: number | null = null;
+        if (installerCountry === 'Canada') {
+          zipCode = feature.properties.CFSAUID; state = feature.properties.PRNAME;
+          try {
+            const transformedGeometry = turf.clone(feature.geometry);
+            turf.coordEach(transformedGeometry, (currentCoord) => {
+              const [lon, lat] = proj4('EPSG:3347', 'EPSG:4326').forward(currentCoord);
+              currentCoord[0] = lon;
+              currentCoord[1] = lat;
+            });
+            const centroid = turf.centroid(transformedGeometry);
+            if (centroid?.geometry?.coordinates) {
+              lng = centroid.geometry.coordinates[0];
+              lat = centroid.geometry.coordinates[1];
+            }
+          } catch (e) { console.warn("Error calculating centroid for Canadian feature:", feature, e); }
+        } else {
+          zipCode = feature.properties.ZCTA5CE20; state = feature.properties.STUSPS;
+          lat = parseFloat(feature.properties.INTPTLAT20); lng = parseFloat(feature.properties.INTPTLON20);
+        }
+        if (zipCode && lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
+          map.set(zipCode, { lat, lng, state: state || 'Unknown' });
+        }
+      });
+    }
+    return map;
+  }, [installerCountry]);
+
   const mapDisplayRadius = useMemo(() => (installerCountry === 'Canada' ? 125 : 150), [installerCountry]);
 
   const columnDisplayNames: { [key: string]: string } = useMemo(() => ({
@@ -271,6 +304,27 @@ const EditInstallerPage: React.FC = () => {
       }
     });
   }, []);
+
+  const handleBulkZipCodeUpdate = useCallback((updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => {
+    setSelectedMapZipCodes(prevSelected => {
+      const newSelectedMap = new Map(prevSelected.map(item => [item.zipCode, item]));
+      updates.forEach(update => {
+        if (update.newStatus === null) {
+          newSelectedMap.delete(update.zipCode);
+        } else {
+          const centroid = zipCodeCentroids.get(update.zipCode);
+          newSelectedMap.set(update.zipCode, {
+            zipCode: update.zipCode,
+            assignedStatus: update.newStatus,
+            stateProvince: update.stateProvince,
+            centroid_latitude: centroid?.lat || null,
+            centroid_longitude: centroid?.lng || null,
+          });
+        }
+      });
+      return Array.from(newSelectedMap.values());
+    });
+  }, [zipCodeCentroids]);
 
   const handleBulkSelectionComplete = useCallback((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => {
     setSelectedMapZipCodes(prevSelected => {
@@ -755,7 +809,20 @@ const EditInstallerPage: React.FC = () => {
                   </div>
                 </div>
                 <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border mt-4">
-                  <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={bulkActionType !== null} onBulkSelectionComplete={handleBulkSelectionComplete} />
+                  <TerritoryMap
+                    country={installerCountry}
+                    isOpen={true}
+                    centerLocation={memoizedCenterLocation}
+                    onZipCodeClick={handleMapZipCodeClick}
+                    onBulkZipCodeUpdate={handleBulkZipCodeUpdate}
+                    selectedZipCodes={selectedMapZipCodes}
+                    currentDisplayRadius={mapDisplayRadius}
+                    showRadiusCircles={true}
+                    territoryStatuses={territoryStatuses}
+                    highlightedZipCodes={highlightedZipCodes}
+                    isBulkSelecting={bulkActionType !== null}
+                    onBulkSelectionComplete={handleBulkSelectionComplete}
+                  />
                 </div>
                 <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them to this installer. In bulk select mode, click and drag to select multiple ZIP codes.</p>
                 <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
