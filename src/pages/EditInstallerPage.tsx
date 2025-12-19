@@ -791,7 +791,7 @@ const EditInstallerPage: React.FC = () => {
         let hasMore = true;
   
         while (hasMore) {
-          const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
+          const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
             center_lat: currentInstaller.latitude,
             center_lng: currentInstaller.longitude,
             radius_meters: radiusMeters,

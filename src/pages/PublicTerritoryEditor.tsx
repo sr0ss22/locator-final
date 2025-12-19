@@ -244,7 +244,7 @@ const PublicTerritoryEditor: React.FC = () => {
     return highlights;
   }, [selectedMapZipCodes]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (territoriesOverride?: any[]) => {
     if (!installerId || !token) { toast.error("Missing ID or token. Cannot save."); return; }
     setLoading(true);
     const loadingToastId = toast.loading("Saving territory changes...");
@@ -297,7 +297,7 @@ const PublicTerritoryEditor: React.FC = () => {
       let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
 
       if (isCanada) {
-        const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
+        const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
           center_lat: currentInstaller.latitude,
           center_lng: currentInstaller.longitude,
           radius_meters: radiusMeters,
@@ -414,7 +414,7 @@ const PublicTerritoryEditor: React.FC = () => {
             <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
               <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
               <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
-                {['0-25', '25-50', '50-75', '75-100', '100-125', '150+'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
+                {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
                 <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
               </RadioGroup>
             </div>
@@ -428,7 +428,7 @@ const PublicTerritoryEditor: React.FC = () => {
             <Button variant="outline" onClick={loadAllData} disabled={loading}>
               <XCircle className="mr-2 h-4 w-4" /> Discard Changes
             </Button>
-            <Button onClick={handleSubmit} disabled={loading} className="bg-green-600 hover:bg-green-700">
+            <Button onClick={() => handleSubmit()} disabled={loading} className="bg-green-600 hover:bg-green-700">
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Territory Changes
             </Button>
           </div>

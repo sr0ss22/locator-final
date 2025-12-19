@@ -163,7 +163,7 @@ function MapInteractionHandler({
         const finalRadiusMeters = currentDrawCircleRef.current.getRadius();
         
         if (isCanada) {
-          const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
+          const { data, error } = await supabase.rpc('get_canadian_fsa_in_radius', {
             center_lat: finalCenter.lat,
             center_lng: finalCenter.lng,
             radius_meters: finalRadiusMeters,
@@ -385,7 +385,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         let hasMore = true;
 
         while (hasMore) {
-          const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
+          const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
             center_lat: centerLocation.lat,
             center_lng: centerLocation.lng,
             radius_meters: maxRadiusMeters,
