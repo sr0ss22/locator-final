@@ -435,14 +435,26 @@ const EditInstallerPage: React.FC = () => {
       if (updateInstallerError) throw new Error(`Supabase Update Error: ${updateInstallerError.message}`);
       
       if (canEdit) {
-        const { data: currentAssignmentsData, error: fetchAssignmentsError } = await supabase
-          .from('installer_zip_codes')
-          .select('zip_code, field_ops_rep_id, field_service_manager_id')
-          .eq('installer_id', currentInstaller.id);
+        const fetchAllCurrentAssignments = async (installerId: string) => {
+          let allAssignments: any[] = [];
+          let page = 0;
+          const pageSize = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data, error } = await supabase
+              .from('installer_zip_codes')
+              .select('zip_code, field_ops_rep_id, field_service_manager_id')
+              .eq('installer_id', installerId)
+              .range(page * pageSize, (page + 1) * pageSize - 1);
+            if (error) throw new Error(`Failed to fetch current assignments (page ${page + 1}): ${error.message}`);
+            if (data) allAssignments = allAssignments.concat(data);
+            if (!data || data.length < pageSize) hasMore = false;
+            else page++;
+          }
+          return allAssignments;
+        };
 
-        if (fetchAssignmentsError) {
-          throw new Error(`Failed to fetch current assignments: ${fetchAssignmentsError.message}`);
-        }
+        const currentAssignmentsData = await fetchAllCurrentAssignments(currentInstaller.id);
         
         const currentAssignmentsMap = new Map((currentAssignmentsData || []).map(item => [item.zip_code, item]));
         const initialZipSet = new Set(currentAssignmentsMap.keys());
