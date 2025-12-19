@@ -7,10 +7,8 @@ import { calculateDistance } from '@/utils/distance';
 import { TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
 import * as turf from '@turf/turf';
-import proj4 from 'proj4';
 import { supabase } from "@/integrations/supabase/client";
 import LoadingSayings from './LoadingSayings';
-import MarkerClusterGroup from '@changey/react-leaflet-markercluster';
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -40,10 +38,6 @@ interface TerritoryMapProps {
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
-
-// Define projections for coordinate conversion
-proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
-proj4.defs("EPSG:3347", "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=63.390675 +lon_0=-91.86666666666666 +x_0=6200000 +y_0=3000000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
   if (!feature || !feature.properties) return '';
@@ -221,63 +215,81 @@ function MapInteractionHandler({
   return null;
 }
 
-const CanadianPostalCodeLayer = ({
-  points,
-  onZipCodeClick,
-  highlightedZipCodes,
-}: {
-  points: any[];
+const DynamicPointsLayer = ({ country, onZipCodeClick, highlightedZipCodes }: {
+  country: 'USA' | 'Canada';
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
 }) => {
-  const iconCreateFunction = (cluster: any) => {
-    const markers = cluster.getAllChildMarkers();
-    let hasGreen = false;
-    let hasOrange = false;
+  const [points, setPoints] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const map = useMap();
 
-    for (const marker of markers) {
-      const postalCode = marker.options.postalCode;
-      const status = highlightedZipCodes.get(postalCode);
-      if (status === 'green') {
-        hasGreen = true;
-      } else if (status === 'orange') {
-        hasOrange = true;
-      }
-      if (hasOrange) break; // Orange has priority
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const bounds = map.getBounds();
+    const zoom = map.getZoom();
+
+    try {
+      const { data, error } = await supabase.functions.invoke('get-map-data', {
+        body: { country, zoom, bounds },
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      setPoints(data.data || []);
+    } catch (err: any) {
+      console.error("Error fetching map data:", err);
+      toast.error("Could not load map data.");
+    } finally {
+      setLoading(false);
     }
+  }, [map, country]);
 
-    let c = ' marker-cluster-';
-    if (hasOrange) {
-      c += 'orange';
-    } else if (hasGreen) {
-      c += 'green';
-    } else {
-      c += 'blue';
-    }
+  useMapEvents({
+    moveend: fetchData,
+    zoomend: fetchData,
+  });
 
-    return new L.DivIcon({
-      html: '<div><span>' + cluster.getChildCount() + '</span></div>',
-      className: 'marker-cluster' + c,
-      iconSize: new L.Point(40, 40),
-    });
-  };
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   return (
-    <MarkerClusterGroup iconCreateFunction={iconCreateFunction}>
+    <>
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
         let color = '#3b82f6'; // Blue for unselected
         let fillOpacity = 0.5;
-        let radius = 2; // Base radius for unselected dots
+        let radius = 2;
 
         if (status === 'green') {
-          color = '#22c55e'; // Green
+          color = '#22c55e';
           fillOpacity = 0.7;
           radius = 3;
         } else if (status === 'orange') {
-          color = '#f97316'; // Orange
+          color = '#f97316';
           fillOpacity = 0.7;
           radius = 3;
+        }
+
+        if (point.is_cluster) {
+          return (
+            <Marker
+              key={point.id}
+              position={[point.LATITUDE, point.LONGITUDE]}
+              icon={L.divIcon({
+                html: `<div><span>${point.point_count}</span></div>`,
+                className: 'marker-cluster marker-cluster-blue',
+                iconSize: new L.Point(40, 40),
+              })}
+              eventHandlers={{
+                click: () => {
+                  map.setView([point.LATITUDE, point.LONGITUDE], map.getZoom() + 1);
+                },
+              }}
+            />
+          );
         }
 
         return (
@@ -285,7 +297,6 @@ const CanadianPostalCodeLayer = ({
             key={point.id}
             center={[point.LATITUDE, point.LONGITUDE]}
             radius={radius}
-            postalCode={point.POSTAL_CODE}
             pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
             eventHandlers={{
               click: () => {
@@ -297,7 +308,7 @@ const CanadianPostalCodeLayer = ({
           </CircleMarker>
         );
       })}
-    </MarkerClusterGroup>
+    </>
   );
 };
 
@@ -318,7 +329,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [pointsInRadius, setPointsInRadius] = useState<any[]>([]);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
 
   const isCanada = country === 'Canada';
@@ -329,14 +339,17 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
 
-  // This effect now ONLY loads the base US GeoJSON file.
   useEffect(() => {
     const loadBaseGeoJson = async () => {
       if (isCanada) {
-        setAllGeoJsonData(null); // Clear US data if switching to Canada
+        setAllGeoJsonData(null);
+        setLoadingData(false);
         return;
       }
-      if (allGeoJsonData) return; // Don't reload if already loaded
+      if (allGeoJsonData) {
+        setLoadingData(false);
+        return;
+      }
 
       setLoadingData(true);
       try {
@@ -364,57 +377,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     };
     loadBaseGeoJson();
   }, [isCanada, allGeoJsonData]);
-
-  // This effect now ONLY loads Canadian points within the max radius.
-  useEffect(() => {
-    const loadCanadianData = async () => {
-      if (!isCanada || !centerLocation?.lat || !centerLocation?.lng) {
-        setPointsInRadius([]);
-        if (isCanada) setLoadingData(false);
-        return;
-      }
-
-      setLoadingData(true);
-      const maxRadiusMeters = 75 * 1000; // 75km
-
-      try {
-        // Fetch all results by paginating through the RPC call to bypass the default 1000-row limit
-        let allPoints: any[] = [];
-        let page = 0;
-        const pageSize = 1000; // Supabase's default limit
-        let hasMore = true;
-
-        while (hasMore) {
-          const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
-            center_lat: centerLocation.lat,
-            center_lng: centerLocation.lng,
-            radius_meters: maxRadiusMeters,
-          }).range(page * pageSize, (page + 1) * pageSize - 1);
-
-          if (error) throw error;
-
-          if (data) {
-            allPoints = allPoints.concat(data);
-          }
-
-          if (!data || data.length < pageSize) {
-            hasMore = false;
-          } else {
-            page++;
-          }
-        }
-        setPointsInRadius(allPoints);
-      } catch (error: any) {
-        console.error("Error fetching Canadian postal codes by radius:", error);
-        toast.error("Failed to load postal codes within the radius.");
-        setPointsInRadius([]);
-      } finally {
-        setLoadingData(false);
-      }
-    };
-
-    loadCanadianData();
-  }, [centerLocation, isCanada]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
@@ -538,8 +500,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       )}
 
       {isCanada ? (
-        <CanadianPostalCodeLayer 
-          points={pointsInRadius} 
+        <DynamicPointsLayer 
+          country="Canada"
           onZipCodeClick={onZipCodeClick} 
           highlightedZipCodes={highlightedZipCodes}
         />
