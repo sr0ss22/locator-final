@@ -293,14 +293,21 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
 
+  // This effect now ONLY loads the base US GeoJSON file.
   useEffect(() => {
     const loadBaseGeoJson = async () => {
-      if (isCanada || allGeoJsonData) return;
+      if (isCanada) {
+        setAllGeoJsonData(null); // Clear US data if switching to Canada
+        return;
+      }
+      if (allGeoJsonData) return; // Don't reload if already loaded
+
       setLoadingData(true);
       try {
         const geoJsonModule = await import('@/data/us-zip-codes.json');
         const geoJson = geoJsonModule.default;
         if (!geoJson || !geoJson.features) throw new Error("US GeoJSON is missing or invalid.");
+        
         const processedFeatures = geoJson.features.map((feature: any) => {
           const newFeature = JSON.parse(JSON.stringify(feature));
           const lat = parseFloat(feature.properties.INTPTLAT20);
@@ -309,6 +316,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           return newFeature;
         });
         setAllGeoJsonData({ type: 'FeatureCollection', features: processedFeatures });
+
       } catch (error: any) {
         const errorMessage = `CRITICAL ERROR: Could not load GeoJSON data for USA. ${error.message}`;
         console.error(errorMessage, error);
@@ -321,50 +329,37 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     loadBaseGeoJson();
   }, [isCanada, allGeoJsonData]);
 
+  // This effect now ONLY loads Canadian points within the max radius.
   useEffect(() => {
-    const loadAllDataInRadius = async () => {
-      if (!centerLocation?.lat || !centerLocation?.lng) {
+    const loadCanadianData = async () => {
+      if (!isCanada || !centerLocation?.lat || !centerLocation?.lng) {
         setPointsInRadius([]);
-        setLoadingData(false);
+        if (isCanada) setLoadingData(false);
         return;
       }
 
       setLoadingData(true);
-      const maxRadiusKm = isCanada ? 125 : 150 * 1.60934;
-      const maxRadiusMeters = maxRadiusKm * 1000;
+      const maxRadiusMeters = 125 * 1000; // 125km
 
-      if (isCanada) {
-        try {
-          const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
-            center_lat: centerLocation.lat,
-            center_lng: centerLocation.lng,
-            radius_meters: maxRadiusMeters,
-          });
-          if (error) throw error;
-          setPointsInRadius(data || []);
-        } catch (error: any) {
-          console.error("Error fetching Canadian postal codes by radius:", error);
-          toast.error("Failed to load postal codes within the radius.");
-          setPointsInRadius([]);
-        }
-      } else {
-        if (allGeoJsonData) {
-          const featuresInRadius = allGeoJsonData.features.filter((feature: any) => {
-            const centroid = getCentroid(feature);
-            if (centroid.lat && centroid.lng) {
-              const distance = calculateDistance(centerLocation.lat!, centerLocation.lng!, centroid.lat, centroid.lng);
-              return distance <= 150;
-            }
-            return false;
-          });
-          setPointsInRadius(featuresInRadius);
-        }
+      try {
+        const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
+          center_lat: centerLocation.lat,
+          center_lng: centerLocation.lng,
+          radius_meters: maxRadiusMeters,
+        });
+        if (error) throw error;
+        setPointsInRadius(data || []);
+      } catch (error: any) {
+        console.error("Error fetching Canadian postal codes by radius:", error);
+        toast.error("Failed to load postal codes within the radius.");
+        setPointsInRadius([]);
+      } finally {
+        setLoadingData(false);
       }
-      setLoadingData(false);
     };
 
-    loadAllDataInRadius();
-  }, [centerLocation, isCanada, allGeoJsonData]);
+    loadCanadianData();
+  }, [centerLocation, isCanada]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
@@ -435,14 +430,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
   }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
 
-  const geoJsonDataInRadius = useMemo(() => {
-    if (isCanada || !pointsInRadius) return null;
-    return {
-      type: 'FeatureCollection',
-      features: pointsInRadius,
-    };
-  }, [isCanada, pointsInRadius]);
-
   const usRadii = [
     { radius: 25, color: '#22c55e' },
     { radius: 50, color: '#facc15' },
@@ -503,11 +490,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           highlightedZipCodes={highlightedZipCodes}
         />
       ) : (
-        geoJsonDataInRadius && (
+        allGeoJsonData && (
           <GeoJSON
             key={geoJsonStyleKey}
             ref={geoJsonLayerRef}
-            data={geoJsonDataInRadius as any}
+            data={allGeoJsonData as any}
             style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))}
             onEachFeature={onEachFeature}
             pane="polygons"
