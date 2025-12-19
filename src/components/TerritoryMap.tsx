@@ -477,9 +477,10 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       <Pane name="polygons" style={{ zIndex: 450 }} />
       
       {loadingData && (
-        <div className="leaflet-top leaflet-center bg-white bg-opacity-75 p-2 rounded-lg shadow-md mt-2">
-          <div className="flex items-center text-gray-700">
-            <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading map data...
+        <div className="absolute inset-0 flex items-center justify-center bg-white/75 z-[1000]">
+          <div className="flex items-center text-gray-700 bg-white p-4 rounded-lg shadow-lg">
+            <Loader2 className="h-6 w-6 animate-spin mr-3" />
+            <span className="text-lg font-medium">Loading map data...</span>
           </div>
         </div>
       )}
