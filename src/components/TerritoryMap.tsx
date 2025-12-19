@@ -251,47 +251,58 @@ const CanadianPostalCodeLayer = ({
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
   onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
 }) => {
-  const handleClusterClick = useCallback((e: any) => {
-    L.DomEvent.stop(e); // Explicitly stop the event to prevent zoom
+  const clusterRef = useRef<any>(null);
 
-    const cluster = e.layer;
-    if (!onBulkZipCodeUpdate) {
-      cluster.zoomToBounds();
-      return;
-    }
+  useEffect(() => {
+    const clusterLayer = clusterRef.current;
+    if (!clusterLayer || !onBulkZipCodeUpdate) return;
 
-    const markers = cluster.getAllChildMarkers();
-    if (!markers || markers.length === 0) return;
+    const handleClusterClick = (e: any) => {
+      L.DomEvent.stop(e);
+      L.DomEvent.stopPropagation(e);
 
-    const postalCodesInCluster = markers.map((marker: any) => marker.postalCodeInfo).filter(Boolean);
-    const currentStates = postalCodesInCluster.map(info => highlightedZipCodes.get(info.zipCode));
-    
-    const allApproved = currentStates.length > 0 && currentStates.every(state => state === 'green');
-    const allNeedsApproval = currentStates.length > 0 && currentStates.every(state => state === 'orange');
+      const cluster = e.layer;
+      const markers = cluster.getAllChildMarkers();
+      if (!markers || markers.length === 0) return;
 
-    let newStatus: TerritoryStatus | null;
-    if (allApproved) {
-      newStatus = 'Needs Approval';
-    } else if (allNeedsApproval) {
-      newStatus = null; // Deselect
-    } else {
-      newStatus = 'Approved';
-    }
+      const postalCodesInCluster = markers.map((marker: any) => marker.postalCodeInfo).filter(Boolean);
+      const currentStates = postalCodesInCluster.map((info: any) => highlightedZipCodes.get(info.zipCode));
+      
+      const allApproved = currentStates.length > 0 && currentStates.every(state => state === 'green');
+      const allNeedsApproval = currentStates.length > 0 && currentStates.every(state => state === 'orange');
 
-    const updates = postalCodesInCluster.map(info => ({
-      zipCode: info.zipCode,
-      stateProvince: info.stateProvince,
-      newStatus: newStatus,
-    }));
+      let newStatus: TerritoryStatus | null;
+      if (allApproved) {
+        newStatus = 'Needs Approval';
+      } else if (allNeedsApproval) {
+        newStatus = null; // Deselect
+      } else {
+        newStatus = 'Approved';
+      }
 
-    onBulkZipCodeUpdate(updates);
+      const updates = postalCodesInCluster.map((info: any) => ({
+        zipCode: info.zipCode,
+        stateProvince: info.stateProvince,
+        newStatus: newStatus,
+      }));
+
+      onBulkZipCodeUpdate(updates);
+    };
+
+    clusterLayer.on('clusterclick', handleClusterClick);
+
+    return () => {
+      if (clusterLayer) {
+        clusterLayer.off('clusterclick', handleClusterClick);
+      }
+    };
   }, [onBulkZipCodeUpdate, highlightedZipCodes]);
 
   return (
     <MarkerClusterGroup
+      ref={clusterRef}
       iconCreateFunction={createClusterCustomIcon}
       zoomToBoundsOnClick={!onBulkZipCodeUpdate}
-      eventHandlers={onBulkZipCodeUpdate ? { clusterclick: handleClusterClick } : undefined}
     >
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
