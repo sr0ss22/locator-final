@@ -230,8 +230,40 @@ const CanadianPostalCodeLayer = ({
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
 }) => {
+  const iconCreateFunction = (cluster: any) => {
+    const markers = cluster.getAllChildMarkers();
+    let hasGreen = false;
+    let hasOrange = false;
+
+    for (const marker of markers) {
+      const postalCode = marker.options.postalCode;
+      const status = highlightedZipCodes.get(postalCode);
+      if (status === 'green') {
+        hasGreen = true;
+      } else if (status === 'orange') {
+        hasOrange = true;
+      }
+      if (hasOrange) break; // Orange has priority
+    }
+
+    let c = ' marker-cluster-';
+    if (hasOrange) {
+      c += 'orange';
+    } else if (hasGreen) {
+      c += 'green';
+    } else {
+      c += 'blue';
+    }
+
+    return new L.DivIcon({
+      html: '<div><span>' + cluster.getChildCount() + '</span></div>',
+      className: 'marker-cluster' + c,
+      iconSize: new L.Point(40, 40),
+    });
+  };
+
   return (
-    <MarkerClusterGroup>
+    <MarkerClusterGroup iconCreateFunction={iconCreateFunction}>
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
         let color = '#3b82f6'; // Blue for unselected
@@ -241,11 +273,11 @@ const CanadianPostalCodeLayer = ({
         if (status === 'green') {
           color = '#22c55e'; // Green
           fillOpacity = 0.7;
-          radius = 3; // Slightly larger radius for selected dots
+          radius = 3;
         } else if (status === 'orange') {
           color = '#f97316'; // Orange
           fillOpacity = 0.7;
-          radius = 3; // Slightly larger radius for selected dots
+          radius = 3;
         }
 
         return (
@@ -253,6 +285,7 @@ const CanadianPostalCodeLayer = ({
             key={point.id}
             center={[point.LATITUDE, point.LONGITUDE]}
             radius={radius}
+            postalCode={point.POSTAL_CODE}
             pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
             eventHandlers={{
               click: () => {
