@@ -462,30 +462,36 @@ const EditInstallerPage: React.FC = () => {
           };
         });
 
+        const CHUNK_SIZE = 500;
+
         if (zipsToDelete.length > 0) {
           toast.info(`Deleting ${zipsToDelete.length} territories...`, { id: loadingToastId });
-          const { error: deleteError } = await supabase
-            .from('installer_zip_codes')
-            .delete()
-            .eq('installer_id', currentInstaller.id)
-            .in('zip_code', zipsToDelete);
-          
-          if (deleteError) {
-            throw new Error(`Failed to delete territories: ${deleteError.message}`);
+          for (let i = 0; i < zipsToDelete.length; i += CHUNK_SIZE) {
+            const chunk = zipsToDelete.slice(i, i + CHUNK_SIZE);
+            const { error: deleteError } = await supabase
+              .from('installer_zip_codes')
+              .delete()
+              .eq('installer_id', currentInstaller.id)
+              .in('zip_code', chunk);
+            
+            if (deleteError) {
+              throw new Error(`Failed to delete territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${deleteError.message}`);
+            }
           }
         }
 
         if (zipsToUpsert.length > 0) {
           toast.info(`Upserting ${zipsToUpsert.length} territories...`, { id: loadingToastId });
-          const { error: upsertError } = await supabase
-            .from('installer_zip_codes')
-            .upsert(zipsToUpsert, { onConflict: 'installer_id,zip_code' });
+          for (let i = 0; i < zipsToUpsert.length; i += CHUNK_SIZE) {
+            const chunk = zipsToUpsert.slice(i, i + CHUNK_SIZE);
+            const { error: upsertError } = await supabase
+              .from('installer_zip_codes')
+              .upsert(chunk, { onConflict: 'installer_id,zip_code' });
 
-          if (upsertError) {
-            throw new Error(`Failed to save new/updated territories: ${upsertError.message}`);
+            if (upsertError) {
+              throw new Error(`Failed to save new/updated territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${upsertError.message}`);
+            }
           }
-        } else if (zipsToDelete.length > 0) {
-          // This handles the case where all territories are removed.
         }
       }
       toast.success("Changes saved successfully! Refreshing data...", { id: loadingToastId });

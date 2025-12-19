@@ -64,30 +64,36 @@ serve(async (req) => {
       status: item.assignedStatus,
     }));
 
+    const CHUNK_SIZE = 500;
+
     // 4. Perform DELETE operation for removed territories
     if (zipsToDelete.length > 0) {
-      const { error: deleteError } = await supabaseAdmin
-        .from('installer_zip_codes')
-        .delete()
-        .eq('installer_id', installerId)
-        .in('zip_code', zipsToDelete);
+      for (let i = 0; i < zipsToDelete.length; i += CHUNK_SIZE) {
+        const chunk = zipsToDelete.slice(i, i + CHUNK_SIZE);
+        const { error: deleteError } = await supabaseAdmin
+          .from('installer_zip_codes')
+          .delete()
+          .eq('installer_id', installerId)
+          .in('zip_code', chunk);
 
-      if (deleteError) {
-        throw new Error(`Failed to delete territories: ${deleteError.message}`);
+        if (deleteError) {
+          throw new Error(`Failed to delete territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${deleteError.message}`);
+        }
       }
     }
 
     // 5. Perform UPSERT operation for added or modified territories
     if (zipsToUpsert.length > 0) {
-      const { error: upsertError } = await supabaseAdmin
-        .from('installer_zip_codes')
-        .upsert(zipsToUpsert, { onConflict: 'installer_id,zip_code' });
+      for (let i = 0; i < zipsToUpsert.length; i += CHUNK_SIZE) {
+        const chunk = zipsToUpsert.slice(i, i + CHUNK_SIZE);
+        const { error: upsertError } = await supabaseAdmin
+          .from('installer_zip_codes')
+          .upsert(chunk, { onConflict: 'installer_id,zip_code' });
 
-      if (upsertError) {
-        throw new Error(`Failed to upsert territories: ${upsertError.message}`);
+        if (upsertError) {
+          throw new Error(`Failed to upsert territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${upsertError.message}`);
+        }
       }
-    } else if (zipsToDelete.length > 0) {
-      // This is a valid case where all territories are removed.
     }
 
     return new Response(JSON.stringify({ message: 'Territories updated successfully.' }), {
