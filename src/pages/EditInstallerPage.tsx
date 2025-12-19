@@ -24,6 +24,7 @@ import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { Switch } from "@/components/ui/switch";
 import { calculateDistance } from "@/utils/distance";
+import LoadingSayings from "@/components/LoadingSayings";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -772,6 +773,7 @@ const EditInstallerPage: React.FC = () => {
       return;
     }
 
+    setLoading(true);
     const isCanada = installerCountry === 'Canada';
     const radiusMiles = isCanada ? 35 / 1.60934 : 25;
     const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
@@ -781,17 +783,37 @@ const EditInstallerPage: React.FC = () => {
       let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
 
       if (isCanada) {
-        const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
-          center_lat: currentInstaller.latitude,
-          center_lng: currentInstaller.longitude,
-          radius_meters: radiusMeters,
-        });
+        let allPoints: any[] = [];
+        let page = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+        
+        toast.info("Fetching Canadian postal codes in radius...", { id: loadingToastId });
 
-        if (error) {
-          throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
+        while(hasMore) {
+          const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
+            center_lat: currentInstaller.latitude,
+            center_lng: currentInstaller.longitude,
+            radius_meters: radiusMeters,
+          }).range(page * pageSize, (page + 1) * pageSize - 1);
+
+          if (error) {
+            throw new Error(`Failed to fetch Canadian postal codes (page ${page + 1}): ${error.message}`);
+          }
+
+          if (data) {
+            allPoints = allPoints.concat(data);
+          }
+
+          if (!data || data.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+            toast.info(`Fetched ${allPoints.length} postal codes so far...`, { id: loadingToastId });
+          }
         }
 
-        zipsToApprove = (data || []).map((p: any) => ({
+        zipsToApprove = (allPoints || []).map((p: any) => ({
           zipCode: p.POSTAL_CODE,
           stateProvince: p.PROVINCE_ABBR,
           centroid_latitude: p.LATITUDE,
@@ -820,7 +842,7 @@ const EditInstallerPage: React.FC = () => {
       }
 
       toast.dismiss(loadingToastId);
-      toast.info(`Found ${zipsToApprove.length} territories. Merging and saving...`);
+      toast.info(`Found ${zipsToApprove.length} territories. Merging and saving... This may take a moment.`);
 
       const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
       zipsToApprove.forEach(zipInfo => {
@@ -836,11 +858,17 @@ const EditInstallerPage: React.FC = () => {
     } catch (err: any) {
       console.error("Error during auto-approve:", err);
       toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
+    } finally {
+      setLoading(false);
     }
   };
 
   if (loading || sessionLoading) {
-    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-500" /><p className="text-gray-500 ml-2">Loading installer data...</p></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSayings />
+      </div>
+    );
   }
   if (!currentInstaller) {
     return <div className="min-h-screen flex flex-col items-center justify-center text-gray-500"><p className="text-xl mb-4">Installer not found or an error occurred.</p><Button onClick={() => navigate("/installers")}>Go back to Installers</Button></div>;
