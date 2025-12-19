@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut, Copy } from "lucide-react";
+import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut, Copy, Star } from "lucide-react";
 import { Installer, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -23,6 +23,7 @@ import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' 
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { Switch } from "@/components/ui/switch";
+import { calculateDistance } from "@/utils/distance";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -410,7 +411,7 @@ const EditInstallerPage: React.FC = () => {
   const isAdmin = profile?.role === 'admin';
   const canEdit = isAdmin || (profile?.role === 'installer' && currentInstaller?.rawSupabaseData.account_id === profile.id);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (territoriesOverride?: any[]) => {
     if (!validateForm()) { toast.error("Please fill in all required fields."); return; }
     if (!currentInstaller?.id) { toast.error("Installer ID is missing. Cannot save changes."); return; }
     setLoading(true);
@@ -457,6 +458,7 @@ const EditInstallerPage: React.FC = () => {
       if (updateInstallerError) throw new Error(`Supabase Update Error: ${updateInstallerError.message}`);
       
       if (canEdit) {
+        const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
         const fetchAllCurrentAssignments = async (installerId: string) => {
           let allAssignments: any[] = [];
           let page = 0;
@@ -480,11 +482,11 @@ const EditInstallerPage: React.FC = () => {
         
         const currentAssignmentsMap = new Map((currentAssignmentsData || []).map(item => [item.zip_code, item]));
         const initialZipSet = new Set(currentAssignmentsMap.keys());
-        const finalZipSet = new Set(selectedMapZipCodes.map(z => z.zipCode));
+        const finalZipSet = new Set(territoriesToProcess.map(z => z.zipCode));
 
         const zipsToDelete = Array.from(initialZipSet).filter(zip => !finalZipSet.has(zip));
 
-        const zipsToUpsert = selectedMapZipCodes.map(item => {
+        const zipsToUpsert = territoriesToProcess.map(item => {
           const existingAssignment = currentAssignmentsMap.get(item.zipCode);
           return {
             installer_id: currentInstaller.id,
@@ -759,6 +761,79 @@ const EditInstallerPage: React.FC = () => {
     }
   };
 
+  const handleAutoApprove = async () => {
+    if (!currentInstaller?.latitude || !currentInstaller?.longitude) {
+      toast.error("Installer location is not set. Cannot auto-approve.");
+      return;
+    }
+
+    const isCanada = installerCountry === 'Canada';
+    const radiusMiles = isCanada ? 35 / 1.60934 : 25;
+    const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
+    const loadingToastId = toast.loading(`Finding territories within ${isCanada ? '35km' : '25 miles'}...`);
+
+    try {
+      let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
+
+      if (isCanada) {
+        const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
+          center_lat: currentInstaller.latitude,
+          center_lng: currentInstaller.longitude,
+          radius_meters: radiusMeters,
+        });
+
+        if (error) {
+          throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
+        }
+
+        zipsToApprove = (data || []).map((p: any) => ({
+          zipCode: p.POSTAL_CODE,
+          stateProvince: p.PROVINCE_ABBR,
+          centroid_latitude: p.LATITUDE,
+          centroid_longitude: p.LONGITUDE,
+        }));
+
+      } else { // USA
+        for (const [zipCode, { lat, lng, state }] of zipCodeCentroids.entries()) {
+          if (lat !== null && lng !== null) {
+            const distance = calculateDistance(
+              currentInstaller.latitude,
+              currentInstaller.longitude,
+              lat,
+              lng
+            );
+            if (distance <= radiusMiles) {
+              zipsToApprove.push({
+                zipCode,
+                stateProvince: state,
+                centroid_latitude: lat,
+                centroid_longitude: lng,
+              });
+            }
+          }
+        }
+      }
+
+      toast.dismiss(loadingToastId);
+      toast.info(`Found ${zipsToApprove.length} territories. Merging and saving...`);
+
+      const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
+      zipsToApprove.forEach(zipInfo => {
+        newSelectedMap.set(zipInfo.zipCode, {
+          ...zipInfo,
+          assignedStatus: 'Approved',
+        });
+      });
+      const finalListOfZips = Array.from(newSelectedMap.values());
+
+      await handleSubmit(finalListOfZips);
+
+    } catch (err: any) {
+      console.error("Error during auto-approve:", err);
+      toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
+    }
+  };
+
   if (loading || sessionLoading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-500" /><p className="text-gray-500 ml-2">Loading installer data...</p></div>;
   }
@@ -891,6 +966,9 @@ const EditInstallerPage: React.FC = () => {
                     <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Approve" : "Bulk Approve"}</Button>
                     <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Needs Approval" : "Bulk Needs Approval"}</Button>
                     <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
+                    <Button variant="outline" onClick={handleAutoApprove} disabled={loading}>
+                      <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
+                    </Button>
                   </div>
                 </div>
                 <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border mt-4">
@@ -930,7 +1008,7 @@ const EditInstallerPage: React.FC = () => {
             <Button variant="outline" onClick={() => navigate("/installers")} disabled={loading}>
               <XCircle className="mr-2 h-4 w-4" /> Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={loading} className="bg-green-600 hover:bg-green-700">
+            <Button onClick={() => handleSubmit()} disabled={loading} className="bg-green-600 hover:bg-green-700">
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Changes
             </Button>
           </div>

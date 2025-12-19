@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, XCircle, MousePointerClick, Eraser } from "lucide-react";
+import { Loader2, Save, XCircle, MousePointerClick, Eraser, Star } from "lucide-react";
 import { Installer } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ import usGeoJson from '@/data/us-zip-codes.json' with { type: 'json' };
 import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' };
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
+import { calculateDistance } from "@/utils/distance";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -275,6 +276,90 @@ const PublicTerritoryEditor: React.FC = () => {
     toast.info("All assigned ZIP codes cleared from selection.");
   };
 
+  const handleAutoApprove = async () => {
+    if (!currentInstaller?.latitude || !currentInstaller?.longitude) {
+      toast.error("Installer location is not set. Cannot auto-approve.");
+      return;
+    }
+
+    setLoading(true);
+    const isCanada = installerCountry === 'Canada';
+    const radiusMiles = isCanada ? 35 / 1.60934 : 25;
+    const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
+    const loadingToastId = toast.loading(`Finding territories within ${isCanada ? '35km' : '25 miles'}...`);
+
+    try {
+      let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
+
+      if (isCanada) {
+        const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
+          center_lat: currentInstaller.latitude,
+          center_lng: currentInstaller.longitude,
+          radius_meters: radiusMeters,
+        });
+
+        if (error) {
+          throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
+        }
+
+        zipsToApprove = (data || []).map((p: any) => ({
+          zipCode: p.POSTAL_CODE,
+          stateProvince: p.PROVINCE_ABBR,
+          centroid_latitude: p.LATITUDE,
+          centroid_longitude: p.LONGITUDE,
+        }));
+
+      } else { // USA
+        for (const [zipCode, { lat, lng, state }] of zipCodeCentroids.entries()) {
+          if (lat !== null && lng !== null) {
+            const distance = calculateDistance(
+              currentInstaller.latitude,
+              currentInstaller.longitude,
+              lat,
+              lng
+            );
+            if (distance <= radiusMiles) {
+              zipsToApprove.push({
+                zipCode,
+                stateProvince: state,
+                centroid_latitude: lat,
+                centroid_longitude: lng,
+              });
+            }
+          }
+        }
+      }
+
+      toast.info(`Found ${zipsToApprove.length} territories. Updating selection...`, { id: loadingToastId });
+
+      const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
+      zipsToApprove.forEach(zipInfo => {
+        newSelectedMap.set(zipInfo.zipCode, {
+          ...zipInfo,
+          assignedStatus: 'Approved',
+        });
+      });
+      const finalListOfZips = Array.from(newSelectedMap.values());
+
+      toast.info(`Saving ${finalListOfZips.length} total territories...`, { id: loadingToastId });
+
+      const { error: saveError } = await supabase.functions.invoke('save-public-territory-data', {
+        body: { installerId, token, zipCodes: finalListOfZips },
+      });
+      if (saveError) throw new Error(saveError.message || "An unknown error occurred during save.");
+
+      toast.success("Territories saved successfully! Refreshing data...", { id: loadingToastId });
+      await loadAllData();
+      toast.success("Auto-approve complete. Data is up to date.", { id: loadingToastId, duration: 4000 });
+
+    } catch (err: any) {
+      console.error("Error during auto-approve:", err);
+      toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-500" /><p className="text-gray-500 ml-2">Loading installer data...</p></div>;
   }
@@ -299,6 +384,9 @@ const PublicTerritoryEditor: React.FC = () => {
                 <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Approve" : "Bulk Approve"}</Button>
                 <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Needs Approval" : "Bulk Needs Approval"}</Button>
                 <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
+                <Button variant="outline" onClick={handleAutoApprove} disabled={loading}>
+                  <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
+                </Button>
               </div>
             </div>
             <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border">
