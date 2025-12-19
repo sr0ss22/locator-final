@@ -252,6 +252,8 @@ const CanadianPostalCodeLayer = ({
   onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
 }) => {
   const handleClusterClick = useCallback((e: any) => {
+    L.DomEvent.stop(e); // Explicitly stop the event to prevent zoom
+
     const cluster = e.layer;
     if (!onBulkZipCodeUpdate) {
       cluster.zoomToBounds();
@@ -289,7 +291,7 @@ const CanadianPostalCodeLayer = ({
     <MarkerClusterGroup
       iconCreateFunction={createClusterCustomIcon}
       zoomToBoundsOnClick={!onBulkZipCodeUpdate}
-      eventHandlers={onBulkZipCodeUpdate ? { clusterclick: handleClusterClick } : {}}
+      eventHandlers={onBulkZipCodeUpdate ? { clusterclick: handleClusterClick } : undefined}
     >
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
