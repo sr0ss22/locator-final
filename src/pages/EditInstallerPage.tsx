@@ -463,11 +463,21 @@ const EditInstallerPage: React.FC = () => {
         });
 
         const CHUNK_SIZE = 500;
+        const totalDeleteChunks = Math.ceil(zipsToDelete.length / CHUNK_SIZE);
+        const totalUpsertChunks = Math.ceil(zipsToUpsert.length / CHUNK_SIZE);
+        const totalOperations = totalDeleteChunks + totalUpsertChunks;
+        let completedOperations = 0;
+
+        const updateProgress = (operation: string) => {
+          completedOperations++;
+          const progress = totalOperations > 0 ? Math.round((completedOperations / totalOperations) * 100) : 100;
+          toast.loading(`${operation} (${progress}%)`, { id: loadingToastId });
+        };
 
         if (zipsToDelete.length > 0) {
-          toast.info(`Deleting ${zipsToDelete.length} territories...`, { id: loadingToastId });
           for (let i = 0; i < zipsToDelete.length; i += CHUNK_SIZE) {
             const chunk = zipsToDelete.slice(i, i + CHUNK_SIZE);
+            updateProgress(`Deleting territories...`);
             const { error: deleteError } = await supabase
               .from('installer_zip_codes')
               .delete()
@@ -481,9 +491,9 @@ const EditInstallerPage: React.FC = () => {
         }
 
         if (zipsToUpsert.length > 0) {
-          toast.info(`Upserting ${zipsToUpsert.length} territories...`, { id: loadingToastId });
           for (let i = 0; i < zipsToUpsert.length; i += CHUNK_SIZE) {
             const chunk = zipsToUpsert.slice(i, i + CHUNK_SIZE);
+            updateProgress(`Saving territories...`);
             const { error: upsertError } = await supabase
               .from('installer_zip_codes')
               .upsert(chunk, { onConflict: 'installer_id,zip_code' });
