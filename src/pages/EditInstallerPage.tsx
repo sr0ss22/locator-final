@@ -136,7 +136,7 @@ const EditInstallerPage: React.FC = () => {
     return map;
   }, [installerCountry]);
 
-  const mapDisplayRadius = useMemo(() => (installerCountry === 'Canada' ? 125 : 150), [installerCountry]);
+  const mapDisplayRadius = useMemo(() => (installerCountry === 'Canada' ? 75 : 150), [installerCountry]);
 
   const columnDisplayNames: { [key: string]: string } = useMemo(() => ({
     name: "Name", email: "Email", primary_phone: "Phone", secondary_phone: "Secondary Phone", address1: "Address Line 1",
@@ -785,35 +785,18 @@ const EditInstallerPage: React.FC = () => {
   
       if (isCanada) {
         loadingToastId = toast.loading("Fetching Canadian postal codes in radius...");
-        let allPoints: any[] = [];
-        let page = 0;
-        const pageSize = 1000;
-        let hasMore = true;
-  
-        while (hasMore) {
-          const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
-            center_lat: currentInstaller.latitude,
-            center_lng: currentInstaller.longitude,
-            radius_meters: radiusMeters,
-          }).range(page * pageSize, (page + 1) * pageSize - 1);
-  
-          if (error) {
-            throw new Error(`Failed to fetch Canadian postal codes (page ${page + 1}): ${error.message}`);
-          }
-  
-          if (data) {
-            allPoints = allPoints.concat(data);
-          }
-  
-          if (!data || data.length < pageSize) {
-            hasMore = false;
-          } else {
-            page++;
-          }
+        const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
+          center_lat: currentInstaller.latitude,
+          center_lng: currentInstaller.longitude,
+          radius_meters: radiusMeters,
+        });
+
+        if (error) {
+          throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
         }
         toast.dismiss(loadingToastId);
   
-        zipsToApprove = (allPoints || []).map((p: any) => ({
+        zipsToApprove = (data || []).map((p: any) => ({
           zipCode: p.POSTAL_CODE,
           stateProvince: p.PROVINCE_ABBR,
           centroid_latitude: p.LATITUDE,

@@ -375,7 +375,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
 
       setLoadingData(true);
-      const maxRadiusMeters = 125 * 1000; // 125km
+      const maxRadiusMeters = 75 * 1000; // 75km
 
       try {
         // Fetch all results by paginating through the RPC call to bypass the default 1000-row limit
@@ -493,10 +493,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   ];
 
   const caRadii = [
-    { radius: 35, color: '#22c55e' },
-    { radius: 75, color: '#facc15' },
-    { radius: 100, color: '#f97316' },
-    { radius: 125, color: '#ef4444' },
+    { radius: 25, color: '#22c55e' },
+    { radius: 50, color: '#facc15' },
+    { radius: 75, color: '#f97316' },
   ];
 
   const radiiConfig = isCanada ? caRadii : usRadii;

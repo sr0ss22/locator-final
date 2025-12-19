@@ -38,7 +38,6 @@ const PublicTerritoryEditor: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
-  const [mapDisplayRadius, setMapDisplayRadius] = useState<number | 'all'>(150);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
   const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
   const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | null>('approve');
@@ -49,6 +48,8 @@ const PublicTerritoryEditor: React.FC = () => {
     if (country === 'CANADA' || country === 'CA' || country === 'CAN') return 'Canada';
     return 'USA';
   }, [formData?.country]);
+
+  const mapDisplayRadius = useMemo(() => (installerCountry === 'Canada' ? 75 : 150), [installerCountry]);
 
   const zipCodeCentroids = useMemo(() => {
     const map = new Map<string, { lat: number, lng: number, state: string }>();
@@ -286,7 +287,7 @@ const PublicTerritoryEditor: React.FC = () => {
       toast.error("Installer location is not set. Cannot auto-approve.");
       return;
     }
-
+  
     setLoading(true);
     const isCanada = installerCountry === 'Canada';
     const radiusMiles = isCanada ? 35 / 1.60934 : 25;
