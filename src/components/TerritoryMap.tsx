@@ -161,7 +161,7 @@ function MapInteractionHandler({
         const finalRadiusMeters = currentDrawCircleRef.current.getRadius();
         
         if (isCanada) {
-          const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_circle', {
+          const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
             center_lat: finalCenter.lat,
             center_lng: finalCenter.lng,
             radius_meters: finalRadiusMeters,
@@ -171,7 +171,7 @@ function MapInteractionHandler({
             toast.error("Failed to get postal codes for selection.");
             console.error(error);
           } else {
-            const selectedZips = data.map((p: any) => ({ zipCode: p.POSTAL_CODE, stateProvince: p.PROVINCE_ABBR }));
+            const selectedZips = (data || []).map((p: any) => ({ zipCode: p.POSTAL_CODE, stateProvince: p.PROVINCE_ABBR }));
             onBulkSelectionCompleteRef.current(selectedZips);
           }
         } else if (geoJsonData) {
@@ -335,7 +335,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
       if (isCanada) {
         try {
-          const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_circle', {
+          const { data, error } = await supabase.rpc('get_all_canadian_postal_codes_in_circle', {
             center_lat: centerLocation.lat,
             center_lng: centerLocation.lng,
             radius_meters: maxRadiusMeters,
