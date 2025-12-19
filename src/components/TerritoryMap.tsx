@@ -301,6 +301,7 @@ const CanadianPostalCodeLayer = ({
     <MarkerClusterGroup
       ref={clusterRef}
       iconCreateFunction={createClusterCustomIcon}
+      zoomToBoundsOnClick={!onBulkZipCodeUpdate}
     >
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
