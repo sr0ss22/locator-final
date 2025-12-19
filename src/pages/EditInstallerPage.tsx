@@ -484,58 +484,58 @@ const EditInstallerPage: React.FC = () => {
         const initialZipSet = new Set(currentAssignmentsMap.keys());
         const finalZipSet = new Set(territoriesToProcess.map(z => z.zipCode));
 
-        const zipsToDelete = Array.from(initialZipSet).filter(zip => !finalZipSet.has(zip));
+        if (finalZipSet.size === 0 && initialZipSet.size > 0) {
+          toast.info(`Deleting all territories...`, { id: loadingToastId });
+          const { error: deleteError } = await supabase
+            .from('installer_zip_codes')
+            .delete()
+            .eq('installer_id', currentInstaller.id);
+          if (deleteError) {
+            throw new Error(`Failed to clear all territories: ${deleteError.message}`);
+          }
+        } else {
+          const zipsToDelete = Array.from(initialZipSet).filter(zip => !finalZipSet.has(zip));
+          const zipsToUpsert = territoriesToProcess.map(item => {
+            const existingAssignment = currentAssignmentsMap.get(item.zipCode);
+            return {
+              installer_id: currentInstaller.id,
+              zip_code: item.zipCode,
+              state_province: item.stateProvince,
+              status: item.assignedStatus,
+              field_ops_rep_id: existingAssignment ? existingAssignment.field_ops_rep_id : null,
+              field_service_manager_id: existingAssignment ? existingAssignment.field_service_manager_id : null,
+            };
+          });
 
-        const zipsToUpsert = territoriesToProcess.map(item => {
-          const existingAssignment = currentAssignmentsMap.get(item.zipCode);
-          return {
-            installer_id: currentInstaller.id,
-            zip_code: item.zipCode,
-            state_province: item.stateProvince,
-            status: item.assignedStatus,
-            field_ops_rep_id: existingAssignment ? existingAssignment.field_ops_rep_id : null,
-            field_service_manager_id: existingAssignment ? existingAssignment.field_service_manager_id : null,
-          };
-        });
+          const CHUNK_SIZE = 500;
 
-        const CHUNK_SIZE = 500;
-        const totalDeleteChunks = Math.ceil(zipsToDelete.length / CHUNK_SIZE);
-        const totalUpsertChunks = Math.ceil(zipsToUpsert.length / CHUNK_SIZE);
-        const totalOperations = totalDeleteChunks + totalUpsertChunks;
-        let completedOperations = 0;
-
-        const updateProgress = (operation: string) => {
-          completedOperations++;
-          const progress = totalOperations > 0 ? Math.round((completedOperations / totalOperations) * 100) : 100;
-          toast.loading(`${operation} (${progress}%)`, { id: loadingToastId });
-        };
-
-        if (zipsToDelete.length > 0) {
-          for (let i = 0; i < zipsToDelete.length; i += CHUNK_SIZE) {
-            const chunk = zipsToDelete.slice(i, i + CHUNK_SIZE);
-            updateProgress(`Deleting territories...`);
-            const { error: deleteError } = await supabase
-              .from('installer_zip_codes')
-              .delete()
-              .eq('installer_id', currentInstaller.id)
-              .in('zip_code', chunk);
-            
-            if (deleteError) {
-              throw new Error(`Failed to delete territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${deleteError.message}`);
+          if (zipsToDelete.length > 0) {
+            toast.info(`Deleting ${zipsToDelete.length} territories...`, { id: loadingToastId });
+            for (let i = 0; i < zipsToDelete.length; i += CHUNK_SIZE) {
+              const chunk = zipsToDelete.slice(i, i + CHUNK_SIZE);
+              const { error: deleteError } = await supabase
+                .from('installer_zip_codes')
+                .delete()
+                .eq('installer_id', currentInstaller.id)
+                .in('zip_code', chunk);
+              
+              if (deleteError) {
+                throw new Error(`Failed to delete territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${deleteError.message}`);
+              }
             }
           }
-        }
 
-        if (zipsToUpsert.length > 0) {
-          for (let i = 0; i < zipsToUpsert.length; i += CHUNK_SIZE) {
-            const chunk = zipsToUpsert.slice(i, i + CHUNK_SIZE);
-            updateProgress(`Saving territories...`);
-            const { error: upsertError } = await supabase
-              .from('installer_zip_codes')
-              .upsert(chunk, { onConflict: 'installer_id,zip_code' });
+          if (zipsToUpsert.length > 0) {
+            toast.info(`Saving ${zipsToUpsert.length} territories...`, { id: loadingToastId });
+            for (let i = 0; i < zipsToUpsert.length; i += CHUNK_SIZE) {
+              const chunk = zipsToUpsert.slice(i, i + CHUNK_SIZE);
+              const { error: upsertError } = await supabase
+                .from('installer_zip_codes')
+                .upsert(chunk, { onConflict: 'installer_id,zip_code' });
 
-            if (upsertError) {
-              throw new Error(`Failed to save new/updated territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${upsertError.message}`);
+              if (upsertError) {
+                throw new Error(`Failed to save new/updated territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${upsertError.message}`);
+              }
             }
           }
         }
@@ -619,8 +619,13 @@ const EditInstallerPage: React.FC = () => {
 
   const handleToggleBulkSelect = (action: 'approve' | 'needs_approval') => {
     setBulkActionType(prev => {
-      if (prev === action) { toast.info("Bulk selection mode deactivated."); return null; }
-      else { toast.info(`Bulk ${action === 'approve' ? 'approval' : 'needs approval'} mode activated. Click and drag on the map.`); return action; }
+      if (prev === action) {
+        toast.info("Bulk selection mode deactivated.");
+        return null;
+      } else {
+        toast.info(`Bulk ${action === 'approve' ? 'Free Mileage' : 'Paid Mileage'} mode activated. Click and drag on the map.`);
+        return action;
+      }
     });
   };
 
@@ -966,8 +971,8 @@ const EditInstallerPage: React.FC = () => {
                     <Button variant="outline" onClick={handleAutoApprove} disabled={loading}>
                       <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
                     </Button>
-                    <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Approve" : "Bulk Approve"}</Button>
-                    <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Needs Approval" : "Bulk Needs Approval"}</Button>
+                    <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
+                    <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
                     <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
                   </div>
                 </div>

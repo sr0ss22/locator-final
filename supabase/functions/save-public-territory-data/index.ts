@@ -71,45 +71,57 @@ serve(async (req) => {
     const currentZipSet = new Set((allCurrentZipsData || []).map(z => z.zip_code));
     const finalZipSet = new Set(zipCodes.map((z: any) => z.zipCode));
 
-    // 2. Determine which zips to delete
-    const zipsToDelete = Array.from(currentZipSet).filter(zip => !finalZipSet.has(zip));
+    // OPTIMIZATION: If the final set is empty, do a single bulk delete.
+    if (finalZipSet.size === 0 && currentZipSet.size > 0) {
+      const { error: deleteError } = await supabaseAdmin
+        .from('installer_zip_codes')
+        .delete()
+        .eq('installer_id', installerId);
 
-    // 3. Determine which zips to upsert (all final zips)
-    const zipsToUpsert = zipCodes.map((item: any) => ({
-      installer_id: installerId,
-      zip_code: item.zipCode,
-      state_province: item.stateProvince,
-      status: item.assignedStatus,
-    }));
+      if (deleteError) {
+        throw new Error(`Failed to clear all territories: ${deleteError.message}`);
+      }
+    } else {
+      // 2. Determine which zips to delete
+      const zipsToDelete = Array.from(currentZipSet).filter(zip => !finalZipSet.has(zip));
 
-    const CHUNK_SIZE = 500;
+      // 3. Determine which zips to upsert (all final zips)
+      const zipsToUpsert = zipCodes.map((item: any) => ({
+        installer_id: installerId,
+        zip_code: item.zipCode,
+        state_province: item.stateProvince,
+        status: item.assignedStatus,
+      }));
 
-    // 4. Perform DELETE operation for removed territories
-    if (zipsToDelete.length > 0) {
-      for (let i = 0; i < zipsToDelete.length; i += CHUNK_SIZE) {
-        const chunk = zipsToDelete.slice(i, i + CHUNK_SIZE);
-        const { error: deleteError } = await supabaseAdmin
-          .from('installer_zip_codes')
-          .delete()
-          .eq('installer_id', installerId)
-          .in('zip_code', chunk);
+      const CHUNK_SIZE = 500;
 
-        if (deleteError) {
-          throw new Error(`Failed to delete territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${deleteError.message}`);
+      // 4. Perform DELETE operation for removed territories
+      if (zipsToDelete.length > 0) {
+        for (let i = 0; i < zipsToDelete.length; i += CHUNK_SIZE) {
+          const chunk = zipsToDelete.slice(i, i + CHUNK_SIZE);
+          const { error: deleteError } = await supabaseAdmin
+            .from('installer_zip_codes')
+            .delete()
+            .eq('installer_id', installerId)
+            .in('zip_code', chunk);
+
+          if (deleteError) {
+            throw new Error(`Failed to delete territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${deleteError.message}`);
+          }
         }
       }
-    }
 
-    // 5. Perform UPSERT operation for added or modified territories
-    if (zipsToUpsert.length > 0) {
-      for (let i = 0; i < zipsToUpsert.length; i += CHUNK_SIZE) {
-        const chunk = zipsToUpsert.slice(i, i + CHUNK_SIZE);
-        const { error: upsertError } = await supabaseAdmin
-          .from('installer_zip_codes')
-          .upsert(chunk, { onConflict: 'installer_id,zip_code' });
+      // 5. Perform UPSERT operation for added or modified territories
+      if (zipsToUpsert.length > 0) {
+        for (let i = 0; i < zipsToUpsert.length; i += CHUNK_SIZE) {
+          const chunk = zipsToUpsert.slice(i, i + CHUNK_SIZE);
+          const { error: upsertError } = await supabaseAdmin
+            .from('installer_zip_codes')
+            .upsert(chunk, { onConflict: 'installer_id,zip_code' });
 
-        if (upsertError) {
-          throw new Error(`Failed to upsert territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${upsertError.message}`);
+          if (upsertError) {
+            throw new Error(`Failed to upsert territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${upsertError.message}`);
+          }
         }
       }
     }

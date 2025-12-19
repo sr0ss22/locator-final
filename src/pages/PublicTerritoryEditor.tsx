@@ -84,7 +84,7 @@ const PublicTerritoryEditor: React.FC = () => {
   }, [installerCountry]);
 
   useEffect(() => {
-    toast.info("Bulk Approve mode is active. Click and drag on the map to select territories.", {
+    toast.info("Bulk Free Mileage mode is active. Click and drag on the map to select territories.", {
       duration: 6000,
     });
   }, []);
@@ -266,8 +266,13 @@ const PublicTerritoryEditor: React.FC = () => {
 
   const handleToggleBulkSelect = (action: 'approve' | 'needs_approval') => {
     setBulkActionType(prev => {
-      if (prev === action) { toast.info("Bulk selection mode deactivated."); return null; }
-      else { toast.info(`Bulk ${action === 'approve' ? 'approval' : 'needs approval'} mode activated. Click and drag on the map.`); return action; }
+      if (prev === action) {
+        toast.info("Bulk selection mode deactivated.");
+        return null;
+      } else {
+        toast.info(`Bulk ${action === 'approve' ? 'Free Mileage' : 'Paid Mileage'} mode activated. Click and drag on the map.`);
+        return action;
+      }
     });
   };
 
@@ -330,7 +335,7 @@ const PublicTerritoryEditor: React.FC = () => {
         }
       }
 
-      toast.info(`Found ${zipsToApprove.length} territories. Updating selection...`, { id: loadingToastId });
+      toast.info(`Found ${zipsToApprove.length} territories. Merging and saving...`, { id: loadingToastId });
 
       const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
       zipsToApprove.forEach(zipInfo => {
@@ -384,8 +389,8 @@ const PublicTerritoryEditor: React.FC = () => {
                 <Button variant="outline" onClick={handleAutoApprove} disabled={loading}>
                   <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
                 </Button>
-                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Approve" : "Bulk Approve"}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Needs Approval" : "Bulk Needs Approval"}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
                 <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
               </div>
             </div>
