@@ -12,31 +12,12 @@ serve(async (req) => {
   }
 
   try {
-    const { country, zoom, bounds, center, radius, getCount, pageSize, pageNumber } = await req.json()
+    const { country, zoom, bounds, center, radius, pageSize, pageNumber } = await req.json()
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
-
-    // Handle count request for Canada radius search
-    if (country === 'Canada' && getCount && center?.lat && center?.lng && radius) {
-      const { data, error } = await supabaseAdmin.rpc('get_canadian_points_in_radius_count', {
-        center_lat: center.lat,
-        center_lng: center.lng,
-        radius_meters: radius,
-      });
-
-      if (error) {
-        console.error('RPC Count Error:', error);
-        throw new Error(error.message);
-      }
-
-      return new Response(JSON.stringify({ count: data }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
-    }
 
     // Handle main data request
     if (!country || zoom === undefined || !bounds) {

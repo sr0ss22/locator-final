@@ -220,7 +220,11 @@ const LoadingProgress = ({ loaded, total }: { loaded: number; total: number }) =
     <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg">
       <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-4" />
       <p className="font-semibold text-lg">Loading Territories...</p>
-      {total > 0 && <p className="text-sm text-gray-500">{`(${loaded.toLocaleString()} of ${total.toLocaleString()} loaded)`}</p>}
+      {total > 0 ? (
+        <p className="text-sm text-gray-500">{`(${loaded.toLocaleString()} of ${total.toLocaleString()} loaded)`}</p>
+      ) : loaded > 0 ? (
+        <p className="text-sm text-gray-500">{`(${loaded.toLocaleString()} loaded)`}</p>
+      ) : null}
     </div>
   </div>
 );
@@ -257,34 +261,12 @@ const DynamicPointsLayer = ({
     const radiusMeters = radius * 1000;
 
     try {
-      const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data', {
-        body: { 
-          country, 
-          getCount: true,
-          center: centerLocation,
-          radius: radiusMeters,
-        },
-      });
-
-      if (fetchId !== currentFetchId.current) return;
-      if (countError) throw countError;
-      if (countData.error) throw new Error(countData.error);
-
-      const total = countData.count || 0;
-      if (total === 0) {
-        setPoints([]);
-        setProgress(null);
-        setLoading(false);
-        return;
-      }
-      
-      setProgress({ loaded: 0, total });
-
       const PAGE_SIZE = 2500;
-      const totalPages = Math.ceil(total / PAGE_SIZE);
+      let page = 1;
+      let hasMore = true;
       let allPoints: any[] = [];
 
-      for (let page = 1; page <= totalPages; page++) {
+      while(hasMore) {
         if (fetchId !== currentFetchId.current) return;
 
         const { data: chunkData, error: chunkError } = await supabase.functions.invoke('get-map-data', {
@@ -303,12 +285,23 @@ const DynamicPointsLayer = ({
         if (chunkError) throw chunkError;
         if (chunkData.error) throw new Error(chunkData.error);
 
-        if (chunkData.data) {
+        if (chunkData.data && chunkData.data.length > 0) {
           allPoints = [...allPoints, ...chunkData.data];
           setPoints(allPoints);
-          setProgress({ loaded: allPoints.length, total });
+          setProgress({ loaded: allPoints.length, total: 0 }); // Show running total, total is unknown
+          
+          if (chunkData.data.length < PAGE_SIZE) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        } else {
+          hasMore = false;
         }
       }
+      // Final progress update to show it's complete
+      setProgress({ loaded: allPoints.length, total: allPoints.length });
+
     } catch (err: any) {
       if (fetchId === currentFetchId.current) {
         console.error("Error fetching map data in chunks:", err);
