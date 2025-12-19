@@ -215,10 +215,18 @@ function MapInteractionHandler({
   return null;
 }
 
-const DynamicPointsLayer = ({ country, onZipCodeClick, highlightedZipCodes }: {
+const DynamicPointsLayer = ({ 
+  country, 
+  onZipCodeClick, 
+  highlightedZipCodes,
+  centerLocation,
+  radius 
+}: {
   country: 'USA' | 'Canada';
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
+  centerLocation?: { lat: number | null; lng: number | null };
+  radius?: number | 'all';
 }) => {
   const [points, setPoints] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -229,9 +237,23 @@ const DynamicPointsLayer = ({ country, onZipCodeClick, highlightedZipCodes }: {
     const bounds = map.getBounds();
     const zoom = map.getZoom();
 
+    let radiusMeters: number | undefined = undefined;
+    if (radius && radius !== 'all' && centerLocation?.lat && centerLocation?.lng) {
+        // Radius prop is in km for Canada (from EditInstallerPage logic)
+        // If it were USA, it would be miles.
+        // We handle conversion here for Canada to meters.
+        radiusMeters = radius * 1000;
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke('get-map-data', {
-        body: { country, zoom, bounds },
+        body: { 
+            country, 
+            zoom, 
+            bounds, 
+            center: centerLocation,
+            radius: radiusMeters 
+        },
       });
 
       if (error) throw error;
@@ -244,7 +266,7 @@ const DynamicPointsLayer = ({ country, onZipCodeClick, highlightedZipCodes }: {
     } finally {
       setLoading(false);
     }
-  }, [map, country]);
+  }, [map, country, centerLocation, radius]);
 
   useMapEvents({
     moveend: fetchData,
@@ -504,6 +526,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           country="Canada"
           onZipCodeClick={onZipCodeClick} 
           highlightedZipCodes={highlightedZipCodes}
+          centerLocation={centerLocation}
+          radius={currentDisplayRadius}
         />
       ) : (
         allGeoJsonData && (

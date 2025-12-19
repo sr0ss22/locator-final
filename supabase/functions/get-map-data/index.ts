@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { country, zoom, bounds } = await req.json()
+    const { country, zoom, bounds, center, radius } = await req.json()
     const { _northEast, _southWest } = bounds;
 
     if (!country || zoom === undefined || !bounds) {
@@ -28,24 +28,32 @@ serve(async (req) => {
     )
 
     let rpcName = '';
+    let params: any = {
+      zoom: zoom,
+      min_lon: _southWest.lng,
+      min_lat: _southWest.lat,
+      max_lon: _northEast.lng,
+      max_lat: _northEast.lat,
+    };
+
     if (country === 'Canada') {
       rpcName = 'get_clustered_canadian_map_data';
+      
+      // Add optional filtering params if provided
+      if (center && center.lat && center.lng && radius) {
+        params.center_lat = center.lat;
+        params.center_lng = center.lng;
+        params.radius_meters = radius;
+      }
     } else {
-      // Placeholder for a future US clustering function if needed
-      // For now, we can assume US data is handled differently or doesn't need this level of clustering
+      // Placeholder for US or other countries
       return new Response(JSON.stringify({ data: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });
     }
 
-    const { data, error } = await supabaseAdmin.rpc(rpcName, {
-      zoom: zoom,
-      min_lon: _southWest.lng,
-      min_lat: _southWest.lat,
-      max_lon: _northEast.lng,
-      max_lat: _northEast.lat,
-    });
+    const { data, error } = await supabaseAdmin.rpc(rpcName, params);
 
     if (error) {
       console.error('RPC Error:', error);
