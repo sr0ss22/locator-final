@@ -280,7 +280,7 @@ const DynamicPointsLayer = ({
       
       setProgress({ loaded: 0, total });
 
-      const PAGE_SIZE = 1500;
+      const PAGE_SIZE = 2500;
       const totalPages = Math.ceil(total / PAGE_SIZE);
       let allPoints: any[] = [];
 
