@@ -251,8 +251,6 @@ const CanadianPostalCodeLayer = ({
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
   onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
 }) => {
-  const clusterRef = useRef<L.MarkerClusterGroup>(null);
-
   const handleClusterClick = useCallback((e: any) => {
     const cluster = e.layer;
     if (!onBulkZipCodeUpdate) {
@@ -287,21 +285,11 @@ const CanadianPostalCodeLayer = ({
     onBulkZipCodeUpdate(updates);
   }, [onBulkZipCodeUpdate, highlightedZipCodes]);
 
-  useEffect(() => {
-    const clusterLayer = clusterRef.current;
-    if (clusterLayer && onBulkZipCodeUpdate) {
-      clusterLayer.on('clusterclick', handleClusterClick);
-      return () => {
-        clusterLayer.off('clusterclick', handleClusterClick);
-      };
-    }
-  }, [onBulkZipCodeUpdate, handleClusterClick]);
-
   return (
     <MarkerClusterGroup
-      ref={clusterRef}
       iconCreateFunction={createClusterCustomIcon}
       zoomToBoundsOnClick={!onBulkZipCodeUpdate}
+      eventHandlers={onBulkZipCodeUpdate ? { clusterclick: handleClusterClick } : {}}
     >
       {points.map(point => {
         const status = highlightedZipCodes.get(point.POSTAL_CODE);
