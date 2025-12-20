@@ -38,6 +38,7 @@ interface TerritoryMapProps {
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
+const FETCH_BATCH_SIZE = 1000;
 const RENDER_BATCH_SIZE = 2000;
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
@@ -216,21 +217,18 @@ function MapInteractionHandler({
   return null;
 }
 
-const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: number, stage: 'fetching' | 'rendering' }) => (
+const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: number, stage: 'counting' | 'fetching' | 'rendering' }) => (
   <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-[1000]">
     <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg w-64">
       <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-4" />
       <p className="font-semibold text-lg mb-2">
-        {stage === 'fetching' ? 'Fetching All Territories...' : 'Rendering Territories...'}
+        {stage === 'counting' ? 'Calculating...' : stage === 'fetching' ? 'Fetching Territories...' : 'Rendering Territories...'}
       </p>
-      {stage === 'rendering' && (
+      {stage !== 'counting' && (
         <>
           <Progress value={total > 0 ? (progress / total) * 100 : 0} className="w-full" />
           <p className="text-sm text-gray-500 mt-2">{progress.toLocaleString()} / {total.toLocaleString()}</p>
         </>
-      )}
-      {stage === 'fetching' && (
-        <p className="text-sm text-gray-500 mt-2">This may take a moment...</p>
       )}
     </div>
   </div>
@@ -256,7 +254,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   
   const [allCanadaPoints, setAllCanadaPoints] = useState<any[]>([]);
   const [renderedCanadaPoints, setRenderedCanadaPoints] = useState<any[]>([]);
-  const [loadingStage, setLoadingStage] = useState<'idle' | 'fetching' | 'rendering' | 'complete'>('idle');
+  const [loadingStage, setLoadingStage] = useState<'idle' | 'counting' | 'fetching' | 'rendering' | 'complete'>('idle');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [totalPointsToLoad, setTotalPointsToLoad] = useState(0);
   const lastSearchKey = useRef<string | null>(null);
@@ -286,29 +284,56 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         }
         lastSearchKey.current = searchKey;
         
-        // Reset states for new load
         setAllCanadaPoints([]);
         setRenderedCanadaPoints([]);
         setLoadingProgress(0);
         setTotalPointsToLoad(0);
-        setLoadingStage('fetching');
+        setLoadingStage('counting');
 
         try {
           const radiusMeters = (currentDisplayRadius as number) * 1000;
           
-          const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
-            body: {
-              country: 'Canada',
-              center: centerLocation,
-              radius: radiusMeters,
-            },
+          // Phase 1: Get total count
+          const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
+            body: { country: 'Canada', center: centerLocation, radius: radiusMeters },
           });
+          if (countError) throw countError;
+          if (countData.error) throw new Error(countData.error);
+          
+          const totalPoints = countData.count;
+          setTotalPointsToLoad(totalPoints);
+          if (totalPoints === 0) {
+            setLoadingStage('complete');
+            return;
+          }
 
-          if (pageError) throw pageError;
-          if (pageData.error) throw new Error(pageData.error);
+          // Phase 2: Fetch all data in chunks
+          setLoadingStage('fetching');
+          const totalPages = Math.ceil(totalPoints / FETCH_BATCH_SIZE);
+          let fetchedPoints: any[] = [];
 
-          const fetchedPoints = pageData.data || [];
-          setTotalPointsToLoad(fetchedPoints.length);
+          for (let i = 1; i <= totalPages; i++) {
+            const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
+              body: {
+                country: 'Canada',
+                center: centerLocation,
+                radius: radiusMeters,
+                pageSize: FETCH_BATCH_SIZE,
+                pageNumber: i,
+              },
+            });
+
+            if (pageError) throw pageError;
+            if (pageData.error) throw new Error(pageData.error);
+
+            if (pageData.data) {
+              fetchedPoints = [...fetchedPoints, ...pageData.data];
+              setLoadingProgress(fetchedPoints.length);
+            }
+            await new Promise(resolve => setTimeout(resolve, 50)); 
+          }
+          
+          console.log(`FETCH COMPLETE: Fetched ${fetchedPoints.length} total points.`);
           setAllCanadaPoints(fetchedPoints);
           setLoadingStage('rendering');
 
@@ -318,7 +343,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           setLoadingStage('idle');
         }
       } else {
-        // USA logic remains the same
+        // USA logic
         setLoadingStage('fetching');
         try {
           const geoJsonModule = await import('@/data/us-zip-codes.json');
@@ -352,21 +377,19 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       return;
     }
   
-    setRenderedCanadaPoints([]); // Start with a clean slate for rendering
+    setRenderedCanadaPoints([]);
     setLoadingProgress(0);
     let renderIndex = 0;
     const animationFrameIdRef = React.createRef<number>();
   
     const renderNextBatch = () => {
       if (renderIndex >= allCanadaPoints.length) {
+        console.log(`RENDER COMPLETE: Rendered ${renderIndex} total points.`);
         setLoadingStage('complete');
-        return; // All points rendered
+        return;
       }
   
-      const nextBatch = allCanadaPoints.slice(
-        renderIndex,
-        renderIndex + RENDER_BATCH_SIZE
-      );
+      const nextBatch = allCanadaPoints.slice(renderIndex, renderIndex + RENDER_BATCH_SIZE);
   
       setRenderedCanadaPoints(prev => [...prev, ...nextBatch]);
       setLoadingProgress(prev => prev + nextBatch.length);
@@ -525,7 +548,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       
       <Pane name="polygons" style={{ zIndex: 450 }} />
       
-      {(loadingStage === 'fetching' || loadingStage === 'rendering') && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} stage={loadingStage} />}
+      {(loadingStage === 'counting' || loadingStage === 'fetching' || loadingStage === 'rendering') && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} stage={loadingStage} />}
 
       {isCanada && renderedCanadaPoints.length > 0 && (
         renderedCanadaPoints.map(point => {

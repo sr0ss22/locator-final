@@ -12,34 +12,29 @@ serve(async (req) => {
   }
 
   try {
-    const { country, center, radius, pageSize, pageNumber } = await req.json()
+    const { country, center, radius } = await req.json()
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    if (country !== 'Canada' || !center || !radius || !pageSize || !pageNumber) {
-      return new Response(JSON.stringify({ error: 'Invalid parameters for paginated fetch' }), {
+    if (country !== 'Canada' || !center || !radius) {
+      return new Response(JSON.stringify({ error: 'Invalid parameters' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       })
     }
-    
-    const { data, error } = await supabaseAdmin.rpc('get_all_canadian_points_in_radius', {
+
+    const { data, error } = await supabaseAdmin.rpc('get_canadian_points_in_radius_count', {
       center_lat: center.lat,
       center_lng: center.lng,
       radius_meters: radius,
-      page_size: pageSize,
-      page_number: pageNumber,
     });
 
-    if (error) {
-      console.error('RPC Data Error:', error);
-      throw new Error(error.message);
-    }
+    if (error) throw error;
 
-    return new Response(JSON.stringify({ data }), {
+    return new Response(JSON.stringify({ count: data }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
