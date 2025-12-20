@@ -469,7 +469,18 @@ const EditInstallerPage: React.FC = () => {
         });
 
         if (territoryError) {
-          throw new Error(`Territory Save Error: ${territoryError.message}`);
+          // Log the full error object to the console for detailed debugging
+          console.error("Detailed error from save-public-territory-data function:", territoryError);
+          
+          // Try to extract a more specific message from the error context if available
+          const functionErrorDetails = territoryError.context?.details;
+          let errorMessage = territoryError.message;
+          if (functionErrorDetails) {
+            errorMessage = functionErrorDetails.message || errorMessage;
+            console.error("Edge function error details:", functionErrorDetails);
+          }
+          
+          throw new Error(`Territory Save Error: ${errorMessage}`);
         }
       }
       

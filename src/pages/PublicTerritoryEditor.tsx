@@ -253,7 +253,20 @@ const PublicTerritoryEditor: React.FC = () => {
       const { error } = await supabase.functions.invoke('save-public-territory-data', {
         body: { installerId, token, zipCodes: selectedMapZipCodes },
       });
-      if (error) throw new Error(error.message || "An unknown error occurred.");
+      if (error) {
+        // Log the full error object to the console for detailed debugging
+        console.error("Detailed error from save-public-territory-data function:", error);
+        
+        // Try to extract a more specific message from the error context if available
+        const functionErrorDetails = error.context?.details;
+        let errorMessage = error.message;
+        if (functionErrorDetails) {
+          errorMessage = functionErrorDetails.message || errorMessage;
+          console.error("Edge function error details:", functionErrorDetails);
+        }
+        
+        throw new Error(errorMessage);
+      }
       toast.success("Territory changes saved successfully! Refreshing data...", { id: loadingToastId });
       await loadAllData();
       toast.success("Save complete. Data is up to date.", { id: loadingToastId, duration: 4000 });

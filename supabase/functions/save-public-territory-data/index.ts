@@ -115,10 +115,19 @@ serve(async (req) => {
       status: 200,
     })
   } catch (error) {
-    console.error('Edge function error:', error)
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Edge function error:', error); // Server-side log
+    // Create a more detailed error response for the client
+    const errorResponse = {
+      message: error.message,
+      stack: error.stack,
+      // Include details if it's a Supabase error object
+      details: (error as any).details,
+      code: (error as any).code,
+      hint: (error as any).hint,
+    };
+    return new Response(JSON.stringify({ error: 'Edge function failed.', details: errorResponse }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
-    })
+    });
   }
 })
