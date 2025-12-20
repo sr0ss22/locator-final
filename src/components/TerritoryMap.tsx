@@ -215,14 +215,11 @@ function MapInteractionHandler({
   return null;
 }
 
-const LoadingProgress = ({ loaded, total }: { loaded: number; total: number }) => (
+const LoadingOverlay = () => (
   <div className="absolute inset-0 flex items-center justify-center bg-white/75 z-[1000]">
     <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg">
       <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-4" />
       <p className="font-semibold text-lg">Loading Territories...</p>
-      {total > 0 ? (
-        <p className="text-sm text-gray-500">{`(${loaded.toLocaleString()} of ${total.toLocaleString()} loaded)`}</p>
-      ) : null}
     </div>
   </div>
 );
@@ -242,11 +239,10 @@ const DynamicPointsLayer = ({
 }) => {
   const [points, setPoints] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState<{ loaded: number, total: number } | null>(null);
   const map = useMap();
   const currentFetchId = useRef(0);
 
-  const fetchDataInChunks = useCallback(async (fetchId: number) => {
+  const fetchAllPointsInRadius = useCallback(async (fetchId: number) => {
     if (!centerLocation?.lat || !centerLocation?.lng || !radius || radius === 'all') {
       setPoints([]);
       return;
@@ -254,69 +250,34 @@ const DynamicPointsLayer = ({
 
     setLoading(true);
     setPoints([]);
-    setProgress({ loaded: 0, total: 0 });
-    console.log(`[TerritoryMap Debug] Starting chunk fetch for radius ${radius}km around`, centerLocation);
+    console.log(`[TerritoryMap Debug] Starting single fetch for radius ${radius}km around`, centerLocation);
 
     const radiusMeters = radius * 1000;
 
     try {
-      const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
-        body: { country, center: centerLocation, radius: radiusMeters },
+      const { data, error } = await supabase.functions.invoke('get-territories-in-radius', {
+        body: { 
+          country, 
+          center: centerLocation, 
+          radius: radiusMeters 
+        },
       });
-      console.log(`[TerritoryMap Debug] Count RPC returned:`, { count: countData?.count, countError });
+      console.log(`[TerritoryMap Debug] Single fetch RPC returned ${data?.data?.length || 0} points. Error:`, error);
 
       if (fetchId !== currentFetchId.current) return;
-      if (countError) throw countError;
-      if (countData.error) throw new Error(countData.error);
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
 
-      const totalPoints = countData.count || 0;
-      if (totalPoints === 0) {
-        setLoading(false);
-        setProgress(null);
-        return;
-      }
-      setProgress({ loaded: 0, total: totalPoints });
-
-      const PAGE_SIZE = 1000; // Changed from 2500 to match the server's limit
-      const totalPages = Math.ceil(totalPoints / PAGE_SIZE);
-      let allPoints: any[] = [];
-
-      for (let page = 1; page <= totalPages; page++) {
-        if (fetchId !== currentFetchId.current) return;
-
-        const { data: chunkData, error: chunkError } = await supabase.functions.invoke('get-map-data', {
-          body: { 
-            country, 
-            zoom: map.getZoom(),
-            bounds: map.getBounds(),
-            center: centerLocation,
-            radius: radiusMeters,
-            pageSize: PAGE_SIZE,
-            pageNumber: page,
-          },
-        });
-        console.log(`[TerritoryMap Debug] Chunk ${page}/${totalPages} RPC returned ${chunkData?.data?.length || 0} points. Error:`, chunkError);
-
-        if (fetchId !== currentFetchId.current) return;
-        if (chunkError) throw chunkError;
-        if (chunkData.error) throw new Error(chunkData.error);
-
-        if (chunkData.data) {
-          allPoints = [...allPoints, ...chunkData.data];
-          setPoints(allPoints);
-          setProgress({ loaded: allPoints.length, total: totalPoints });
-        }
-      }
-      console.log(`[TerritoryMap Debug] Total points fetched: ${allPoints.length}`);
+      setPoints(data.data || []);
+      
     } catch (err: any) {
       if (fetchId === currentFetchId.current) {
-        console.error("[TerritoryMap Debug] Error fetching map data in chunks:", err);
+        console.error("[TerritoryMap Debug] Error fetching all map data in radius:", err);
         toast.error("Could not load map data.");
       }
     } finally {
       if (fetchId === currentFetchId.current) {
         setLoading(false);
-        setProgress(null);
       }
     }
   }, [map, country, centerLocation, radius]);
@@ -355,13 +316,13 @@ const DynamicPointsLayer = ({
     const fetchId = currentFetchId.current;
 
     if (country === 'Canada' && centerLocation && radius && radius !== 'all') {
-      fetchDataInChunks(fetchId);
+      fetchAllPointsInRadius(fetchId);
     } else if (country === 'Canada') {
       fetchDataForBounds(fetchId);
     } else {
       setPoints([]);
     }
-  }, [country, centerLocation, radius, fetchDataInChunks, fetchDataForBounds]);
+  }, [country, centerLocation, radius, fetchAllPointsInRadius, fetchDataForBounds]);
 
   useMapEvents({
     zoomend: () => {
@@ -380,9 +341,10 @@ const DynamicPointsLayer = ({
 
   return (
     <>
-      {(loading || progress) && <LoadingProgress loaded={progress?.loaded || 0} total={progress?.total || 0} />}
+      {loading && <LoadingOverlay />}
       {points.map(point => {
-        const status = highlightedZipCodes.get(point.POSTAL_CODE);
+        const postalCode = point.POSTAL_CODE || point.zip_code;
+        const status = highlightedZipCodes.get(postalCode);
         let color = '#3b82f6';
         let fillOpacity = 0.5;
         let pointRadius = 2;
@@ -424,11 +386,11 @@ const DynamicPointsLayer = ({
             pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
             eventHandlers={{
               click: () => {
-                onZipCodeClick(point.POSTAL_CODE, point.PROVINCE_ABBR);
+                onZipCodeClick(postalCode, point.PROVINCE_ABBR);
               },
             }}
           >
-            <Tooltip>{point.POSTAL_CODE}</Tooltip>
+            <Tooltip>{postalCode}</Tooltip>
           </CircleMarker>
         );
       })}
