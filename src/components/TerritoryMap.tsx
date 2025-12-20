@@ -318,13 +318,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
             return;
           }
 
-          // Phase 2: Fetch all data in chunks
+          // Phase 2: Fetch all data in parallel
           setLoadingStage('fetching');
           const totalPages = Math.ceil(totalPoints / FETCH_BATCH_SIZE);
-          let fetchedPoints: any[] = [];
+          const pagePromises = [];
 
           for (let i = 1; i <= totalPages; i++) {
-            const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
+            const promise = supabase.functions.invoke('get-map-data', {
               body: {
                 country: 'Canada',
                 center: centerLocation,
@@ -333,16 +333,20 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
                 pageNumber: i,
               },
             });
-
-            if (pageError) throw pageError;
-            if (pageData.error) throw new Error(pageData.error);
-
-            if (pageData.data) {
-              fetchedPoints = [...fetchedPoints, ...pageData.data];
-              setLoadingProgress(fetchedPoints.length);
-            }
-            await new Promise(resolve => setTimeout(resolve, 50)); 
+            pagePromises.push(promise);
           }
+
+          const pageResults = await Promise.all(pagePromises);
+
+          let fetchedPoints: any[] = [];
+          for (const result of pageResults) {
+            if (result.error) throw result.error;
+            if (result.data.error) throw new Error(result.data.error);
+            if (result.data.data) {
+              fetchedPoints = [...fetchedPoints, ...result.data.data];
+            }
+          }
+          setLoadingProgress(fetchedPoints.length);
           
           console.log(`FETCH COMPLETE: Fetched ${fetchedPoints.length} total points.`);
           setAllCanadaPoints(fetchedPoints);
