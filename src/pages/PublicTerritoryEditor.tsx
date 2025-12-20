@@ -250,43 +250,34 @@ const PublicTerritoryEditor: React.FC = () => {
     setLoading(true);
     const loadingToastId = toast.loading("Saving territory changes...");
     try {
-      const { count: totalCount, error: countError } = await supabase
+      const { data: idsToDelete, error: countError } = await supabase
         .from('installer_zip_codes')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('installer_id', installerId);
 
-      if (countError) throw new Error(`Failed to count territories: ${countError.message}`);
+      if (countError) throw new Error(`Failed to fetch territory IDs for deletion: ${countError.message}`);
 
-      if (totalCount && totalCount > 0) {
+      if (idsToDelete && idsToDelete.length > 0) {
+        const totalCount = idsToDelete.length;
         let deletedCount = 0;
+        const batchSize = 500;
+        
         toast.info(`Clearing ${totalCount.toLocaleString()} existing territories... 0%`, { id: loadingToastId });
 
-        while (deletedCount < totalCount) {
-          const { data, error: functionError } = await supabase.functions.invoke('delete-public-territory-batch', {
-            body: { installerId, token },
-          });
-
-          if (functionError) throw new Error(`Failed to invoke delete function: ${functionError.message}`);
-          if (data.error) throw new Error(`Error from delete function: ${data.error}`);
+        for (let i = 0; i < totalCount; i += batchSize) {
+          const batch = idsToDelete.slice(i, i + batchSize).map(r => r.id);
           
-          const batchDeletedCount = data.deletedCount;
-          if (batchDeletedCount === null) throw new Error("Batch delete returned an unexpected null value.");
-          if (batchDeletedCount === 0) break;
+          const { error: deleteError } = await supabase
+            .from('installer_zip_codes')
+            .delete()
+            .in('id', batch);
 
-          deletedCount += batchDeletedCount;
+          if (deleteError) throw new Error(`Failed to delete batch: ${deleteError.message}`);
+
+          deletedCount += batch.length;
           const progress = Math.round((deletedCount / totalCount) * 100);
           toast.info(`Clearing territories... ${progress}% (${deletedCount.toLocaleString()} / ${totalCount.toLocaleString()})`, { id: loadingToastId });
         }
-        
-        const { error: auditError } = await supabase
-          .from('territory_audit_log')
-          .insert({
-            installer_id: installerId,
-            change_type: 'assignment_bulk_deleted',
-            summary: `Bulk deleted ${totalCount} territory assignments for installer ${installerId} via public link.`
-          });
-
-        if (auditError) console.warn("Failed to create summary audit log for bulk delete:", auditError);
       }
 
       const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
