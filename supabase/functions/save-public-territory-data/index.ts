@@ -71,15 +71,36 @@ serve(async (req) => {
     const currentZipSet = new Set((allCurrentZipsData || []).map(z => z.zip_code));
     const finalZipSet = new Set(zipCodes.map((z: any) => z.zipCode));
 
-    // OPTIMIZATION: If the final set is empty, do a single bulk delete.
+    // If the final set is empty, we need to delete all existing territories for this installer.
     if (finalZipSet.size === 0 && currentZipSet.size > 0) {
-      const { error: deleteError } = await supabaseAdmin
-        .from('installer_zip_codes')
-        .delete()
-        .eq('installer_id', installerId);
+      let hasMoreToDelete = true;
+      const CHUNK_SIZE = 500; // Define chunk size for deletion
+      while (hasMoreToDelete) {
+        // Find a chunk of records to delete
+        const { data: idsToDelete, error: fetchIdsError } = await supabaseAdmin
+          .from('installer_zip_codes')
+          .select('id')
+          .eq('installer_id', installerId)
+          .limit(CHUNK_SIZE);
 
-      if (deleteError) {
-        throw new Error(`Failed to clear all territories: ${deleteError.message}`);
+        if (fetchIdsError) {
+          throw new Error(`Failed to fetch territories for deletion: ${fetchIdsError.message}`);
+        }
+
+        if (idsToDelete && idsToDelete.length > 0) {
+          const idList = idsToDelete.map(item => item.id);
+          const { error: deleteError } = await supabaseAdmin
+            .from('installer_zip_codes')
+            .delete()
+            .in('id', idList);
+
+          if (deleteError) {
+            throw new Error(`Failed to delete a chunk of territories: ${deleteError.message}`);
+          }
+        } else {
+          // No more records to delete
+          hasMoreToDelete = false;
+        }
       }
     } else {
       // 2. Determine which zips to delete
