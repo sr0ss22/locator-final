@@ -292,37 +292,24 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           }
 
           const totalPages = Math.ceil(totalPoints / FETCH_BATCH_SIZE);
-          const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
-
-          const promises = pageNumbers.map(pageNumber => 
-            supabase.functions.invoke('get-map-data', {
+          let fetchedPoints: any[] = [];
+          for (let i = 1; i <= totalPages; i++) {
+            const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
               body: {
                 country: 'Canada',
                 center: centerLocation,
                 radius: radiusMeters,
                 pageSize: FETCH_BATCH_SIZE,
-                pageNumber,
+                pageNumber: i,
               },
-            })
-          );
-
-          let fetchedCount = 0;
-          promises.forEach(p => {
-            p.then(result => {
-              fetchedCount += result.data?.data?.length || 0;
-              setLoadingProgress(fetchedCount);
             });
-          });
-
-          const results = await Promise.all(promises);
-
-          let allPoints: any[] = [];
-          for (const result of results) {
-            if (result.error) throw result.error;
-            if (result.data.error) throw new Error(result.data.error);
-            allPoints = [...allPoints, ...(result.data.data || [])];
+            if (pageError) throw pageError;
+            if (pageData.error) throw new Error(pageData.error);
+            
+            fetchedPoints = [...fetchedPoints, ...(pageData.data || [])];
+            setLoadingProgress(fetchedPoints.length);
           }
-          setAllCanadaPoints(allPoints);
+          setAllCanadaPoints(fetchedPoints);
 
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
