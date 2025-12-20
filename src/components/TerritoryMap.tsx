@@ -235,7 +235,7 @@ const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: n
       <p className="font-semibold text-lg mb-2">
         {stage === 'counting' ? 'Calculating...' : stage === 'fetching' ? 'Fetching Territories...' : 'Rendering Territories...'}
       </p>
-      {stage !== 'counting' && (
+      {stage === 'rendering' && (
         <>
           <Progress value={total > 0 ? (progress / total) * 100 : 0} className="w-full" />
           <p className="text-sm text-gray-500 mt-2">{progress.toLocaleString()} / {total.toLocaleString()}</p>
