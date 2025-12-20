@@ -228,59 +228,15 @@ const DynamicPointsLayer = ({
   country, 
   onZipCodeClick, 
   highlightedZipCodes,
-  centerLocation,
-  radius 
 }: {
   country: 'USA' | 'Canada';
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   highlightedZipCodes: Map<string, 'green' | 'orange'>;
-  centerLocation?: { lat: number | null; lng: number | null };
-  radius?: number | 'all';
 }) => {
   const [points, setPoints] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const map = useMap();
   const currentFetchId = useRef(0);
-
-  const fetchAllPointsInRadius = useCallback(async (fetchId: number) => {
-    if (!centerLocation?.lat || !centerLocation?.lng || !radius || radius === 'all') {
-      setPoints([]);
-      return;
-    }
-
-    setLoading(true);
-    setPoints([]);
-    console.log(`[TerritoryMap Debug] Starting single fetch for radius ${radius}km around`, centerLocation);
-
-    const radiusMeters = radius * 1000;
-
-    try {
-      const { data, error } = await supabase.functions.invoke('get-territories-in-radius', {
-        body: { 
-          country, 
-          center: centerLocation, 
-          radius: radiusMeters 
-        },
-      });
-      console.log(`[TerritoryMap Debug] Single fetch RPC returned ${data?.data?.length || 0} points. Error:`, error);
-
-      if (fetchId !== currentFetchId.current) return;
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-
-      setPoints(data.data || []);
-      
-    } catch (err: any) {
-      if (fetchId === currentFetchId.current) {
-        console.error("[TerritoryMap Debug] Error fetching all map data in radius:", err);
-        toast.error("Could not load map data.");
-      }
-    } finally {
-      if (fetchId === currentFetchId.current) {
-        setLoading(false);
-      }
-    }
-  }, [map, country, centerLocation, radius]);
 
   const fetchDataForBounds = useCallback(async (fetchId: number) => {
     setLoading(true);
@@ -311,31 +267,18 @@ const DynamicPointsLayer = ({
     }
   }, [map, country]);
 
-  useEffect(() => {
-    currentFetchId.current += 1;
-    const fetchId = currentFetchId.current;
-
-    if (country === 'Canada' && centerLocation && radius && radius !== 'all') {
-      fetchAllPointsInRadius(fetchId);
-    } else if (country === 'Canada') {
-      fetchDataForBounds(fetchId);
-    } else {
-      setPoints([]);
-    }
-  }, [country, centerLocation, radius, fetchAllPointsInRadius, fetchDataForBounds]);
-
   useMapEvents({
+    load: () => {
+      currentFetchId.current += 1;
+      fetchDataForBounds(currentFetchId.current);
+    },
     zoomend: () => {
-      if (!centerLocation || !radius || radius === 'all') {
-        currentFetchId.current += 1;
-        fetchDataForBounds(currentFetchId.current);
-      }
+      currentFetchId.current += 1;
+      fetchDataForBounds(currentFetchId.current);
     },
     moveend: () => {
-      if (!centerLocation || !radius || radius === 'all') {
-        currentFetchId.current += 1;
-        fetchDataForBounds(currentFetchId.current);
-      }
+      currentFetchId.current += 1;
+      fetchDataForBounds(currentFetchId.current);
     }
   });
 
@@ -617,8 +560,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           country="Canada"
           onZipCodeClick={onZipCodeClick} 
           highlightedZipCodes={highlightedZipCodes}
-          centerLocation={centerLocation}
-          radius={currentDisplayRadius}
         />
       ) : (
         filteredGeoJsonData && (
