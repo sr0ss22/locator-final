@@ -26,6 +26,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    // Call the single, powerful database function that returns all data as JSON
     const { data, error } = await supabaseAdmin.rpc('get_all_canadian_points_in_radius_as_json', {
       center_lat,
       center_lng,
