@@ -276,7 +276,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         setTotalPointsToLoad(0);
 
         try {
-          const radiusMeters = (currentDisplayRadius as number) * 1609.34;
+          const radiusMeters = (currentDisplayRadius as number) * 1000; // Correctly use km for Canada
           
           const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
             body: { country: 'Canada', center: centerLocation, radius: radiusMeters },
@@ -292,24 +292,33 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           }
 
           const totalPages = Math.ceil(totalPoints / FETCH_BATCH_SIZE);
-          let fetchedPoints: any[] = [];
+          let allPoints: any[] = [];
+
           for (let i = 1; i <= totalPages; i++) {
-            const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
-              body: {
-                country: 'Canada',
-                center: centerLocation,
-                radius: radiusMeters,
-                pageSize: FETCH_BATCH_SIZE,
-                pageNumber: i,
-              },
-            });
-            if (pageError) throw pageError;
-            if (pageData.error) throw new Error(pageData.error);
-            
-            fetchedPoints = [...fetchedPoints, ...(pageData.data || [])];
-            setLoadingProgress(fetchedPoints.length);
+            try {
+              const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
+                body: {
+                  country: 'Canada',
+                  center: centerLocation,
+                  radius: radiusMeters,
+                  pageSize: FETCH_BATCH_SIZE,
+                  pageNumber: i,
+                },
+              });
+
+              if (pageError) throw pageError;
+              if (pageData.error) throw new Error(pageData.error);
+
+              if (pageData.data) {
+                allPoints = [...allPoints, ...pageData.data];
+                setLoadingProgress(allPoints.length);
+              }
+            } catch (err) {
+              console.error(`Error fetching page ${i} of Canadian postal codes:`, err);
+              toast.error(`Failed to load page ${i}/${totalPages}. Data may be incomplete.`);
+            }
           }
-          setAllCanadaPoints(fetchedPoints);
+          setAllCanadaPoints(allPoints);
 
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
