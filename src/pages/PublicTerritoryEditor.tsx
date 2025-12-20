@@ -260,15 +260,36 @@ const PublicTerritoryEditor: React.FC = () => {
       console.log(`Found ${totalCount} existing territories to delete.`);
 
       if (totalCount && totalCount > 0) {
-        console.log("ACTION 2 & 3: Calling RPC to fetch and delete all territories in a single server-side transaction.");
-        toast.info(`Clearing ${totalCount.toLocaleString()} existing territories...`, { id: loadingToastId });
+        let deletedCount = 0;
+        const batchSize = 1000;
         
-        const { error: rpcError } = await supabase.rpc('delete_installer_territories_in_batches', {
-          _installer_id: installerId
-        });
+        toast.info(`Clearing ${totalCount.toLocaleString()} existing territories... 0%`, { id: loadingToastId });
 
-        if (rpcError) throw new Error(`Failed to clear territories: ${rpcError.message}`);
-        console.log("Territories successfully cleared on the server.");
+        while (deletedCount < totalCount) {
+          console.log(`ACTION 2: Fetching batch of territories to delete... (offset: ${deletedCount})`);
+          const { data: batch, error: fetchError } = await supabase
+            .from('installer_zip_codes')
+            .select('id')
+            .eq('installer_id', installerId)
+            .limit(batchSize);
+
+          if (fetchError) throw new Error(`Failed to fetch batch for deletion: ${fetchError.message}`);
+          if (!batch || batch.length === 0) break;
+
+          const idsToDelete = batch.map(r => r.id);
+          console.log(`ACTION 3: Deleting batch of ${idsToDelete.length} territories...`);
+          
+          const { error: deleteError } = await supabase.functions.invoke('delete-territories', {
+            body: { ids: idsToDelete, installerId, token },
+          });
+          
+          if (deleteError) throw new Error(`Failed to delete batch: ${deleteError.message}`);
+
+          deletedCount += idsToDelete.length;
+          const progress = Math.round((deletedCount / totalCount) * 100);
+          toast.info(`Clearing territories... ${progress}% (${deletedCount.toLocaleString()} / ${totalCount.toLocaleString()})`, { id: loadingToastId });
+        }
+        console.log("All existing territories cleared.");
       }
 
       const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
@@ -326,30 +347,44 @@ const PublicTerritoryEditor: React.FC = () => {
     setLoading(true);
     const isCanada = installerCountry === 'Canada';
     const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
-    const loadingToastId = toast.loading(`Finding territories within ${isCanada ? '35km' : '25 miles'}...`);
-
+    
+    let loadingToastId: string | number | undefined;
+  
     try {
       let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
-
+  
       if (isCanada) {
-        const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
-          center_lat: currentInstaller.latitude,
-          center_lng: currentInstaller.longitude,
-          radius_meters: radiusMeters,
+        loadingToastId = toast.loading("Fetching all territories within 35km radius...");
+
+        const { data, error } = await supabase.functions.invoke('get-territories-in-radius', {
+          body: { 
+            country: 'Canada', 
+            center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude }, 
+            radius: radiusMeters 
+          },
         });
 
         if (error) {
           throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
         }
+        if (data.error) {
+          throw new Error(`Failed to fetch Canadian postal codes: ${data.error}`);
+        }
 
-        zipsToApprove = (data || []).map((p: any) => ({
+        if (!data.data || data.data.length === 0) {
+          toast.info("No Canadian postal codes found within the 35km radius.", { id: loadingToastId });
+          setLoading(false);
+          return;
+        }
+
+        zipsToApprove = (data.data || []).map((p: any) => ({
           zipCode: p.POSTAL_CODE,
           stateProvince: p.PROVINCE_ABBR,
           centroid_latitude: p.LATITUDE,
           centroid_longitude: p.LONGITUDE,
         }));
-
       } else { // USA
+        loadingToastId = toast.loading(`Finding territories within 25 miles...`);
         toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
         const radiusKm = 25 * 1.60934; // 25 miles in km
@@ -378,9 +413,7 @@ const PublicTerritoryEditor: React.FC = () => {
           }
         });
       }
-
-      toast.info(`Found ${zipsToApprove.length} territories. Merging and saving...`, { id: loadingToastId });
-
+  
       const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
       zipsToApprove.forEach(zipInfo => {
         newSelectedMap.set(zipInfo.zipCode, {
@@ -389,21 +422,16 @@ const PublicTerritoryEditor: React.FC = () => {
         });
       });
       const finalListOfZips = Array.from(newSelectedMap.values());
-
-      toast.info(`Saving ${finalListOfZips.length} total territories...`, { id: loadingToastId });
-
-      const { error: saveError } = await supabase.functions.invoke('save-public-territory-data', {
-        body: { installerId, token, zipCodes: finalListOfZips },
-      });
-      if (saveError) throw new Error(saveError.message || "An unknown error occurred during save.");
-
-      toast.success("Territories saved successfully! Refreshing data...", { id: loadingToastId });
-      await loadAllData();
-      toast.success("Auto-approve complete. Data is up to date.", { id: loadingToastId, duration: 4000 });
-
+  
+      await handleSubmit(finalListOfZips);
+  
     } catch (err: any) {
       console.error("Error during auto-approve:", err);
-      toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
+      if (loadingToastId) {
+        toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
+      } else {
+        toast.error(`Auto-approve failed: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
