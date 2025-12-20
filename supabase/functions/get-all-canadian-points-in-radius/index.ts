@@ -44,35 +44,39 @@ serve(async (req) => {
       });
     }
 
-    // 2. Create parallel requests for all pages
+    // 2. Fetch all pages, but in controlled parallel chunks to avoid overwhelming the server
     const PAGE_SIZE = 1000;
     const totalPages = Math.ceil(count / PAGE_SIZE);
-    const promises = [];
-
-    for (let page = 1; page <= totalPages; page++) {
-      const promise = supabaseAdmin
-        .rpc('get_all_canadian_points_in_radius', {
-          center_lat,
-          center_lng,
-          radius_meters,
-          page_size: PAGE_SIZE,
-          page_number: page,
-        });
-      promises.push(promise);
-    }
-
-    // 3. Execute all requests in parallel
-    const results = await Promise.all(promises);
-
-    // 4. Combine results and check for errors
+    const CONCURRENCY_LIMIT = 10; // Process 10 pages in parallel at a time
     let allPoints: any[] = [];
-    for (const result of results) {
-      if (result.error) {
-        // Log the error but don't throw, to allow other pages to succeed
-        console.error(`Error fetching a page of results: ${result.error.message}`);
+
+    for (let i = 0; i < totalPages; i += CONCURRENCY_LIMIT) {
+      const promises = [];
+      const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalPages);
+      
+      for (let j = i; j < chunkEnd; j++) {
+        const page = j + 1;
+        const promise = supabaseAdmin
+          .rpc('get_all_canadian_points_in_radius', {
+            center_lat,
+            center_lng,
+            radius_meters,
+            page_size: PAGE_SIZE,
+            page_number: page,
+          });
+        promises.push(promise);
       }
-      if (result.data) {
-        allPoints = allPoints.concat(result.data);
+
+      const results = await Promise.all(promises);
+
+      for (const result of results) {
+        if (result.error) {
+          // Log the error but continue, so we get as much data as possible
+          console.error(`Error fetching a page of results: ${result.error.message}`);
+        }
+        if (result.data) {
+          allPoints = allPoints.concat(result.data);
+        }
       }
     }
 
