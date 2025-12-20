@@ -502,6 +502,33 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     loadBaseGeoJson();
   }, [isCanada, allGeoJsonData]);
 
+  const filteredGeoJsonData = useMemo(() => {
+    if (isCanada || !allGeoJsonData || !centerLocation?.lat || !centerLocation.lng || currentDisplayRadius === 'all') {
+      return allGeoJsonData;
+    }
+
+    const radius = typeof currentDisplayRadius === 'number' ? currentDisplayRadius : DEFAULT_DISPLAY_RADIUS_MILES;
+
+    const filteredFeatures = allGeoJsonData.features.filter((feature: any) => {
+      const centroid = getCentroid(feature);
+      if (centroid.lat && centroid.lng) {
+        const distance = calculateDistance(
+          centerLocation.lat!,
+          centerLocation.lng!,
+          centroid.lat,
+          centroid.lng
+        );
+        return distance <= radius;
+      }
+      return false;
+    });
+
+    return {
+      ...allGeoJsonData,
+      features: filteredFeatures,
+    };
+  }, [allGeoJsonData, centerLocation, currentDisplayRadius, isCanada]);
+
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     const isHighlighted = highlightedZipCodes.get(zipCode);
     const isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
@@ -632,11 +659,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           radius={currentDisplayRadius}
         />
       ) : (
-        allGeoJsonData && (
+        filteredGeoJsonData && (
           <GeoJSON
             key={geoJsonStyleKey}
             ref={geoJsonLayerRef}
-            data={allGeoJsonData as any}
+            data={filteredGeoJsonData as any}
             style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))}
             onEachFeature={onEachFeature}
             pane="polygons"
