@@ -250,8 +250,48 @@ const PublicTerritoryEditor: React.FC = () => {
     setLoading(true);
     const loadingToastId = toast.loading("Saving territory changes...");
     try {
+      // --- NEW BATCH DELETE LOGIC ---
+      toast.info("Clearing existing territories...", { id: loadingToastId });
+      const { count: totalCount, error: countError } = await supabase
+        .from('installer_zip_codes')
+        .select('id', { count: 'exact', head: true })
+        .eq('installer_id', installerId);
+
+      if (countError) throw new Error(`Failed to count territories: ${countError.message}`);
+
+      if (totalCount && totalCount > 0) {
+        let deletedCount = 0;
+        const batchSize = 1000;
+        
+        while (deletedCount < totalCount) {
+          const { data: batch, error: fetchError } = await supabase
+            .from('installer_zip_codes')
+            .select('id')
+            .eq('installer_id', installerId)
+            .limit(batchSize);
+
+          if (fetchError) throw new Error(`Failed to fetch batch for deletion: ${fetchError.message}`);
+          if (!batch || batch.length === 0) break;
+
+          const idsToDelete = batch.map(r => r.id);
+          const { error: deleteError } = await supabase
+            .from('installer_zip_codes')
+            .delete()
+            .in('id', idsToDelete);
+          
+          if (deleteError) throw new Error(`Failed to delete batch: ${deleteError.message}`);
+
+          deletedCount += idsToDelete.length;
+          toast.info(`Clearing territories... ${deletedCount.toLocaleString()} / ${totalCount.toLocaleString()}`, { id: loadingToastId });
+        }
+      }
+      // --- END BATCH DELETE LOGIC ---
+
+      const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
+      toast.info(`Saving ${territoriesToProcess.length} new territory assignments...`, { id: loadingToastId });
+
       const { data: functionData, error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
-        body: { installerId, token, zipCodes: selectedMapZipCodes },
+        body: { installerId, token, zipCodes: territoriesToProcess },
       });
 
       if (territoryError) {

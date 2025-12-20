@@ -79,17 +79,9 @@ serve(async (req) => {
     }
     // --- End Authorization Logic ---
 
-    // 1. Call the database function to delete all existing territories for this installer.
-    // This is much more efficient than doing it in a loop inside the edge function.
-    const { error: rpcError } = await supabaseAdmin.rpc('delete_installer_territories_in_batches', {
-      _installer_id: installerId,
-    });
+    // The deletion logic has been moved to the client to handle large datasets and provide progress feedback.
+    // This function now only handles the insertion of new territories.
 
-    if (rpcError) {
-      throw new Error(`Failed to delete existing territories: ${rpcError.message}`);
-    }
-
-    // 2. If the incoming zipCodes array is not empty, insert the new territories in batches.
     if (zipCodes.length > 0) {
         const zipsToInsert = zipCodes.map((item: any) => ({
             installer_id: installerId,
@@ -116,11 +108,9 @@ serve(async (req) => {
     })
   } catch (error) {
     console.error('Edge function error:', error); // Server-side log
-    // Create a more detailed error response for the client
     const errorResponse = {
       message: error.message,
       stack: error.stack,
-      // Include details if it's a Supabase error object
       details: (error as any).details,
       code: (error as any).code,
       hint: (error as any).hint,
