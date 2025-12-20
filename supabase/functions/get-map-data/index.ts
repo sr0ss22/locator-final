@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { country, center, radius, pageSize, pageNumber } = await req.json()
+    const { country, center, radius } = await req.json()
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -35,8 +35,6 @@ serve(async (req) => {
         center_lat: center.lat,
         center_lng: center.lng,
         radius_meters: radius,
-        page_size: pageSize || 20000,
-        page_number: pageNumber || 1,
       };
     } else {
       // Placeholder for US or other countries

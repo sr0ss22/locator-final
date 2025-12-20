@@ -38,7 +38,6 @@ interface TerritoryMapProps {
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
-const FETCH_BATCH_SIZE = 1000;
 const RENDER_BATCH_SIZE = 2000;
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
@@ -221,9 +220,18 @@ const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: n
   <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-[1000]">
     <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg w-64">
       <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-4" />
-      <p className="font-semibold text-lg mb-2">{stage === 'fetching' ? 'Fetching Territories...' : 'Rendering Territories...'}</p>
-      <Progress value={total > 0 ? (progress / total) * 100 : 0} className="w-full" />
-      <p className="text-sm text-gray-500 mt-2">{progress.toLocaleString()} / {total.toLocaleString()}</p>
+      <p className="font-semibold text-lg mb-2">
+        {stage === 'fetching' ? 'Fetching All Territories...' : 'Rendering Territories...'}
+      </p>
+      {stage === 'rendering' && (
+        <>
+          <Progress value={total > 0 ? (progress / total) * 100 : 0} className="w-full" />
+          <p className="text-sm text-gray-500 mt-2">{progress.toLocaleString()} / {total.toLocaleString()}</p>
+        </>
+      )}
+      {stage === 'fetching' && (
+        <p className="text-sm text-gray-500 mt-2">This may take a moment...</p>
+      )}
     </div>
   </div>
 );
@@ -248,7 +256,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   
   const [allCanadaPoints, setAllCanadaPoints] = useState<any[]>([]);
   const [renderedCanadaPoints, setRenderedCanadaPoints] = useState<any[]>([]);
-  const [loadingStage, setLoadingStage] = useState<'idle' | 'counting' | 'fetching' | 'rendering' | 'complete'>('idle');
+  const [loadingStage, setLoadingStage] = useState<'idle' | 'fetching' | 'rendering' | 'complete'>('idle');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [totalPointsToLoad, setTotalPointsToLoad] = useState(0);
   const lastSearchKey = useRef<string | null>(null);
@@ -283,52 +291,26 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         setRenderedCanadaPoints([]);
         setLoadingProgress(0);
         setTotalPointsToLoad(0);
-        setLoadingStage('counting');
+        setLoadingStage('fetching');
 
         try {
           const radiusMeters = (currentDisplayRadius as number) * 1000;
           
-          // Phase 1: Get total count
-          const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
-            body: { country: 'Canada', center: centerLocation, radius: radiusMeters },
+          const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
+            body: {
+              country: 'Canada',
+              center: centerLocation,
+              radius: radiusMeters,
+            },
           });
-          if (countError) throw countError;
-          if (countData.error) throw new Error(countData.error);
-          
-          const totalPoints = countData.count;
-          setTotalPointsToLoad(totalPoints);
-          if (totalPoints === 0) {
-            setLoadingStage('complete');
-            return;
-          }
 
-          // Phase 2: Fetch all data in chunks
-          setLoadingStage('fetching');
-          const totalPages = Math.ceil(totalPoints / FETCH_BATCH_SIZE);
-          let fetchedPoints: any[] = [];
+          if (pageError) throw pageError;
+          if (pageData.error) throw new Error(pageData.error);
 
-          for (let i = 1; i <= totalPages; i++) {
-            const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
-              body: {
-                country: 'Canada',
-                center: centerLocation,
-                radius: radiusMeters,
-                pageSize: FETCH_BATCH_SIZE,
-                pageNumber: i,
-              },
-            });
-
-            if (pageError) throw pageError;
-            if (pageData.error) throw new Error(pageData.error);
-
-            if (pageData.data) {
-              fetchedPoints = [...fetchedPoints, ...pageData.data];
-              setLoadingProgress(fetchedPoints.length);
-            }
-            await new Promise(resolve => setTimeout(resolve, 50)); 
-          }
+          const fetchedPoints = pageData.data || [];
+          setTotalPointsToLoad(fetchedPoints.length);
           setAllCanadaPoints(fetchedPoints);
-          setLoadingStage('rendering'); // Move to rendering phase
+          setLoadingStage('rendering');
 
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
