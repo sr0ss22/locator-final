@@ -79,14 +79,35 @@ serve(async (req) => {
     }
     // --- End Authorization Logic ---
 
-    // 1. Delete ALL existing territories for this installer in a single, efficient operation.
-    const { error: deleteError } = await supabaseAdmin
-      .from('installer_zip_codes')
-      .delete()
-      .eq('installer_id', installerId);
+    // 1. Delete ALL existing territories for this installer in batches to prevent timeouts.
+    let hasMoreToDelete = true;
+    const DELETE_CHUNK_SIZE = 1000; // A safe batch size
+    while (hasMoreToDelete) {
+        // Select a batch of primary keys to delete
+        const { data: idsToDelete, error: fetchIdsError } = await supabaseAdmin
+            .from('installer_zip_codes')
+            .select('id') // Select only the primary key
+            .eq('installer_id', installerId)
+            .limit(DELETE_CHUNK_SIZE);
 
-    if (deleteError) {
-      throw new Error(`Failed to delete existing territories: ${deleteError.message}`);
+        if (fetchIdsError) {
+            throw new Error(`Failed to fetch territories for deletion: ${fetchIdsError.message}`);
+        }
+
+        if (idsToDelete && idsToDelete.length > 0) {
+            const idList = idsToDelete.map(item => item.id);
+            // Delete the specific batch of rows by their primary keys
+            const { error: deleteError } = await supabaseAdmin
+                .from('installer_zip_codes')
+                .delete()
+                .in('id', idList);
+            if (deleteError) {
+                throw new Error(`Failed to delete a chunk of territories: ${deleteError.message}`);
+            }
+        } else {
+            // No more rows to delete, exit the loop
+            hasMoreToDelete = false;
+        }
     }
 
     // 2. If the incoming zipCodes array is not empty, insert the new territories in batches.
