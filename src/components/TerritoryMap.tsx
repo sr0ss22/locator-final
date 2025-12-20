@@ -159,18 +159,29 @@ function MapInteractionHandler({
         const finalRadiusMeters = currentDrawCircleRef.current.getRadius();
         
         if (isCanada) {
-          const { data, error } = await supabase.rpc('get_canadian_fsa_in_radius', {
-            center_lat: finalCenter.lat,
-            center_lng: finalCenter.lng,
-            radius_meters: finalRadiusMeters,
-          });
-
-          if (error) {
-            toast.error("Failed to get postal codes for selection.");
-            console.error(error);
-          } else {
-            const selectedZips = (data || []).map((p: any) => ({ zipCode: p.POSTAL_CODE, stateProvince: p.PROVINCE_ABBR }));
+          const loadingToastId = toast.loading("Fetching all postal codes in selected area...");
+          try {
+            const { data, error } = await supabase.functions.invoke('get-all-canadian-points-in-radius', {
+              body: {
+                center_lat: finalCenter.lat,
+                center_lng: finalCenter.lng,
+                radius_meters: finalRadiusMeters,
+              }
+            });
+    
+            if (error) {
+              throw error;
+            }
+            if (data.error) {
+              throw new Error(data.error);
+            }
+    
+            const selectedZips = (data.data || []).map((p: any) => ({ zipCode: p.POSTAL_CODE, stateProvince: p.PROVINCE_ABBR }));
             onBulkSelectionCompleteRef.current(selectedZips);
+            toast.success(`Found ${selectedZips.length} postal codes.`, { id: loadingToastId });
+          } catch (err: any) {
+            toast.error(`Failed to get postal codes for selection: ${err.message}`, { id: loadingToastId });
+            console.error(err);
           }
         } else if (geoJsonData) {
           const selectedZips: Array<{ zipCode: string, stateProvince: string }> = [];
