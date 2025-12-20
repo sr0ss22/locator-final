@@ -469,18 +469,25 @@ const EditInstallerPage: React.FC = () => {
         });
 
         if (territoryError) {
-          // Log the full error object to the console for detailed debugging
-          console.error("Detailed error from save-public-territory-data function:", territoryError);
-          
-          // Try to extract a more specific message from the error context if available
-          const functionErrorDetails = territoryError.context?.details;
-          let errorMessage = territoryError.message;
-          if (functionErrorDetails) {
-            errorMessage = functionErrorDetails.message || errorMessage;
-            console.error("Edge function error details:", functionErrorDetails);
+          console.error("Raw error from save-public-territory-data function:", territoryError);
+          let detailedMessage = territoryError.message;
+          if (territoryError.context && typeof territoryError.context.json === 'function') {
+            try {
+              const errorDetails = await territoryError.context.json();
+              console.error("Detailed error JSON from edge function:", errorDetails);
+              if (errorDetails.details && errorDetails.details.message) {
+                detailedMessage = `Edge Function Error: ${errorDetails.details.message}`;
+                if (errorDetails.details.hint) {
+                  detailedMessage += ` Hint: ${errorDetails.details.hint}`;
+                }
+              } else if (errorDetails.error) {
+                detailedMessage = errorDetails.error;
+              }
+            } catch (e) {
+              console.error("Could not parse detailed error JSON from edge function response.", e);
+            }
           }
-          
-          throw new Error(`Territory Save Error: ${errorMessage}`);
+          throw new Error(`Territory Save Error: ${detailedMessage}`);
         }
       }
       
@@ -719,44 +726,30 @@ const EditInstallerPage: React.FC = () => {
     setLoading(true);
     const isCanada = installerCountry === 'Canada';
     const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
-    
-    let loadingToastId: string | number | undefined;
-  
+    const loadingToastId = toast.loading(`Finding territories within ${isCanada ? '35km' : '25 miles'}...`);
+
     try {
       let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
-  
-      if (isCanada) {
-        loadingToastId = toast.loading("Fetching all territories within 35km radius...");
 
-        const { data, error } = await supabase.functions.invoke('get-territories-in-radius', {
-          body: { 
-            country: 'Canada', 
-            center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude }, 
-            radius: radiusMeters 
-          },
+      if (isCanada) {
+        const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
+          center_lat: currentInstaller.latitude,
+          center_lng: currentInstaller.longitude,
+          radius_meters: radiusMeters,
         });
 
         if (error) {
           throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
         }
-        if (data.error) {
-          throw new Error(`Failed to fetch Canadian postal codes: ${data.error}`);
-        }
 
-        if (!data.data || data.data.length === 0) {
-          toast.info("No Canadian postal codes found within the 35km radius.", { id: loadingToastId });
-          setLoading(false);
-          return;
-        }
-
-        zipsToApprove = (data.data || []).map((p: any) => ({
+        zipsToApprove = (data || []).map((p: any) => ({
           zipCode: p.POSTAL_CODE,
           stateProvince: p.PROVINCE_ABBR,
           centroid_latitude: p.LATITUDE,
           centroid_longitude: p.LONGITUDE,
         }));
+
       } else { // USA
-        loadingToastId = toast.loading(`Finding territories within 25 miles...`);
         toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
         const radiusKm = 25 * 1.60934; // 25 miles in km
@@ -785,7 +778,9 @@ const EditInstallerPage: React.FC = () => {
           }
         });
       }
-  
+
+      toast.info(`Found ${zipsToApprove.length} territories. Merging and saving...`, { id: loadingToastId });
+
       const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
       zipsToApprove.forEach(zipInfo => {
         newSelectedMap.set(zipInfo.zipCode, {
@@ -794,214 +789,91 @@ const EditInstallerPage: React.FC = () => {
         });
       });
       const finalListOfZips = Array.from(newSelectedMap.values());
-  
-      await handleSubmit(finalListOfZips);
-  
+
+      toast.info(`Saving ${finalListOfZips.length} total territories...`, { id: loadingToastId });
+
+      const { error: saveError } = await supabase.functions.invoke('save-public-territory-data', {
+        body: { installerId, token, zipCodes: finalListOfZips },
+      });
+      if (saveError) throw new Error(saveError.message || "An unknown error occurred during save.");
+
+      toast.success("Territories saved successfully! Refreshing data...", { id: loadingToastId });
+      await loadAllData();
+      toast.success("Auto-approve complete. Data is up to date.", { id: loadingToastId, duration: 4000 });
+
     } catch (err: any) {
       console.error("Error during auto-approve:", err);
-      if (loadingToastId) {
-        toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
-      } else {
-        toast.error(`Auto-approve failed: ${err.message}`);
-      }
+      toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading || sessionLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSayings />
-      </div>
-    );
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-500" /><p className="text-gray-500 ml-2">Loading installer data...</p></div>;
   }
   if (!currentInstaller) {
-    return <div className="min-h-screen flex flex-col items-center justify-center text-gray-500"><p className="text-xl mb-4">Installer not found or an error occurred.</p><Button onClick={() => navigate("/installers")}>Go back to Installers</Button></div>;
+    return <div className="min-h-screen flex flex-col items-center justify-center text-red-500"><p className="text-xl mb-4">Access Denied or Installer Not Found.</p><p>Please check your link and try again.</p></div>;
   }
 
   return (
     <>
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-24">
         <div className="flex items-center justify-between gap-4 mb-8">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" onClick={() => navigate("/locator")}>
-              <Home className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate("/installers")}><ArrowLeft className="h-4 w-4" /></Button>
-            <h1 className="text-2xl font-bold text-gray-700">Edit Installer: {currentInstaller.name}</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            {isAdmin && (
-              <>
-                <Button variant="outline" onClick={handleCopyShareableLink} disabled={loading}>
-                  <Copy className="mr-2 h-4 w-4" /> Copy Sharable Link
-                </Button>
-                <Button variant="outline" onClick={handleClone} disabled={loading}>
-                  <Copy className="mr-2 h-4 w-4" /> Clone
-                </Button>
-              </>
-            )}
-            <Button variant="outline" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" /> Log Out
-            </Button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-700">Territory Editor: {currentInstaller.name}</h1>
+            {currentInstaller.email && <p className="text-md text-gray-500">{currentInstaller.email}</p>}
           </div>
         </div>
         <div className="grid gap-6 py-4">
-          <div className="flex justify-between items-center col-span-full mt-4 mb-2">
-            <h3 className="text-lg font-semibold">Contact & Address Information</h3>
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="is_active"
-                checked={toBoolean(formData.is_active)}
-                onCheckedChange={(checked) => handleCheckboxChange('is_active', checked as boolean)}
-                disabled={!canEdit}
-                className="data-[state=checked]:bg-green-600 data-[state=unchecked]:bg-destructive"
+          <div className="col-span-full mt-6">
+            <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
+            <div className="flex flex-wrap justify-between gap-2 mb-4">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={handleAutoApprove} disabled={loading}>
+                  <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
+                </Button>
+                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
+                <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
+              </div>
+            </div>
+            <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border">
+              <TerritoryMap
+                country={installerCountry}
+                isOpen={true}
+                centerLocation={memoizedCenterLocation}
+                onZipCodeClick={handleMapZipCodeClick}
+                onBulkZipCodeUpdate={handleBulkZipCodeUpdate}
+                selectedZipCodes={selectedMapZipCodes}
+                currentDisplayRadius={mapDisplayRadius}
+                showRadiusCircles={true}
+                territoryStatuses={territoryStatuses}
+                highlightedZipCodes={highlightedZipCodes}
+                isBulkSelecting={bulkActionType !== null}
+                onBulkSelectionComplete={handleBulkSelectionComplete}
               />
-              <Label htmlFor="is_active" className={cn(
-                "font-semibold",
-                toBoolean(formData.is_active) ? 'text-green-700' : 'text-red-700'
-              )}>
-                {toBoolean(formData.is_active) ? 'Active' : 'Inactive'}
-              </Label>
             </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
-            {contactAddressFields.map((key) => (
-              <div key={key} className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor={key} className="text-right">{columnDisplayNames[key] || key.replace(/_/g, ' ')}{requiredFields.includes(key) && <span className="text-red-500 ml-1">*</span>}:</Label>
-                <Input id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className={`col-span-3 ${errors[key] ? 'border-red-500' : ''}`} type="text" disabled={!canEdit} />
-                {errors[key] && <p className="col-span-4 text-right text-red-500 text-sm">{errors[key]}</p>}
-              </div>
-            ))}
-          </div>
-          <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Brands & Skills</h3>
-          <div className="col-span-full">
-            <h4 className="font-medium text-base mb-2">Brands (Level 1)</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {brandCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((item) => (
-                <div key={item.key} className="flex items-center space-x-2">
-                  <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!isAdmin} />
-                  <Label htmlFor={item.key}>{item.label}</Label>
-                </div>
-              ))}
+            <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them. In bulk select mode, click and drag to select multiple ZIP codes.</p>
+            <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
+              <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
+              <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
+                {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
+                <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
+              </RadioGroup>
             </div>
+            <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} onZipCodeClick={handleMapZipCodeClick} mapClickStates={highlightedZipCodes} installerLocation={memoizedCenterLocation} listDisplayRadius={listDisplayRadius} />
           </div>
-          <div className="col-span-full mt-4">
-            <h4 className="font-medium text-base mb-2">Product Skills (Level 2)</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {productSkillCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((item) => (
-                <div key={item.key} className="flex items-center space-x-2">
-                  <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!isAdmin} />
-                  <Label htmlFor={item.key}>{item.label}</Label>
-                </div>
-              ))}
-            </div>
-          </div>
-          <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Certifications</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 col-span-full">
-            {certificationCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((cert) => {
-              const currentCerts = Array.isArray(formData[cert.dbColumn]) ? formData[cert.dbColumn] : (formData[cert.dbColumn] ? String(formData[cert.dbColumn]).split(', ').filter(Boolean) : []);
-              const isChecked = currentCerts.includes(cert.value);
-              return (
-                <div key={cert.label} className="flex items-center space-x-2">
-                  <Checkbox id={cert.label} name={cert.label} checked={isChecked} onCheckedChange={(checked) => handleCertificationCheckboxChange(cert.dbColumn, cert.value, checked as boolean)} disabled={!isAdmin} />
-                  <Label htmlFor={cert.label}>{cert.label}</Label>
-                </div>
-              );
-            })}
-          </div>
-          <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Other Details</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
-            {otherFields.sort((a, b) => (columnDisplayNames[a]?.localeCompare(columnDisplayNames[b] || b) || a.localeCompare(b))).map((key) => (
-              <div key={key} className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor={key} className="text-right">{columnDisplayNames[key] || key.replace(/_/g, ' ')}:</Label>
-                {key === 'shipment' ? (
-                  <Checkbox id={key} name={key} checked={toBoolean(formData[key])} onCheckedChange={(checked) => handleCheckboxChange(key, checked as boolean)} className="col-span-3" disabled={!canEdit} />
-                ) : (
-                  <Input id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className="col-span-3" type={['installer_vendor_id', 'star_rating'].includes(key) ? 'number' : 'text'} disabled={!canEdit || (['installer_vendor_id', 'star_rating'].includes(key) && !isAdmin)} />
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
-            {textAreaFields.sort((a, b) => (columnDisplayNames[a]?.localeCompare(columnDisplayNames[b] || b) || a.localeCompare(b))).map((key) => (
-              <div key={key} className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor={key} className="text-right pt-2">{columnDisplayNames[key] || key.replace(/_/g, ' ')}:</Label>
-                <Textarea id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className="col-span-3 min-h-[80px]" disabled={!canEdit} />
-              </div>
-            ))}
-          </div>
-          {canEdit ? (
-            currentInstaller?.latitude != null && currentInstaller?.longitude != null ? (
-              <div className="col-span-full mt-6">
-                <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
-                <div className="flex flex-wrap justify-between gap-2 mb-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={loading}><Upload className="h-4 w-4 mr-2" /> Import Territories</Button>
-                    <Button onClick={handleExportInstallerTerritories} disabled={loading}>{loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 mr-2" />} Export Territories</Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={handleAutoApprove} disabled={loading}>
-                      <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
-                    </Button>
-                    <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
-                    <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
-                    <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
-                  </div>
-                </div>
-                <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border mt-4">
-                  <TerritoryMap
-                    country={installerCountry}
-                    isOpen={true}
-                    centerLocation={memoizedCenterLocation}
-                    onZipCodeClick={handleMapZipCodeClick}
-                    onBulkZipCodeUpdate={handleBulkZipCodeUpdate}
-                    selectedZipCodes={selectedMapZipCodes}
-                    currentDisplayRadius={mapDisplayRadius}
-                    showRadiusCircles={true}
-                    territoryStatuses={territoryStatuses}
-                    highlightedZipCodes={highlightedZipCodes}
-                    isBulkSelecting={bulkActionType !== null}
-                    onBulkSelectionComplete={handleBulkSelectionComplete}
-                  />
-                </div>
-                <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them to this installer. In bulk select mode, click and drag to select multiple ZIP codes.</p>
-                <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
-                  <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
-                  <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
-                    {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
-                    <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
-                  </RadioGroup>
-                </div>
-                <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} onZipCodeClick={handleMapZipCodeClick} mapClickStates={highlightedZipCodes} installerLocation={memoizedCenterLocation} listDisplayRadius={listDisplayRadius} />
-              </div>
-            ) : (<div className="col-span-full mt-6 text-center text-gray-500"><p>Map not available: Installer address does not have valid coordinates.</p><p className="text-sm">Please ensure address fields are complete and valid to enable map functionality.</p></div>)
-          ) : (<div className="col-span-full mt-6 text-center text-red-500"><p>You do not have permission to manage territories.</p></div>)}
         </div>
-        {isAdmin && (
-          <Collapsible className="mt-8">
-            <CollapsibleTrigger asChild>
-              <Button variant="outline" className="w-full">
-                <ChevronsUpDown className="h-4 w-4 mr-2" />
-                Toggle Debug Tools
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <DebugPostalCodeChecker />
-            </CollapsibleContent>
-          </Collapsible>
-        )}
       </div>
-      <ImportInstallerTerritoriesModal isOpen={isImportTerritoriesModalOpen} onClose={() => setIsImportTerritoriesModalOpen(false)} onImport={handleImportInstallerTerritories} loading={loading} />
-      {isDirty && canEdit && (
+      {isDirty && (
         <div className="sticky bottom-0 left-0 w-full z-[1000] bg-background/80 backdrop-blur-sm border-t border-border">
           <div className="container mx-auto p-4 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => navigate("/installers")} disabled={loading}>
-              <XCircle className="mr-2 h-4 w-4" /> Cancel
+            <Button variant="outline" onClick={loadAllData} disabled={loading}>
+              <XCircle className="mr-2 h-4 w-4" /> Discard Changes
             </Button>
             <Button onClick={() => handleSubmit()} disabled={loading} className="bg-green-600 hover:bg-green-700">
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Changes
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Territory Changes
             </Button>
           </div>
         </div>
@@ -1010,4 +882,4 @@ const EditInstallerPage: React.FC = () => {
   );
 };
 
-export default EditInstallerPage;
+export default PublicTerritoryEditor;
