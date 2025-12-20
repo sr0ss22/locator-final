@@ -38,7 +38,8 @@ interface TerritoryMapProps {
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
-const FETCH_BATCH_SIZE = 20000;
+const FETCH_BATCH_SIZE = 1000;
+const RENDER_BATCH_SIZE = 2000;
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
   if (!feature || !feature.properties) return '';
@@ -216,11 +217,11 @@ function MapInteractionHandler({
   return null;
 }
 
-const LoadingOverlay = ({ progress, total }: { progress: number, total: number }) => (
+const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: number, stage: 'fetching' | 'rendering' }) => (
   <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-[1000]">
     <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg w-64">
       <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-4" />
-      <p className="font-semibold text-lg mb-2">Loading Territories...</p>
+      <p className="font-semibold text-lg mb-2">{stage === 'fetching' ? 'Fetching Territories...' : 'Rendering Territories...'}</p>
       <Progress value={total > 0 ? (progress / total) * 100 : 0} className="w-full" />
       <p className="text-sm text-gray-500 mt-2">{progress.toLocaleString()} / {total.toLocaleString()}</p>
     </div>
@@ -245,8 +246,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [dataError, setDataError] = useState<string | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   
-  const [canadaPoints, setCanadaPoints] = useState<any[]>([]);
-  const [loadingData, setLoadingData] = useState(false);
+  const [allCanadaPoints, setAllCanadaPoints] = useState<any[]>([]);
+  const [renderedCanadaPoints, setRenderedCanadaPoints] = useState<any[]>([]);
+  const [loadingStage, setLoadingStage] = useState<'idle' | 'counting' | 'fetching' | 'rendering' | 'complete'>('idle');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [totalPointsToLoad, setTotalPointsToLoad] = useState(0);
   const lastSearchKey = useRef<string | null>(null);
@@ -259,6 +261,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
 
+  // Main data loading effect
   useEffect(() => {
     const loadAndRenderData = async () => {
       const searchKey = (isCanada && centerLocation?.lat && centerLocation.lng && currentDisplayRadius !== 'all')
@@ -267,19 +270,25 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
       if (isCanada) {
         if (!searchKey || searchKey === lastSearchKey.current) {
-          if (!searchKey) setCanadaPoints([]);
+          if (!searchKey) {
+            setAllCanadaPoints([]);
+            setRenderedCanadaPoints([]);
+          }
           return;
         }
         lastSearchKey.current = searchKey;
         
-        setLoadingData(true);
-        setCanadaPoints([]);
+        // Reset states for new load
+        setAllCanadaPoints([]);
+        setRenderedCanadaPoints([]);
         setLoadingProgress(0);
         setTotalPointsToLoad(0);
+        setLoadingStage('counting');
 
         try {
           const radiusMeters = (currentDisplayRadius as number) * 1000;
           
+          // Phase 1: Get total count
           const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
             body: { country: 'Canada', center: centerLocation, radius: radiusMeters },
           });
@@ -289,12 +298,14 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           const totalPoints = countData.count;
           setTotalPointsToLoad(totalPoints);
           if (totalPoints === 0) {
-            setLoadingData(false);
+            setLoadingStage('complete');
             return;
           }
 
+          // Phase 2: Fetch all data in chunks
+          setLoadingStage('fetching');
           const totalPages = Math.ceil(totalPoints / FETCH_BATCH_SIZE);
-          let allFetchedPoints: any[] = [];
+          let fetchedPoints: any[] = [];
 
           for (let i = 1; i <= totalPages; i++) {
             const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
@@ -311,23 +322,22 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
             if (pageData.error) throw new Error(pageData.error);
 
             if (pageData.data) {
-              allFetchedPoints = [...allFetchedPoints, ...pageData.data];
-              setLoadingProgress(allFetchedPoints.length);
+              fetchedPoints = [...fetchedPoints, ...pageData.data];
+              setLoadingProgress(fetchedPoints.length);
             }
             await new Promise(resolve => setTimeout(resolve, 50)); 
           }
-          setCanadaPoints(allFetchedPoints);
+          setAllCanadaPoints(fetchedPoints);
+          setLoadingStage('rendering'); // Move to rendering phase
 
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
           toast.error(`Failed to load Canadian postal codes: ${err.message}`);
-        } finally {
-          setLoadingData(false);
+          setLoadingStage('idle');
         }
       } else {
         // USA logic remains the same
-        if (allGeoJsonData) { setLoadingData(false); return; }
-        setLoadingData(true);
+        setLoadingStage('fetching');
         try {
           const geoJsonModule = await import('@/data/us-zip-codes.json');
           const geoJson = geoJsonModule.default;
@@ -347,12 +357,50 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           toast.error(errorMessage, { duration: 10000 });
           setDataError(errorMessage);
         } finally {
-          setLoadingData(false);
+          setLoadingStage('complete');
         }
       }
     };
     loadAndRenderData();
   }, [isCanada, centerLocation, currentDisplayRadius]);
+
+  // Effect for progressive rendering of Canadian points
+  useEffect(() => {
+    if (loadingStage !== 'rendering' || !isCanada || allCanadaPoints.length === 0) {
+      return;
+    }
+  
+    setRenderedCanadaPoints([]); // Start with a clean slate for rendering
+    setLoadingProgress(0);
+    let renderIndex = 0;
+    const animationFrameIdRef = React.createRef<number>();
+  
+    const renderNextBatch = () => {
+      if (renderIndex >= allCanadaPoints.length) {
+        setLoadingStage('complete');
+        return; // All points rendered
+      }
+  
+      const nextBatch = allCanadaPoints.slice(
+        renderIndex,
+        renderIndex + RENDER_BATCH_SIZE
+      );
+  
+      setRenderedCanadaPoints(prev => [...prev, ...nextBatch]);
+      setLoadingProgress(prev => prev + nextBatch.length);
+      renderIndex += RENDER_BATCH_SIZE;
+  
+      animationFrameIdRef.current = requestAnimationFrame(renderNextBatch);
+    };
+  
+    animationFrameIdRef.current = requestAnimationFrame(renderNextBatch);
+  
+    return () => {
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+      }
+    };
+  }, [loadingStage, allCanadaPoints, isCanada]);
 
   const filteredGeoJsonData = useMemo(() => {
     if (isCanada || !allGeoJsonData || !centerLocation?.lat || !centerLocation.lng || currentDisplayRadius === 'all') {
@@ -495,10 +543,10 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       
       <Pane name="polygons" style={{ zIndex: 450 }} />
       
-      {loadingData && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} />}
+      {(loadingStage === 'fetching' || loadingStage === 'rendering') && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} stage={loadingStage} />}
 
-      {isCanada && canadaPoints.length > 0 && (
-        canadaPoints.map(point => {
+      {isCanada && renderedCanadaPoints.length > 0 && (
+        renderedCanadaPoints.map(point => {
           const postalCode = point.POSTAL_CODE;
           const status = highlightedZipCodes.get(postalCode);
           let color = '#3b82f6';
