@@ -39,7 +39,6 @@ interface TerritoryMapProps {
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
 const FETCH_BATCH_SIZE = 20000;
-const RENDER_BATCH_SIZE = 5000;
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
   if (!feature || !feature.properties) return '';
@@ -246,7 +245,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [dataError, setDataError] = useState<string | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   
-  const [allCanadaPoints, setAllCanadaPoints] = useState<any[]>([]);
   const [renderedCanadaPoints, setRenderedCanadaPoints] = useState<any[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -261,17 +259,15 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [onZipCodeClick]);
 
   useEffect(() => {
-    const loadInitialData = async () => {
+    const loadAndRenderData = async () => {
       if (isCanada) {
         if (!centerLocation?.lat || !centerLocation.lng || currentDisplayRadius === 'all') {
-          setAllCanadaPoints([]);
           setRenderedCanadaPoints([]);
           setLoadingData(false);
           return;
         }
         setLoadingData(true);
-        setAllCanadaPoints([]);
-        setRenderedCanadaPoints([]);
+        setRenderedCanadaPoints([]); // Reset before starting
         setLoadingProgress(0);
         setTotalPointsToLoad(0);
 
@@ -292,33 +288,26 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           }
 
           const totalPages = Math.ceil(totalPoints / FETCH_BATCH_SIZE);
-          let allPoints: any[] = [];
-
           for (let i = 1; i <= totalPages; i++) {
-            try {
-              const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
-                body: {
-                  country: 'Canada',
-                  center: centerLocation,
-                  radius: radiusMeters,
-                  pageSize: FETCH_BATCH_SIZE,
-                  pageNumber: i,
-                },
-              });
+            const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
+              body: {
+                country: 'Canada',
+                center: centerLocation,
+                radius: radiusMeters,
+                pageSize: FETCH_BATCH_SIZE,
+                pageNumber: i,
+              },
+            });
 
-              if (pageError) throw pageError;
-              if (pageData.error) throw new Error(pageData.error);
+            if (pageError) throw pageError;
+            if (pageData.error) throw new Error(pageData.error);
 
-              if (pageData.data) {
-                allPoints = [...allPoints, ...pageData.data];
-                setLoadingProgress(allPoints.length);
-              }
-            } catch (err) {
-              console.error(`Error fetching page ${i} of Canadian postal codes:`, err);
-              toast.error(`Failed to load page ${i}/${totalPages}. Data may be incomplete.`);
+            if (pageData.data && pageData.data.length > 0) {
+              setRenderedCanadaPoints(prevPoints => [...prevPoints, ...pageData.data]);
+              setLoadingProgress(prevProgress => prevProgress + pageData.data.length);
             }
+            await new Promise(resolve => setTimeout(resolve, 50)); 
           }
-          setAllCanadaPoints(allPoints);
 
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
@@ -327,7 +316,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           setLoadingData(false);
         }
       } else {
-        // USA GeoJSON logic remains the same
+        // USA logic remains the same
         if (allGeoJsonData) { setLoadingData(false); return; }
         setLoadingData(true);
         try {
@@ -353,48 +342,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         }
       }
     };
-    loadInitialData();
+    loadAndRenderData();
   }, [isCanada, centerLocation, currentDisplayRadius]);
-
-  // Effect for progressive rendering of Canadian points
-  const animationFrameIdRef = useRef<number>();
-  const renderIndexRef = useRef(0);
-  useEffect(() => {
-    if (!isCanada || allCanadaPoints.length === 0) {
-      setRenderedCanadaPoints([]);
-      return;
-    }
-  
-    setRenderedCanadaPoints([]);
-    renderIndexRef.current = 0;
-    if (animationFrameIdRef.current) {
-      cancelAnimationFrame(animationFrameIdRef.current);
-    }
-  
-    const renderNextBatch = () => {
-      if (renderIndexRef.current >= allCanadaPoints.length) {
-        return; 
-      }
-  
-      const nextBatch = allCanadaPoints.slice(
-        renderIndexRef.current,
-        renderIndexRef.current + RENDER_BATCH_SIZE
-      );
-  
-      setRenderedCanadaPoints(prev => [...prev, ...nextBatch]);
-      renderIndexRef.current += RENDER_BATCH_SIZE;
-  
-      animationFrameIdRef.current = requestAnimationFrame(renderNextBatch);
-    };
-  
-    animationFrameIdRef.current = requestAnimationFrame(renderNextBatch);
-  
-    return () => {
-      if (animationFrameIdRef.current) {
-        cancelAnimationFrame(animationFrameIdRef.current);
-      }
-    };
-  }, [allCanadaPoints, isCanada]);
 
   const filteredGeoJsonData = useMemo(() => {
     if (isCanada || !allGeoJsonData || !centerLocation?.lat || !centerLocation.lng || currentDisplayRadius === 'all') {
