@@ -276,7 +276,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         setTotalPointsToLoad(0);
 
         try {
-          const radiusMeters = (currentDisplayRadius as number) * 1000; // Correctly use km for Canada
+          const radiusMeters = (currentDisplayRadius as number) * 1000;
           
           const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
             body: { country: 'Canada', center: centerLocation, radius: radiusMeters },
@@ -357,29 +357,43 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [isCanada, centerLocation, currentDisplayRadius]);
 
   // Effect for progressive rendering of Canadian points
+  const animationFrameIdRef = useRef<number>();
+  const renderIndexRef = useRef(0);
   useEffect(() => {
     if (!isCanada || allCanadaPoints.length === 0) {
       setRenderedCanadaPoints([]);
       return;
     }
-
-    setRenderedCanadaPoints([]); // Clear previous renders
-    let currentIndex = 0;
-    let animationFrameId: number;
-
+  
+    setRenderedCanadaPoints([]);
+    renderIndexRef.current = 0;
+    if (animationFrameIdRef.current) {
+      cancelAnimationFrame(animationFrameIdRef.current);
+    }
+  
     const renderNextBatch = () => {
-      const nextBatch = allCanadaPoints.slice(currentIndex, currentIndex + RENDER_BATCH_SIZE);
+      if (renderIndexRef.current >= allCanadaPoints.length) {
+        return; 
+      }
+  
+      const nextBatch = allCanadaPoints.slice(
+        renderIndexRef.current,
+        renderIndexRef.current + RENDER_BATCH_SIZE
+      );
+  
       setRenderedCanadaPoints(prev => [...prev, ...nextBatch]);
-      currentIndex += RENDER_BATCH_SIZE;
-
-      if (currentIndex < allCanadaPoints.length) {
-        animationFrameId = requestAnimationFrame(renderNextBatch);
+      renderIndexRef.current += RENDER_BATCH_SIZE;
+  
+      animationFrameIdRef.current = requestAnimationFrame(renderNextBatch);
+    };
+  
+    animationFrameIdRef.current = requestAnimationFrame(renderNextBatch);
+  
+    return () => {
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
       }
     };
-
-    animationFrameId = requestAnimationFrame(renderNextBatch);
-
-    return () => cancelAnimationFrame(animationFrameId);
   }, [allCanadaPoints, isCanada]);
 
   const filteredGeoJsonData = useMemo(() => {
