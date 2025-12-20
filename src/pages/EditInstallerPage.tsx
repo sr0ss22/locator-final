@@ -461,18 +461,39 @@ const EditInstallerPage: React.FC = () => {
       if (updateInstallerError) throw new Error(`Supabase Update Error: ${updateInstallerError.message}`);
       
       if (canEdit) {
-        console.log("ACTION 1: Calling RPC to delete all territories in a single server-side transaction.");
-        toast.info(`Clearing existing territories...`, { id: loadingToastId });
-        
-        const { error: rpcError } = await supabase.rpc('delete_installer_territories_in_batches', {
-          _installer_id: currentInstaller.id
-        });
+        // --- NEW BATCH DELETE LOGIC ---
+        const { data: idsToDelete, error: countError } = await supabase
+          .from('installer_zip_codes')
+          .select('id')
+          .eq('installer_id', currentInstaller.id);
 
-        if (rpcError) throw new Error(`Failed to clear territories: ${rpcError.message}`);
-        console.log("Territories successfully cleared on the server.");
+        if (countError) throw new Error(`Failed to fetch territory IDs for deletion: ${countError.message}`);
+
+        if (idsToDelete && idsToDelete.length > 0) {
+          const totalCount = idsToDelete.length;
+          let deletedCount = 0;
+          const batchSize = 500;
+          
+          toast.info(`Clearing ${totalCount.toLocaleString()} existing territories... 0%`, { id: loadingToastId });
+
+          for (let i = 0; i < totalCount; i += batchSize) {
+            const batch = idsToDelete.slice(i, i + batchSize).map(r => r.id);
+            
+            const { error: deleteError } = await supabase
+              .from('installer_zip_codes')
+              .delete()
+              .in('id', batch);
+
+            if (deleteError) throw new Error(`Failed to delete batch: ${deleteError.message}`);
+
+            deletedCount += batch.length;
+            const progress = Math.round((deletedCount / totalCount) * 100);
+            toast.info(`Clearing territories... ${progress}% (${deletedCount.toLocaleString()} / ${totalCount.toLocaleString()})`, { id: loadingToastId });
+          }
+        }
+        // --- END BATCH DELETE LOGIC ---
 
         const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
-        console.log(`ACTION 2: Saving ${territoriesToProcess.length} new territories...`);
         toast.info(`Saving ${territoriesToProcess.length} new territory assignments...`, { id: loadingToastId });
 
         const { data: functionData, error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {

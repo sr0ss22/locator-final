@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.delete_installer_territories_in_batches(text);
