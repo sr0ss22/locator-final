@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, Tooltip, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
 import { Star, Loader2 } from 'lucide-react';
@@ -8,8 +8,7 @@ import { TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import { supabase } from "@/integrations/supabase/client";
-import LoadingSayings from './LoadingSayings';
-import MarkerClusterGroup from '@changey/react-leaflet-markercluster';
+import { Progress } from "@/components/ui/progress";
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -39,6 +38,7 @@ interface TerritoryMapProps {
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
+const BATCH_SIZE = 20000;
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
   if (!feature || !feature.properties) return '';
@@ -73,26 +73,6 @@ const createStarIcon = () => L.divIcon({
   iconAnchor: [20, 40],
   popupAnchor: [0, -35],
 });
-
-const createPointIcon = (status?: 'green' | 'orange') => {
-  let color = '#3b82f6'; // blue
-  let size = 8;
-  if (status === 'green') {
-    color = '#22c55e';
-    size = 10;
-  }
-  if (status === 'orange') {
-    color = '#f97316';
-    size = 10;
-  }
-
-  return L.divIcon({
-    html: `<div style="background-color: ${color}; width: ${size}px; height: ${size}px; border-radius: 50%; border: 1px solid white;"></div>`,
-    className: 'bg-transparent border-0',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
-};
 
 function MapUpdater({ centerLocation, isOpen, country }: {
   centerLocation?: { lat: number | null; lng: number | null };
@@ -236,11 +216,13 @@ function MapInteractionHandler({
   return null;
 }
 
-const LoadingOverlay = () => (
-  <div className="absolute inset-0 flex items-center justify-center bg-white/75 z-[1000]">
-    <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg">
+const LoadingOverlay = ({ progress, total }: { progress: number, total: number }) => (
+  <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-[1000]">
+    <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg w-64">
       <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-4" />
-      <p className="font-semibold text-lg">Loading Territories...</p>
+      <p className="font-semibold text-lg mb-2">Loading Territories...</p>
+      <Progress value={(progress / total) * 100} className="w-full" />
+      <p className="text-sm text-gray-500 mt-2">{progress.toLocaleString()} / {total.toLocaleString()}</p>
     </div>
   </div>
 );
@@ -264,7 +246,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [dataError, setDataError] = useState<string | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   const [canadaPoints, setCanadaPoints] = useState<any[]>([]);
-  const [loadingCanadaPoints, setLoadingCanadaPoints] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [totalPointsToLoad, setTotalPointsToLoad] = useState(0);
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
@@ -282,25 +265,51 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           setLoadingData(false);
           return;
         }
-        setLoadingCanadaPoints(true);
         setLoadingData(true);
+        setCanadaPoints([]);
+        setLoadingProgress(0);
+        setTotalPointsToLoad(0);
+
         try {
           const radiusMeters = (currentDisplayRadius as number) * 1609.34;
-          const { data, error } = await supabase.functions.invoke('get-territories-in-radius', {
-            body: {
-              country: 'Canada',
-              center: centerLocation,
-              radius: radiusMeters,
-            },
+          
+          // 1. Get total count
+          const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
+            body: { country: 'Canada', center: centerLocation, radius: radiusMeters },
           });
-          if (error) throw error;
-          if (data.error) throw new Error(data.error);
-          setCanadaPoints(data.data || []);
+          if (countError) throw countError;
+          if (countData.error) throw new Error(countData.error);
+          
+          const totalPoints = countData.count;
+          setTotalPointsToLoad(totalPoints);
+          if (totalPoints === 0) {
+            setLoadingData(false);
+            return;
+          }
+
+          // 2. Fetch in batches
+          const totalPages = Math.ceil(totalPoints / BATCH_SIZE);
+          for (let i = 1; i <= totalPages; i++) {
+            const { data: pageData, error: pageError } = await supabase.functions.invoke('get-map-data', {
+              body: {
+                country: 'Canada',
+                center: centerLocation,
+                radius: radiusMeters,
+                pageSize: BATCH_SIZE,
+                pageNumber: i,
+              },
+            });
+            if (pageError) throw pageError;
+            if (pageData.error) throw new Error(pageData.error);
+            
+            setCanadaPoints(prev => [...prev, ...(pageData.data || [])]);
+            setLoadingProgress(prev => prev + (pageData.data?.length || 0));
+          }
+
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
           toast.error(`Failed to load Canadian postal codes: ${err.message}`);
         } finally {
-          setLoadingCanadaPoints(false);
           setLoadingData(false);
         }
       } else {
@@ -467,6 +476,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       maxZoom={18}
       scrollWheelZoom={true}
       className="h-full w-full rounded-lg overflow-hidden shadow-sm"
+      renderer={L.canvas()}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -475,25 +485,40 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       
       <Pane name="polygons" style={{ zIndex: 450 }} />
       
-      {(loadingData || loadingCanadaPoints) && <LoadingOverlay />}
+      {loadingData && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} />}
 
       {isCanada && canadaPoints.length > 0 && (
-        <MarkerClusterGroup>
-          {canadaPoints.map(point => {
-            const postalCode = point.POSTAL_CODE;
-            const status = highlightedZipCodes.get(postalCode);
-            return (
-              <Marker
-                key={point.id}
-                position={[point.LATITUDE, point.LONGITUDE]}
-                icon={createPointIcon(status)}
-                eventHandlers={{
-                  click: () => onZipCodeClick(postalCode, point.PROVINCE_ABBR),
-                }}
-              />
-            );
-          })}
-        </MarkerClusterGroup>
+        canadaPoints.map(point => {
+          const postalCode = point.POSTAL_CODE;
+          const status = highlightedZipCodes.get(postalCode);
+          let color = '#3b82f6';
+          let fillOpacity = 0.5;
+          let pointRadius = 2;
+
+          if (status === 'green') {
+            color = '#22c55e';
+            fillOpacity = 0.7;
+            pointRadius = 3;
+          } else if (status === 'orange') {
+            color = '#f97316';
+            fillOpacity = 0.7;
+            pointRadius = 3;
+          }
+          
+          return (
+            <CircleMarker
+              key={point.id}
+              center={[point.LATITUDE, point.LONGITUDE]}
+              radius={pointRadius}
+              pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
+              eventHandlers={{
+                click: () => onZipCodeClick(postalCode, point.PROVINCE_ABBR),
+              }}
+            >
+              <Tooltip>{postalCode}</Tooltip>
+            </CircleMarker>
+          );
+        })
       )}
 
       {!isCanada && filteredGeoJsonData && (

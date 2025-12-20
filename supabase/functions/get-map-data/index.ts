@@ -12,41 +12,32 @@ serve(async (req) => {
   }
 
   try {
-    const { country, zoom, bounds, center, radius, pageSize, pageNumber } = await req.json()
+    const { country, center, radius, pageSize, pageNumber } = await req.json()
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Handle main data request
-    if (!country || zoom === undefined || !bounds) {
-      return new Response(JSON.stringify({ error: 'Missing required parameters: country, zoom, bounds' }), {
+    if (!country || !center || !radius) {
+      return new Response(JSON.stringify({ error: 'Missing required parameters: country, center, radius' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       })
     }
     
-    const { _northEast, _southWest } = bounds;
     let rpcName = '';
-    let params: any = {
-      zoom: zoom,
-      min_lon: _southWest.lng,
-      min_lat: _southWest.lat,
-      max_lon: _northEast.lng,
-      max_lat: _northEast.lat,
-    };
+    let params: any = {};
 
     if (country === 'Canada') {
-      rpcName = 'get_clustered_canadian_map_data';
-      
-      if (center && center.lat && center.lng && radius) {
-        params.center_lat = center.lat;
-        params.center_lng = center.lng;
-        params.radius_meters = radius;
-        params.page_size = pageSize || 1000;
-        params.page_number = pageNumber || 1;
-      }
+      rpcName = 'get_all_canadian_points_in_radius';
+      params = {
+        center_lat: center.lat,
+        center_lng: center.lng,
+        radius_meters: radius,
+        page_size: pageSize || 20000,
+        page_number: pageNumber || 1,
+      };
     } else {
       // Placeholder for US or other countries
       return new Response(JSON.stringify({ data: [] }), {
