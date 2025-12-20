@@ -760,30 +760,44 @@ const EditInstallerPage: React.FC = () => {
     setLoading(true);
     const isCanada = installerCountry === 'Canada';
     const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
-    const loadingToastId = toast.loading(`Finding territories within ${isCanada ? '35km' : '25 miles'}...`);
-
+    
+    let loadingToastId: string | number | undefined;
+  
     try {
       let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
-
+  
       if (isCanada) {
-        const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
-          center_lat: currentInstaller.latitude,
-          center_lng: currentInstaller.longitude,
-          radius_meters: radiusMeters,
+        loadingToastId = toast.loading("Fetching all territories within 35km radius...");
+
+        const { data, error } = await supabase.functions.invoke('get-territories-in-radius', {
+          body: { 
+            country: 'Canada', 
+            center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude }, 
+            radius: radiusMeters 
+          },
         });
 
         if (error) {
           throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
         }
+        if (data.error) {
+          throw new Error(`Failed to fetch Canadian postal codes: ${data.error}`);
+        }
 
-        zipsToApprove = (data || []).map((p: any) => ({
+        if (!data.data || data.data.length === 0) {
+          toast.info("No Canadian postal codes found within the 35km radius.", { id: loadingToastId });
+          setLoading(false);
+          return;
+        }
+
+        zipsToApprove = (data.data || []).map((p: any) => ({
           zipCode: p.POSTAL_CODE,
           stateProvince: p.PROVINCE_ABBR,
           centroid_latitude: p.LATITUDE,
           centroid_longitude: p.LONGITUDE,
         }));
-
       } else { // USA
+        loadingToastId = toast.loading(`Finding territories within 25 miles...`);
         toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
         const radiusKm = 25 * 1.60934; // 25 miles in km
@@ -812,9 +826,7 @@ const EditInstallerPage: React.FC = () => {
           }
         });
       }
-
-      toast.info(`Found ${zipsToApprove.length} territories. Merging and saving...`, { id: loadingToastId });
-
+  
       const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
       zipsToApprove.forEach(zipInfo => {
         newSelectedMap.set(zipInfo.zipCode, {
@@ -823,21 +835,16 @@ const EditInstallerPage: React.FC = () => {
         });
       });
       const finalListOfZips = Array.from(newSelectedMap.values());
-
-      toast.info(`Saving ${finalListOfZips.length} total territories...`, { id: loadingToastId });
-
-      const { error: saveError } = await supabase.functions.invoke('save-public-territory-data', {
-        body: { installerId, token, zipCodes: finalListOfZips },
-      });
-      if (saveError) throw new Error(saveError.message || "An unknown error occurred during save.");
-
-      toast.success("Territories saved successfully! Refreshing data...", { id: loadingToastId });
-      await loadAllData();
-      toast.success("Auto-approve complete. Data is up to date.", { id: loadingToastId, duration: 4000 });
-
+  
+      await handleSubmit(finalListOfZips);
+  
     } catch (err: any) {
       console.error("Error during auto-approve:", err);
-      toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
+      if (loadingToastId) {
+        toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
+      } else {
+        toast.error(`Auto-approve failed: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -916,4 +923,4 @@ const EditInstallerPage: React.FC = () => {
   );
 };
 
-export default PublicTerritoryEditor;
+export default EditInstallerPage;
