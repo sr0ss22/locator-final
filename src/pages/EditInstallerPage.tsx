@@ -715,9 +715,9 @@ const EditInstallerPage: React.FC = () => {
       let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
   
       if (isCanada) {
-        loadingToastId = toast.loading("Calculating number of territories in radius...");
+        loadingToastId = toast.loading("Fetching all territories within 35km radius...");
 
-        const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
+        const { data, error } = await supabase.functions.invoke('get-territories-in-radius', {
           body: { 
             country: 'Canada', 
             center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude }, 
@@ -725,45 +725,20 @@ const EditInstallerPage: React.FC = () => {
           },
         });
 
-        if (countError) throw new Error(`Count Error: ${countError.message}`);
-        if (countData.error) throw new Error(`Count Error: ${countData.error}`);
-        
-        const totalPoints = countData.count || 0;
-        if (totalPoints === 0) {
+        if (error) {
+          throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
+        }
+        if (data.error) {
+          throw new Error(`Failed to fetch Canadian postal codes: ${data.error}`);
+        }
+
+        if (!data.data || data.data.length === 0) {
           toast.info("No Canadian postal codes found within the 35km radius.", { id: loadingToastId });
           setLoading(false);
           return;
         }
 
-        toast.info(`Found ${totalPoints} territories. Fetching in batches...`, { id: loadingToastId });
-
-        const PAGE_SIZE = 1000;
-        const totalPages = Math.ceil(totalPoints / PAGE_SIZE);
-        let allPoints: any[] = [];
-
-        for (let page = 1; page <= totalPages; page++) {
-          toast.info(`Fetching batch ${page} of ${totalPages}...`, { id: loadingToastId });
-          const { data: chunkData, error: chunkError } = await supabase.functions.invoke('get-map-data', {
-            body: { 
-              country: 'Canada',
-              zoom: 10, // zoom/bounds are required but not used by the radius part of the function
-              bounds: { _northEast: { lat: 90, lng: 180 }, _southWest: { lat: -90, lng: -180 } },
-              center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude },
-              radius: radiusMeters,
-              pageSize: PAGE_SIZE,
-              pageNumber: page,
-            },
-          });
-
-          if (chunkError) throw new Error(`Fetch Error (page ${page}): ${chunkError.message}`);
-          if (chunkData.error) throw new Error(`Fetch Error (page ${page}): ${chunkData.error}`);
-
-          if (chunkData.data) {
-            allPoints = [...allPoints, ...chunkData.data];
-          }
-        }
-
-        zipsToApprove = allPoints.map((p: any) => ({
+        zipsToApprove = (data.data || []).map((p: any) => ({
           zipCode: p.POSTAL_CODE,
           stateProvince: p.PROVINCE_ABBR,
           centroid_latitude: p.LATITUDE,
@@ -780,6 +755,7 @@ const EditInstallerPage: React.FC = () => {
         usGeoJson.features.forEach(feature => {
           if (feature.geometry) {
             try {
+              // booleanIntersects is faster as it stops on first intersection
               if (turf.booleanIntersects(radiusCircle, feature as any)) {
                 const zipCode = feature.properties.ZCTA5CE20;
                 const state = feature.properties.STUSPS;
@@ -792,6 +768,7 @@ const EditInstallerPage: React.FC = () => {
                 });
               }
             } catch (e) {
+              // Log error for a specific feature but continue
               console.warn(`Could not process feature for ZIP ${feature.properties.ZCTA5CE20}:`, e);
             }
           }
