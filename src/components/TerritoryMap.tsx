@@ -235,7 +235,7 @@ const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: n
       <p className="font-semibold text-lg mb-2">
         {stage === 'counting' ? 'Calculating...' : stage === 'fetching' ? 'Fetching Territories...' : 'Rendering Territories...'}
       </p>
-      {stage === 'rendering' && (
+      {stage !== 'counting' && (
         <>
           <Progress value={total > 0 ? (progress / total) * 100 : 0} className="w-full" />
           <p className="text-sm text-gray-500 mt-2">{progress.toLocaleString()} / {total.toLocaleString()}</p>
@@ -299,25 +299,66 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         setRenderedCanadaPoints([]);
         setLoadingProgress(0);
         setTotalPointsToLoad(0);
-        setLoadingStage('fetching');
+        setLoadingStage('counting');
 
         try {
           const radiusMeters = (currentDisplayRadius as number) * 1000;
           
-          const { data, error } = await supabase.functions.invoke('get-all-canadian-points-in-radius', {
-            body: {
-              center_lat: centerLocation!.lat,
-              center_lng: centerLocation!.lng,
-              radius_meters: radiusMeters,
-            },
+          // 1. Get the total count first
+          const { data: count, error: countError } = await supabase.rpc('get_canadian_points_in_radius_count', {
+            center_lat: centerLocation!.lat,
+            center_lng: centerLocation!.lng,
+            radius_meters: radiusMeters,
           });
 
-          if (error) throw error;
-          if (data.error) throw new Error(data.error);
-          
-          const fetchedPoints = data.data || [];
-          setTotalPointsToLoad(fetchedPoints.length);
-          setLoadingProgress(0); // Reset for rendering phase
+          if (countError) {
+            throw new Error(`Failed to get count of points: ${countError.message}`);
+          }
+
+          if (count === 0) {
+            toast.info("No Canadian postal codes found in the selected radius.");
+            setLoadingStage('complete');
+            return;
+          }
+
+          setTotalPointsToLoad(count);
+          setLoadingStage('fetching');
+
+          // 2. Fetch all pages in controlled parallel chunks
+          const PAGE_SIZE = 1000;
+          const totalPages = Math.ceil(count / PAGE_SIZE);
+          const CONCURRENCY_LIMIT = 10;
+          let fetchedPoints: any[] = [];
+
+          for (let i = 0; i < totalPages; i += CONCURRENCY_LIMIT) {
+            const promises = [];
+            const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalPages);
+            
+            for (let j = i; j < chunkEnd; j++) {
+              const page = j + 1;
+              const promise = supabase
+                .rpc('get_all_canadian_points_in_radius', {
+                  center_lat: centerLocation!.lat,
+                  center_lng: centerLocation!.lng,
+                  radius_meters: radiusMeters,
+                  page_size: PAGE_SIZE,
+                  page_number: page,
+                });
+              promises.push(promise);
+            }
+
+            const results = await Promise.all(promises);
+
+            for (const result of results) {
+              if (result.error) {
+                console.error(`Error fetching a page of results: ${result.error.message}`);
+              }
+              if (result.data) {
+                fetchedPoints = fetchedPoints.concat(result.data);
+              }
+            }
+            setLoadingProgress(fetchedPoints.length);
+          }
           
           console.log(`FETCH COMPLETE: Fetched ${fetchedPoints.length} total points.`);
           setAllCanadaPoints(fetchedPoints);
