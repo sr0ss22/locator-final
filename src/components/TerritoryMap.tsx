@@ -299,53 +299,24 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         setRenderedCanadaPoints([]);
         setLoadingProgress(0);
         setTotalPointsToLoad(0);
-        setLoadingStage('counting');
+        setLoadingStage('fetching');
 
         try {
           const radiusMeters = (currentDisplayRadius as number) * 1000;
           
-          // Phase 1: Get total count
-          const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
-            body: { country: 'Canada', center: centerLocation, radius: radiusMeters },
+          const { data, error } = await supabase.functions.invoke('get-all-canadian-points-in-radius', {
+            body: {
+              center_lat: centerLocation!.lat,
+              center_lng: centerLocation!.lng,
+              radius_meters: radiusMeters,
+            },
           });
-          if (countError) throw countError;
-          if (countData.error) throw new Error(countData.error);
+
+          if (error) throw error;
+          if (data.error) throw new Error(data.error);
           
-          const totalPoints = countData.count;
-          setTotalPointsToLoad(totalPoints);
-          if (totalPoints === 0) {
-            setLoadingStage('complete');
-            return;
-          }
-
-          // Phase 2: Fetch all data in parallel
-          setLoadingStage('fetching');
-          const totalPages = Math.ceil(totalPoints / FETCH_BATCH_SIZE);
-          const pagePromises = [];
-
-          for (let i = 1; i <= totalPages; i++) {
-            const promise = supabase.functions.invoke('get-map-data', {
-              body: {
-                country: 'Canada',
-                center: centerLocation,
-                radius: radiusMeters,
-                pageSize: FETCH_BATCH_SIZE,
-                pageNumber: i,
-              },
-            });
-            pagePromises.push(promise);
-          }
-
-          const pageResults = await Promise.all(pagePromises);
-
-          let fetchedPoints: any[] = [];
-          for (const result of pageResults) {
-            if (result.error) throw result.error;
-            if (result.data.error) throw new Error(result.data.error);
-            if (result.data.data) {
-              fetchedPoints = [...fetchedPoints, ...result.data.data];
-            }
-          }
+          const fetchedPoints = data.data || [];
+          setTotalPointsToLoad(fetchedPoints.length);
           setLoadingProgress(fetchedPoints.length);
           
           console.log(`FETCH COMPLETE: Fetched ${fetchedPoints.length} total points.`);

@@ -45,18 +45,19 @@ serve(async (req) => {
     }
 
     // 2. Create parallel requests for all pages
-    const PAGE_SIZE = 1000; // This is typically the max limit
+    const PAGE_SIZE = 1000;
     const totalPages = Math.ceil(count / PAGE_SIZE);
     const promises = [];
 
-    for (let page = 0; page < totalPages; page++) {
+    for (let page = 1; page <= totalPages; page++) {
       const promise = supabaseAdmin
-        .rpc('get_canadian_fsa_in_radius', {
+        .rpc('get_all_canadian_points_in_radius', {
           center_lat,
           center_lng,
           radius_meters,
-        })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+          page_size: PAGE_SIZE,
+          page_number: page,
+        });
       promises.push(promise);
     }
 
@@ -67,7 +68,7 @@ serve(async (req) => {
     let allPoints: any[] = [];
     for (const result of results) {
       if (result.error) {
-        throw new Error(`Error fetching a page of results: ${result.error.message}`);
+        console.error(`Error fetching a page of results: ${result.error.message}`);
       }
       if (result.data) {
         allPoints = allPoints.concat(result.data);
