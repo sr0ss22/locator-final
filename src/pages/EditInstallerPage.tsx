@@ -488,13 +488,31 @@ const EditInstallerPage: React.FC = () => {
         const finalZipSet = new Set(territoriesToProcess.map(z => z.zipCode));
 
         if (finalZipSet.size === 0 && initialZipSet.size > 0) {
-          toast.info(`Deleting all territories...`, { id: loadingToastId });
-          const { error: deleteError } = await supabase
+          toast.info(`Deleting all ${initialZipSet.size} territories...`, { id: loadingToastId });
+          
+          const { data: idsToDelete, error: fetchIdsError } = await supabase
             .from('installer_zip_codes')
-            .delete()
+            .select('id')
             .eq('installer_id', currentInstaller.id);
-          if (deleteError) {
-            throw new Error(`Failed to clear all territories: ${deleteError.message}`);
+
+          if (fetchIdsError) {
+            throw new Error(`Failed to fetch territories for deletion: ${fetchIdsError.message}`);
+          }
+
+          const idList = idsToDelete.map(item => item.id);
+          const CHUNK_SIZE = 500;
+
+          for (let i = 0; i < idList.length; i += CHUNK_SIZE) {
+            const chunk = idList.slice(i, i + CHUNK_SIZE);
+            toast.info(`Deleting territories ${i + 1} to ${Math.min(i + CHUNK_SIZE, idList.length)}...`, { id: loadingToastId });
+            const { error: deleteError } = await supabase
+              .from('installer_zip_codes')
+              .delete()
+              .in('id', chunk);
+
+            if (deleteError) {
+              throw new Error(`Failed to delete territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${deleteError.message}`);
+            }
           }
         } else {
           const zipsToDelete = Array.from(initialZipSet).filter(zip => !finalZipSet.has(zip));
@@ -786,7 +804,7 @@ const EditInstallerPage: React.FC = () => {
   
       if (isCanada) {
         loadingToastId = toast.loading("Fetching Canadian postal codes in radius...");
-        const { data, error } = await supabase.rpc('get_canadian_points_in_radius', {
+        const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_radius', {
           center_lat: currentInstaller.latitude,
           center_lng: currentInstaller.longitude,
           radius_meters: radiusMeters,
