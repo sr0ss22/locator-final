@@ -26,33 +26,51 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // We need to paginate to get all results, as PostgREST has a default limit.
-    const PAGE_SIZE = 1000;
-    let allPoints: any[] = [];
-    let page = 0;
-    let hasMore = true;
+    // 1. Get the total count first
+    const { data: count, error: countError } = await supabaseAdmin.rpc('get_canadian_points_in_radius_count', {
+      center_lat,
+      center_lng,
+      radius_meters,
+    });
 
-    while (hasMore) {
-      const { data, error } = await supabaseAdmin
+    if (countError) {
+      throw new Error(`Failed to get count of points: ${countError.message}`);
+    }
+
+    if (count === 0) {
+      return new Response(JSON.stringify({ data: [] }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    }
+
+    // 2. Create parallel requests for all pages
+    const PAGE_SIZE = 1000; // This is typically the max limit
+    const totalPages = Math.ceil(count / PAGE_SIZE);
+    const promises = [];
+
+    for (let page = 0; page < totalPages; page++) {
+      const promise = supabaseAdmin
         .rpc('get_canadian_fsa_in_radius', {
           center_lat,
           center_lng,
           radius_meters,
         })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      promises.push(promise);
+    }
 
-      if (error) {
-        throw error;
+    // 3. Execute all requests in parallel
+    const results = await Promise.all(promises);
+
+    // 4. Combine results and check for errors
+    let allPoints: any[] = [];
+    for (const result of results) {
+      if (result.error) {
+        throw new Error(`Error fetching a page of results: ${result.error.message}`);
       }
-
-      if (data) {
-        allPoints = allPoints.concat(data);
-      }
-
-      if (!data || data.length < PAGE_SIZE) {
-        hasMore = false;
-      } else {
-        page++;
+      if (result.data) {
+        allPoints = allPoints.concat(result.data);
       }
     }
 
