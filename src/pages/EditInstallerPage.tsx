@@ -777,7 +777,6 @@ const EditInstallerPage: React.FC = () => {
   
     setLoading(true);
     const isCanada = installerCountry === 'Canada';
-    const radiusMiles = isCanada ? 35 / 1.60934 : 25;
     const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
     
     let loadingToastId: string | number | undefined;
@@ -805,24 +804,32 @@ const EditInstallerPage: React.FC = () => {
           centroid_longitude: p.LONGITUDE,
         }));
       } else { // USA
-        for (const [zipCode, { lat, lng, state }] of zipCodeCentroids.entries()) {
-          if (lat !== null && lng !== null) {
-            const distance = calculateDistance(
-              currentInstaller.latitude,
-              currentInstaller.longitude,
-              lat,
-              lng
-            );
-            if (distance <= radiusMiles) {
-              zipsToApprove.push({
-                zipCode,
-                stateProvince: state,
-                centroid_latitude: lat,
-                centroid_longitude: lng,
-              });
+        loadingToastId = toast.loading(`Finding territories within 25 miles...`);
+        toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
+        const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
+        const radiusKm = 25 * 1.60934; // 25 miles in km
+        const options = { steps: 64, units: 'kilometers' as const };
+        const radiusCircle = turf.circle(center, radiusKm, options);
+
+        usGeoJson.features.forEach(feature => {
+          if (feature.geometry) {
+            try {
+              if (turf.booleanIntersects(radiusCircle, feature as any)) {
+                const zipCode = feature.properties.ZCTA5CE20;
+                const state = feature.properties.STUSPS;
+                const centroid = zipCodeCentroids.get(zipCode);
+                zipsToApprove.push({
+                  zipCode,
+                  stateProvince: state,
+                  centroid_latitude: centroid?.lat || null,
+                  centroid_longitude: centroid?.lng || null,
+                });
+              }
+            } catch (e) {
+              console.warn(`Could not process feature for ZIP ${feature.properties.ZCTA5CE20}:`, e);
             }
           }
-        }
+        });
       }
   
       const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
