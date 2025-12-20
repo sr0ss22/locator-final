@@ -255,6 +255,7 @@ const DynamicPointsLayer = ({
     setLoading(true);
     setPoints([]);
     setProgress({ loaded: 0, total: 0 });
+    console.log(`[TerritoryMap Debug] Starting chunk fetch for radius ${radius}km around`, centerLocation);
 
     const radiusMeters = radius * 1000;
 
@@ -262,6 +263,7 @@ const DynamicPointsLayer = ({
       const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
         body: { country, center: centerLocation, radius: radiusMeters },
       });
+      console.log(`[TerritoryMap Debug] Count RPC returned:`, { count: countData?.count, countError });
 
       if (fetchId !== currentFetchId.current) return;
       if (countError) throw countError;
@@ -293,6 +295,7 @@ const DynamicPointsLayer = ({
             pageNumber: page,
           },
         });
+        console.log(`[TerritoryMap Debug] Chunk ${page}/${totalPages} RPC returned ${chunkData?.data?.length || 0} points. Error:`, chunkError);
 
         if (fetchId !== currentFetchId.current) return;
         if (chunkError) throw chunkError;
@@ -304,9 +307,10 @@ const DynamicPointsLayer = ({
           setProgress({ loaded: allPoints.length, total: totalPoints });
         }
       }
+      console.log(`[TerritoryMap Debug] Total points fetched: ${allPoints.length}`);
     } catch (err: any) {
       if (fetchId === currentFetchId.current) {
-        console.error("Error fetching map data in chunks:", err);
+        console.error("[TerritoryMap Debug] Error fetching map data in chunks:", err);
         toast.error("Could not load map data.");
       }
     } finally {
@@ -321,11 +325,13 @@ const DynamicPointsLayer = ({
     setLoading(true);
     const bounds = map.getBounds();
     const zoom = map.getZoom();
+    console.log(`[TerritoryMap Debug] Starting bounds fetch for zoom ${zoom}`, { bounds });
 
     try {
       const { data, error } = await supabase.functions.invoke('get-map-data', {
         body: { country, zoom, bounds },
       });
+      console.log(`[TerritoryMap Debug] Bounds fetch returned ${data?.data?.length || 0} points. Error:`, error);
 
       if (fetchId !== currentFetchId.current) return;
       if (error) throw error;
@@ -334,7 +340,7 @@ const DynamicPointsLayer = ({
       setPoints(data.data || []);
     } catch (err: any) {
       if (fetchId === currentFetchId.current) {
-        console.error("Error fetching map data for bounds:", err);
+        console.error("[TerritoryMap Debug] Error fetching map data for bounds:", err);
         toast.error("Could not load map data.");
       }
     } finally {

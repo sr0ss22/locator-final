@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut, Copy, Star } from "lucide-react";
+import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut, Copy, Star, ChevronsUpDown } from "lucide-react";
 import { Installer, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -25,6 +25,8 @@ import proj4 from 'proj4';
 import { Switch } from "@/components/ui/switch";
 import { calculateDistance } from "@/utils/distance";
 import LoadingSayings from "@/components/LoadingSayings";
+import DebugPostalCodeChecker from "@/components/DebugPostalCodeChecker";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -1016,6 +1018,19 @@ const EditInstallerPage: React.FC = () => {
             ) : (<div className="col-span-full mt-6 text-center text-gray-500"><p>Map not available: Installer address does not have valid coordinates.</p><p className="text-sm">Please ensure address fields are complete and valid to enable map functionality.</p></div>)
           ) : (<div className="col-span-full mt-6 text-center text-red-500"><p>You do not have permission to manage territories.</p></div>)}
         </div>
+        {isAdmin && (
+          <Collapsible className="mt-8">
+            <CollapsibleTrigger asChild>
+              <Button variant="outline" className="w-full">
+                <ChevronsUpDown className="h-4 w-4 mr-2" />
+                Toggle Debug Tools
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <DebugPostalCodeChecker />
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
       <ImportInstallerTerritoriesModal isOpen={isImportTerritoriesModalOpen} onClose={() => setIsImportTerritoriesModalOpen(false)} onImport={handleImportInstallerTerritories} loading={loading} />
       {isDirty && canEdit && (
