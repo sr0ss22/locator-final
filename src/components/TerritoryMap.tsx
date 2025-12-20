@@ -317,7 +317,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           
           const fetchedPoints = data.data || [];
           setTotalPointsToLoad(fetchedPoints.length);
-          setLoadingProgress(fetchedPoints.length);
+          setLoadingProgress(0); // Reset for rendering phase
           
           console.log(`FETCH COMPLETE: Fetched ${fetchedPoints.length} total points.`);
           setAllCanadaPoints(fetchedPoints);

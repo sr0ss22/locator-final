@@ -26,56 +26,21 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // 1. Get the total count first
-    const { data: count, error: countError } = await supabaseAdmin.rpc('get_canadian_points_in_radius_count', {
+    const { data, error } = await supabaseAdmin.rpc('get_all_canadian_points_in_radius_as_json', {
       center_lat,
       center_lng,
       radius_meters,
     });
 
-    if (countError) {
-      throw new Error(`Failed to get count of points: ${countError.message}`);
+    if (error) {
+      throw new Error(`Failed to fetch points: ${error.message}`);
     }
 
-    if (count === 0) {
-      return new Response(JSON.stringify({ data: [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
-    }
+    // The RPC returns a single JSON object which is the array of points.
+    // If no points are found, it might return null.
+    const points = data || [];
 
-    // 2. Create parallel requests for all pages
-    const PAGE_SIZE = 1000;
-    const totalPages = Math.ceil(count / PAGE_SIZE);
-    const promises = [];
-
-    for (let page = 1; page <= totalPages; page++) {
-      const promise = supabaseAdmin
-        .rpc('get_all_canadian_points_in_radius', {
-          center_lat,
-          center_lng,
-          radius_meters,
-          page_size: PAGE_SIZE,
-          page_number: page,
-        });
-      promises.push(promise);
-    }
-
-    // 3. Execute all requests in parallel
-    const results = await Promise.all(promises);
-
-    // 4. Combine results and check for errors
-    let allPoints: any[] = [];
-    for (const result of results) {
-      if (result.error) {
-        console.error(`Error fetching a page of results: ${result.error.message}`);
-      }
-      if (result.data) {
-        allPoints = allPoints.concat(result.data);
-      }
-    }
-
-    return new Response(JSON.stringify({ data: allPoints }), {
+    return new Response(JSON.stringify({ data: points }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
