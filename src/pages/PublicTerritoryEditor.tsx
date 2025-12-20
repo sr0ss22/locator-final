@@ -250,21 +250,18 @@ const PublicTerritoryEditor: React.FC = () => {
     setLoading(true);
     const loadingToastId = toast.loading("Saving territory changes...");
     try {
-      const { error } = await supabase.functions.invoke('save-public-territory-data', {
+      const { data: functionData, error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
         body: { installerId, token, zipCodes: selectedMapZipCodes },
       });
-      if (error) {
-        // Log the full error object to the console for detailed debugging
-        console.error("Detailed error from save-public-territory-data function:", error);
-        
-        // Try to extract a more specific message from the error context if available
-        const functionErrorDetails = error.context?.details;
-        let errorMessage = error.message;
-        if (functionErrorDetails) {
-          errorMessage = functionErrorDetails.message || errorMessage;
-          console.error("Edge function error details:", functionErrorDetails);
+
+      if (territoryError) {
+        console.error("Detailed error from save-public-territory-data function:", territoryError);
+        console.error("Function response data (if any):", functionData);
+        let errorMessage = territoryError.message;
+        if (functionData?.error) {
+          errorMessage = functionData.error.message || errorMessage;
+          console.error("Edge function error details:", functionData.error.details);
         }
-        
         throw new Error(errorMessage);
       }
       toast.success("Territory changes saved successfully! Refreshing data...", { id: loadingToastId });
