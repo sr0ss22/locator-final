@@ -245,7 +245,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [dataError, setDataError] = useState<string | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   
-  const [renderedCanadaPoints, setRenderedCanadaPoints] = useState<any[]>([]);
+  const [canadaPoints, setCanadaPoints] = useState<any[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [totalPointsToLoad, setTotalPointsToLoad] = useState(0);
@@ -262,12 +262,12 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     const loadAndRenderData = async () => {
       if (isCanada) {
         if (!centerLocation?.lat || !centerLocation.lng || currentDisplayRadius === 'all') {
-          setRenderedCanadaPoints([]);
+          setCanadaPoints([]);
           setLoadingData(false);
           return;
         }
         setLoadingData(true);
-        setRenderedCanadaPoints([]); // Reset before starting
+        setCanadaPoints([]); // Reset before starting
         setLoadingProgress(0);
         setTotalPointsToLoad(0);
 
@@ -303,7 +303,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
             if (pageData.error) throw new Error(pageData.error);
 
             if (pageData.data && pageData.data.length > 0) {
-              setRenderedCanadaPoints(prevPoints => [...prevPoints, ...pageData.data]);
+              setCanadaPoints(prevPoints => [...prevPoints, ...pageData.data]);
               setLoadingProgress(prevProgress => prevProgress + pageData.data.length);
             }
             await new Promise(resolve => setTimeout(resolve, 50)); 
@@ -488,8 +488,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       
       {loadingData && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} />}
 
-      {isCanada && renderedCanadaPoints.length > 0 && (
-        renderedCanadaPoints.map(point => {
+      {isCanada && canadaPoints.length > 0 && (
+        canadaPoints.map(point => {
           const postalCode = point.POSTAL_CODE;
           const status = highlightedZipCodes.get(postalCode);
           let color = '#3b82f6';
