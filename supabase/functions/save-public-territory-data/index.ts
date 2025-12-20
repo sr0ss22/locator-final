@@ -14,8 +14,8 @@ serve(async (req) => {
   try {
     const { installerId, token, zipCodes } = await req.json()
 
-    if (!installerId || !token || !Array.isArray(zipCodes)) {
-      return new Response(JSON.stringify({ error: 'Installer ID, token, and a zipCodes array are required.' }), {
+    if (!installerId || !Array.isArray(zipCodes)) {
+      return new Response(JSON.stringify({ error: 'Installer ID and a zipCodes array are required.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       })
@@ -26,19 +26,58 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Validate token
-    const { data: installer, error: installerError } = await supabaseAdmin
-      .from('installers')
-      .select('id, territory_access_token')
-      .eq('id', installerId)
-      .single()
+    // --- Authorization Logic ---
+    const authHeader = req.headers.get('Authorization');
+    let isAuthorized = false;
 
-    if (installerError || !installer || installer.territory_access_token !== token) {
-      return new Response(JSON.stringify({ error: 'Invalid installer ID or token.' }), {
+    if (authHeader) {
+      // Authenticate with JWT for logged-in users
+      const supabaseClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: authHeader } } }
+      );
+      const { data: { user } } = await supabaseClient.auth.getUser();
+
+      if (user) {
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        
+        if (profile?.role === 'admin') {
+          isAuthorized = true; // Admin can edit any installer
+        } else if (profile?.role === 'installer') {
+          const { data: installerProfile } = await supabaseAdmin
+            .from('installers')
+            .select('id')
+            .eq('account_id', user.id)
+            .single();
+          if (installerProfile?.id === installerId) {
+            isAuthorized = true; // Installer can edit their own profile
+          }
+        }
+      }
+    } else if (token) {
+      // Authenticate with token for public editor links
+      const { data: installer } = await supabaseAdmin
+        .from('installers')
+        .select('territory_access_token')
+        .eq('id', installerId)
+        .single();
+      if (installer && installer.territory_access_token === token) {
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      return new Response(JSON.stringify({ error: 'Unauthorized.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 401,
-      })
+      });
     }
+    // --- End Authorization Logic ---
 
     // 1. Get ALL current territories from DB using pagination
     let allCurrentZipsData: any[] = [];

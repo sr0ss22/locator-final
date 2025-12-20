@@ -462,105 +462,17 @@ const EditInstallerPage: React.FC = () => {
       
       if (canEdit) {
         const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
-        const fetchAllCurrentAssignments = async (installerId: string) => {
-          let allAssignments: any[] = [];
-          let page = 0;
-          const pageSize = 1000;
-          let hasMore = true;
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from('installer_zip_codes')
-              .select('zip_code, field_ops_rep_id, field_service_manager_id')
-              .eq('installer_id', installerId)
-              .range(page * pageSize, (page + 1) * pageSize - 1);
-            if (error) throw new Error(`Failed to fetch current assignments (page ${page + 1}): ${error.message}`);
-            if (data) allAssignments = allAssignments.concat(data);
-            if (!data || data.length < pageSize) hasMore = false;
-            else page++;
-          }
-          return allAssignments;
-        };
+        toast.info("Saving territory changes...", { id: loadingToastId });
 
-        const currentAssignmentsData = await fetchAllCurrentAssignments(currentInstaller.id);
-        
-        const currentAssignmentsMap = new Map((currentAssignmentsData || []).map(item => [item.zip_code, item]));
-        const initialZipSet = new Set(currentAssignmentsMap.keys());
-        const finalZipSet = new Set(territoriesToProcess.map(z => z.zipCode));
+        const { error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
+          body: { installerId: currentInstaller.id, zipCodes: territoriesToProcess },
+        });
 
-        if (finalZipSet.size === 0 && initialZipSet.size > 0) {
-          toast.info(`Deleting all ${initialZipSet.size} territories...`, { id: loadingToastId });
-          
-          const { data: idsToDelete, error: fetchIdsError } = await supabase
-            .from('installer_zip_codes')
-            .select('id')
-            .eq('installer_id', currentInstaller.id);
-
-          if (fetchIdsError) {
-            throw new Error(`Failed to fetch territories for deletion: ${fetchIdsError.message}`);
-          }
-
-          const idList = idsToDelete.map(item => item.id);
-          const CHUNK_SIZE = 500;
-
-          for (let i = 0; i < idList.length; i += CHUNK_SIZE) {
-            const chunk = idList.slice(i, i + CHUNK_SIZE);
-            toast.info(`Deleting territories ${i + 1} to ${Math.min(i + CHUNK_SIZE, idList.length)}...`, { id: loadingToastId });
-            const { error: deleteError } = await supabase
-              .from('installer_zip_codes')
-              .delete()
-              .in('id', chunk);
-
-            if (deleteError) {
-              throw new Error(`Failed to delete territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${deleteError.message}`);
-            }
-          }
-        } else {
-          const zipsToDelete = Array.from(initialZipSet).filter(zip => !finalZipSet.has(zip));
-          const zipsToUpsert = territoriesToProcess.map(item => {
-            const existingAssignment = currentAssignmentsMap.get(item.zipCode);
-            return {
-              installer_id: currentInstaller.id,
-              zip_code: item.zipCode,
-              state_province: item.stateProvince,
-              status: item.assignedStatus,
-              field_ops_rep_id: existingAssignment ? existingAssignment.field_ops_rep_id : null,
-              field_service_manager_id: existingAssignment ? existingAssignment.field_service_manager_id : null,
-            };
-          });
-
-          const CHUNK_SIZE = 500;
-
-          if (zipsToDelete.length > 0) {
-            toast.info(`Deleting ${zipsToDelete.length} territories...`, { id: loadingToastId });
-            for (let i = 0; i < zipsToDelete.length; i += CHUNK_SIZE) {
-              const chunk = zipsToDelete.slice(i, i + CHUNK_SIZE);
-              const { error: deleteError } = await supabase
-                .from('installer_zip_codes')
-                .delete()
-                .eq('installer_id', currentInstaller.id)
-                .in('zip_code', chunk);
-              
-              if (deleteError) {
-                throw new Error(`Failed to delete territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${deleteError.message}`);
-              }
-            }
-          }
-
-          if (zipsToUpsert.length > 0) {
-            toast.info(`Saving ${zipsToUpsert.length} territories...`, { id: loadingToastId });
-            for (let i = 0; i < zipsToUpsert.length; i += CHUNK_SIZE) {
-              const chunk = zipsToUpsert.slice(i, i + CHUNK_SIZE);
-              const { error: upsertError } = await supabase
-                .from('installer_zip_codes')
-                .upsert(chunk, { onConflict: 'installer_id,zip_code' });
-
-              if (upsertError) {
-                throw new Error(`Failed to save new/updated territories (chunk ${Math.floor(i / CHUNK_SIZE) + 1}): ${upsertError.message}`);
-              }
-            }
-          }
+        if (territoryError) {
+          throw new Error(`Territory Save Error: ${territoryError.message}`);
         }
       }
+      
       toast.success("Changes saved successfully! Refreshing data...", { id: loadingToastId });
       await loadAllData();
       toast.success("Save complete. Data is up to date.", { id: loadingToastId, duration: 4000 });
@@ -803,19 +715,55 @@ const EditInstallerPage: React.FC = () => {
       let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
   
       if (isCanada) {
-        loadingToastId = toast.loading("Fetching Canadian postal codes in radius...");
-        const { data, error } = await supabase.rpc('get_canadian_postal_codes_in_radius', {
-          center_lat: currentInstaller.latitude,
-          center_lng: currentInstaller.longitude,
-          radius_meters: radiusMeters,
+        loadingToastId = toast.loading("Calculating number of territories in radius...");
+
+        const { data: countData, error: countError } = await supabase.functions.invoke('get-map-data-count', {
+          body: { 
+            country: 'Canada', 
+            center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude }, 
+            radius: radiusMeters 
+          },
         });
 
-        if (error) {
-          throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
+        if (countError) throw new Error(`Count Error: ${countError.message}`);
+        if (countData.error) throw new Error(`Count Error: ${countData.error}`);
+        
+        const totalPoints = countData.count || 0;
+        if (totalPoints === 0) {
+          toast.info("No Canadian postal codes found within the 35km radius.", { id: loadingToastId });
+          setLoading(false);
+          return;
         }
-        toast.dismiss(loadingToastId);
-  
-        zipsToApprove = (data || []).map((p: any) => ({
+
+        toast.info(`Found ${totalPoints} territories. Fetching in batches...`, { id: loadingToastId });
+
+        const PAGE_SIZE = 1000;
+        const totalPages = Math.ceil(totalPoints / PAGE_SIZE);
+        let allPoints: any[] = [];
+
+        for (let page = 1; page <= totalPages; page++) {
+          toast.info(`Fetching batch ${page} of ${totalPages}...`, { id: loadingToastId });
+          const { data: chunkData, error: chunkError } = await supabase.functions.invoke('get-map-data', {
+            body: { 
+              country: 'Canada',
+              zoom: 10, // zoom/bounds are required but not used by the radius part of the function
+              bounds: { _northEast: { lat: 90, lng: 180 }, _southWest: { lat: -90, lng: -180 } },
+              center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude },
+              radius: radiusMeters,
+              pageSize: PAGE_SIZE,
+              pageNumber: page,
+            },
+          });
+
+          if (chunkError) throw new Error(`Fetch Error (page ${page}): ${chunkError.message}`);
+          if (chunkData.error) throw new Error(`Fetch Error (page ${page}): ${chunkData.error}`);
+
+          if (chunkData.data) {
+            allPoints = [...allPoints, ...chunkData.data];
+          }
+        }
+
+        zipsToApprove = allPoints.map((p: any) => ({
           zipCode: p.POSTAL_CODE,
           stateProvince: p.PROVINCE_ABBR,
           centroid_latitude: p.LATITUDE,
