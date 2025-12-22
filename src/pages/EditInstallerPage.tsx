@@ -473,7 +473,7 @@ const EditInstallerPage: React.FC = () => {
           let deletedCount = 0;
           const batchSize = 500;
           
-          toast.info(`Clearing ${totalCount.toLocaleString()} existing territories... 0%`, { id: loadingToastId });
+          toast.info(`Clearing ${totalCount.toLocaleString()} existing territories...`, { id: loadingToastId });
 
           for (let i = 0; i < totalCount; i += batchSize) {
             const batch = idsToDelete.slice(i, i + batchSize).map(r => r.id);
@@ -486,8 +486,7 @@ const EditInstallerPage: React.FC = () => {
             if (deleteError) throw new Error(`Failed to delete batch: ${deleteError.message}`);
 
             deletedCount += batch.length;
-            const progress = Math.round((deletedCount / totalCount) * 100);
-            toast.info(`Clearing territories... ${progress}% (${deletedCount.toLocaleString()} / ${totalCount.toLocaleString()})`, { id: loadingToastId });
+            toast.info(`Clearing territories... (${deletedCount.toLocaleString()} / ${totalCount.toLocaleString()})`, { id: loadingToastId });
           }
         }
 
