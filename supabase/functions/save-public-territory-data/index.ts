@@ -88,24 +88,14 @@ serve(async (req) => {
       throw new Error(`Failed to clear existing territories: ${deleteError.message}`);
     }
 
-    // Now, insert the new territories
+    // Now, insert the new territories using the new batch insert function
     if (zipCodes.length > 0) {
-        const zipsToInsert = zipCodes.map((item: any) => ({
-            installer_id: installerId,
-            zip_code: item.zipCode,
-            state_province: item.stateProvince,
-            status: item.assignedStatus,
-        }));
-
-        const INSERT_CHUNK_SIZE = 500;
-        for (let i = 0; i < zipsToInsert.length; i += INSERT_CHUNK_SIZE) {
-            const chunk = zipsToInsert.slice(i, i + INSERT_CHUNK_SIZE);
-            const { error: insertError } = await supabaseAdmin
-                .from('installer_zip_codes')
-                .insert(chunk);
-            if (insertError) {
-                throw new Error(`Failed to insert territories (chunk ${Math.floor(i / INSERT_CHUNK_SIZE) + 1}): ${insertError.message}`);
-            }
+        const { error: insertError } = await supabaseAdmin.rpc('batch_insert_installer_territories', {
+            p_installer_id: installerId,
+            territories: zipCodes, // Pass the array directly as JSONB
+        });
+        if (insertError) {
+            throw new Error(`Failed to insert territories: ${insertError.message}`);
         }
     }
 
