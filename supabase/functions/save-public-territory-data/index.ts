@@ -79,9 +79,16 @@ serve(async (req) => {
     }
     // --- End Authorization Logic ---
 
-    // The deletion logic has been moved to the client to handle large datasets and provide progress feedback.
-    // This function now only handles the insertion of new territories.
+    // First, clear all existing territories for this installer using the RPC function
+    const { error: deleteError } = await supabaseAdmin.rpc('batch_delete_installer_territories', {
+      p_installer_id: installerId,
+    });
 
+    if (deleteError) {
+      throw new Error(`Failed to clear existing territories: ${deleteError.message}`);
+    }
+
+    // Now, insert the new territories
     if (zipCodes.length > 0) {
         const zipsToInsert = zipCodes.map((item: any) => ({
             installer_id: installerId,
