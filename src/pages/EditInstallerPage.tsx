@@ -911,4 +911,4 @@ const EditInstallerPage: React.FC = () => {
   );
 };
 
-export default PublicTerritoryEditor;
+export default EditInstallerPage;
