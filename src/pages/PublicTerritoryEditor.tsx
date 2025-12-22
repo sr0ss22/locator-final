@@ -259,22 +259,62 @@ const PublicTerritoryEditor: React.FC = () => {
     const loadingToastId = toast.loading("Saving territory changes...");
     try {
       const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
-      toast.info(`Saving ${territoriesToProcess.length} territory assignments...`, { id: loadingToastId });
+      
+      const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
+      const currentZipMap = new Map(territoriesToProcess.map(z => [z.zipCode, z]));
 
-      const { data: functionData, error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
-        body: { installerId, token, zipCodes: territoriesToProcess },
+      const addedZips: any[] = [];
+      const updatedZips: any[] = [];
+
+      currentZipMap.forEach((currentZip, zipCode) => {
+          const initialZip = initialZipMap.get(zipCode);
+          if (!initialZip) {
+              addedZips.push(currentZip);
+          } else if (initialZip.assignedStatus !== currentZip.assignedStatus) {
+              updatedZips.push(currentZip);
+          }
       });
 
-      if (territoryError) {
-        console.error("Detailed error from save-public-territory-data function:", territoryError);
-        console.error("Function response data (if any):", functionData);
-        let errorMessage = territoryError.message;
-        if (functionData?.error) {
-          errorMessage = functionData.error.message || errorMessage;
-          console.error("Edge function error details:", functionData.error.details);
+      const removedZips = initialSelectedMapZipCodes.filter(initialZip => !currentZipMap.has(initialZip.zipCode));
+
+      if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
+        toast.info(`Saving territory changes: ${addedZips.length} added, ${updatedZips.length} updated, ${removedZips.length} removed.`, { id: loadingToastId });
+
+        const CHUNK_SIZE = 500;
+
+        // Process removals in chunks
+        for (let i = 0; i < removedZips.length; i += CHUNK_SIZE) {
+          const chunk = removedZips.slice(i, i + CHUNK_SIZE);
+          toast.info(`Removing ${i + chunk.length} of ${removedZips.length} territories...`, { id: loadingToastId });
+          const { error } = await supabase.functions.invoke('save-public-territory-data', {
+            body: { installerId, token, removedZips: chunk },
+          });
+          if (error) throw new Error(`Failed to remove territories chunk: ${error.message}`);
         }
-        throw new Error(errorMessage);
+
+        // Process updates in chunks
+        for (let i = 0; i < updatedZips.length; i += CHUNK_SIZE) {
+          const chunk = updatedZips.slice(i, i + CHUNK_SIZE);
+          toast.info(`Updating ${i + chunk.length} of ${updatedZips.length} territories...`, { id: loadingToastId });
+          const { error } = await supabase.functions.invoke('save-public-territory-data', {
+            body: { installerId, token, updatedZips: chunk },
+          });
+          if (error) throw new Error(`Failed to update territories chunk: ${error.message}`);
+        }
+
+        // Process additions in chunks
+        for (let i = 0; i < addedZips.length; i += CHUNK_SIZE) {
+          const chunk = addedZips.slice(i, i + CHUNK_SIZE);
+          toast.info(`Adding ${i + chunk.length} of ${addedZips.length} territories...`, { id: loadingToastId });
+          const { error } = await supabase.functions.invoke('save-public-territory-data', {
+            body: { installerId, token, addedZips: chunk },
+          });
+          if (error) throw new Error(`Failed to add territories chunk: ${error.message}`);
+        }
+      } else {
+        toast.info("No territory changes to save.", { id: loadingToastId });
       }
+
       toast.success("Territory changes saved successfully! Refreshing data...", { id: loadingToastId });
       await loadAllData();
       toast.success("Save complete. Data is up to date.", { id: loadingToastId, duration: 4000 });

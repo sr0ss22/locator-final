@@ -423,99 +423,119 @@ const EditInstallerPage: React.FC = () => {
   const canEdit = isAdmin || (profile?.role === 'installer' && currentInstaller?.rawSupabaseData.account_id === profile.id);
 
   const handleSubmit = async (territoriesOverride?: any[]) => {
-    if (!validateForm()) { toast.error("Please fill in all required fields."); return; }
-    if (!currentInstaller?.id) { toast.error("Installer ID is missing. Cannot save changes."); return; }
+    if (!validateForm()) {
+      toast.error("Please fill in all required fields.");
+      return;
+    }
+    if (!currentInstaller?.id) {
+      toast.error("Installer ID is missing. Cannot save changes.");
+      return;
+    }
     setLoading(true);
     const loadingToastId = toast.loading("Saving installer changes...");
+  
     try {
-      const formattedData: any = {};
-      for (const key in formData) {
-        if (Object.prototype.hasOwnProperty.call(formData, key)) {
-          const value = formData[key];
-          if (typeof value === 'boolean') {
-            formattedData[key] = fromBooleanToSupabase(key, value);
-          } else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) {
-            formattedData[key] = Array.isArray(value) ? value.join(', ') : value;
-          } else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof value === 'string' && value !== '') {
-            formattedData[key] = parseFloat(value);
-          } else if (value === "") {
-            formattedData[key] = null;
-          } else {
-            formattedData[key] = value;
+      // Step 1: Update installer profile data (if changed)
+      if (JSON.stringify(formData) !== JSON.stringify(initialFormData)) {
+        const formattedData: any = {};
+        // ... (rest of the formatting logic remains the same)
+        for (const key in formData) {
+            if (Object.prototype.hasOwnProperty.call(formData, key)) {
+              const value = formData[key];
+              if (typeof value === 'boolean') {
+                formattedData[key] = fromBooleanToSupabase(key, value);
+              } else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) {
+                formattedData[key] = Array.isArray(value) ? value.join(', ') : value;
+              } else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof value === 'string' && value !== '') {
+                formattedData[key] = parseFloat(value);
+              } else if (value === "") {
+                formattedData[key] = null;
+              } else {
+                formattedData[key] = value;
+              }
+            }
           }
-        }
+          const addressFields = ["address1", "add2", "city", "state", "postalcode", "country"];
+          let addressChanged = false;
+          const originalRawData = currentInstaller.rawSupabaseData || {};
+          for (const field of addressFields) {
+            if (String(originalRawData[field] || '') !== String(formattedData[field] || '')) {
+              addressChanged = true; break;
+            }
+          }
+          if (addressChanged) {
+            toast.info("Address changed, updating coordinates...", { id: loadingToastId });
+            const fullAddress = `${formattedData.address1 || ''}, ${formattedData.city || ''}, ${formattedData.state || ''} ${formattedData.postalcode || ''}, ${formattedData.country || ''}`.trim();
+            const coords = await getCoordinates({ searchText: fullAddress });
+            if (coords.lat != null && coords.lng != null) {
+              formattedData.latitude = coords.lat; formattedData.longitude = coords.lng;
+              toast.success("Coordinates updated successfully!", { id: loadingToastId });
+            } else {
+              formattedData.latitude = null; formattedData.longitude = null;
+              toast.warning("Could not find coordinates for the new address. Latitude and longitude cleared.", { id: loadingToastId });
+            }
+          }
+        const { error: updateInstallerError } = await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
+        if (updateInstallerError) throw new Error(`Supabase Update Error: ${updateInstallerError.message}`);
       }
-      const addressFields = ["address1", "add2", "city", "state", "postalcode", "country"];
-      let addressChanged = false;
-      const originalRawData = currentInstaller.rawSupabaseData || {};
-      for (const field of addressFields) {
-        if (String(originalRawData[field] || '') !== String(formattedData[field] || '')) {
-          addressChanged = true; break;
-        }
-      }
-      if (addressChanged) {
-        toast.info("Address changed, updating coordinates...", { id: loadingToastId });
-        const fullAddress = `${formattedData.address1 || ''}, ${formattedData.city || ''}, ${formattedData.state || ''} ${formattedData.postalcode || ''}, ${formattedData.country || ''}`.trim();
-        const coords = await getCoordinates({ searchText: fullAddress });
-        if (coords.lat != null && coords.lng != null) {
-          formattedData.latitude = coords.lat; formattedData.longitude = coords.lng;
-          toast.success("Coordinates updated successfully!", { id: loadingToastId });
-        } else {
-          formattedData.latitude = null; formattedData.longitude = null;
-          toast.warning("Could not find coordinates for the new address. Latitude and longitude cleared.", { id: loadingToastId });
-        }
-      }
-      const { error: updateInstallerError } = await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
-      if (updateInstallerError) throw new Error(`Supabase Update Error: ${updateInstallerError.message}`);
-      
+  
+      // Step 2: Process territory changes in batches
       if (canEdit) {
         const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
-        
-        // Calculate diff
         const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
         const currentZipMap = new Map(territoriesToProcess.map(z => [z.zipCode, z]));
-
+  
         const addedZips: any[] = [];
         const updatedZips: any[] = [];
-
         currentZipMap.forEach((currentZip, zipCode) => {
-            const initialZip = initialZipMap.get(zipCode);
-            if (!initialZip) {
-                addedZips.push(currentZip);
-            } else if (initialZip.assignedStatus !== currentZip.assignedStatus) {
-                updatedZips.push(currentZip);
-            }
+          const initialZip = initialZipMap.get(zipCode);
+          if (!initialZip) {
+            addedZips.push(currentZip);
+          } else if (initialZip.assignedStatus !== currentZip.assignedStatus) {
+            updatedZips.push(currentZip);
+          }
         });
-
         const removedZips = initialSelectedMapZipCodes.filter(initialZip => !currentZipMap.has(initialZip.zipCode));
-
+  
         if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
           toast.info(`Saving territory changes: ${addedZips.length} added, ${updatedZips.length} updated, ${removedZips.length} removed.`, { id: loadingToastId });
-
-          const { data: functionData, error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
-            body: { 
-              installerId: currentInstaller.id,
-              addedZips,
-              updatedZips,
-              removedZips,
-            },
-          });
-
-          if (territoryError) {
-            console.error("Detailed error from save-public-territory-data function:", territoryError);
-            console.error("Function response data (if any):", functionData);
-            let errorMessage = territoryError.message;
-            if (functionData?.error) {
-              errorMessage = functionData.error.message || errorMessage;
-              console.error("Edge function error details:", functionData.error.details);
-            }
-            throw new Error(`Territory Save Error: ${errorMessage}`);
+  
+          const CHUNK_SIZE = 500;
+  
+          // Process removals in chunks
+          for (let i = 0; i < removedZips.length; i += CHUNK_SIZE) {
+            const chunk = removedZips.slice(i, i + CHUNK_SIZE);
+            toast.info(`Removing ${i + chunk.length} of ${removedZips.length} territories...`, { id: loadingToastId });
+            const { error } = await supabase.functions.invoke('save-public-territory-data', {
+              body: { installerId: currentInstaller.id, removedZips: chunk },
+            });
+            if (error) throw new Error(`Failed to remove territories chunk: ${error.message}`);
+          }
+  
+          // Process updates in chunks
+          for (let i = 0; i < updatedZips.length; i += CHUNK_SIZE) {
+            const chunk = updatedZips.slice(i, i + CHUNK_SIZE);
+            toast.info(`Updating ${i + chunk.length} of ${updatedZips.length} territories...`, { id: loadingToastId });
+            const { error } = await supabase.functions.invoke('save-public-territory-data', {
+              body: { installerId: currentInstaller.id, updatedZips: chunk },
+            });
+            if (error) throw new Error(`Failed to update territories chunk: ${error.message}`);
+          }
+  
+          // Process additions in chunks
+          for (let i = 0; i < addedZips.length; i += CHUNK_SIZE) {
+            const chunk = addedZips.slice(i, i + CHUNK_SIZE);
+            toast.info(`Adding ${i + chunk.length} of ${addedZips.length} territories...`, { id: loadingToastId });
+            const { error } = await supabase.functions.invoke('save-public-territory-data', {
+              body: { installerId: currentInstaller.id, addedZips: chunk },
+            });
+            if (error) throw new Error(`Failed to add territories chunk: ${error.message}`);
           }
         } else {
           toast.info("No territory changes to save.", { id: loadingToastId });
         }
       }
-      
+  
       toast.success("Changes saved successfully! Refreshing data...", { id: loadingToastId });
       await loadAllData();
       toast.success("Save complete. Data is up to date.", { id: loadingToastId, duration: 4000 });
