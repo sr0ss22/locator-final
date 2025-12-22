@@ -12,10 +12,10 @@ serve(async (req) => {
   }
 
   try {
-    const { installerId, token, zipCodes } = await req.json()
+    const { installerId, token, addedZips, updatedZips, removedZips } = await req.json()
 
-    if (!installerId || !Array.isArray(zipCodes)) {
-      return new Response(JSON.stringify({ error: 'Installer ID and a zipCodes array are required.' }), {
+    if (!installerId) {
+      return new Response(JSON.stringify({ error: 'Installer ID is required.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       })
@@ -31,7 +31,6 @@ serve(async (req) => {
     let isAuthorized = false;
 
     if (authHeader) {
-      // Authenticate with JWT for logged-in users
       const supabaseClient = createClient(
         Deno.env.get('SUPABASE_URL') ?? '',
         Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -47,7 +46,7 @@ serve(async (req) => {
           .single();
         
         if (profile?.role === 'admin') {
-          isAuthorized = true; // Admin can edit any installer
+          isAuthorized = true;
         } else if (profile?.role === 'installer') {
           const { data: installerProfile } = await supabaseAdmin
             .from('installers')
@@ -55,12 +54,11 @@ serve(async (req) => {
             .eq('account_id', user.id)
             .single();
           if (installerProfile?.id === installerId) {
-            isAuthorized = true; // Installer can edit their own profile
+            isAuthorized = true;
           }
         }
       }
     } else if (token) {
-      // Authenticate with token for public editor links
       const { data: installer } = await supabaseAdmin
         .from('installers')
         .select('territory_access_token')
@@ -79,32 +77,39 @@ serve(async (req) => {
     }
     // --- End Authorization Logic ---
 
-    // First, clear all existing territories for this installer using the RPC function
-    const { error: deleteError } = await supabaseAdmin.rpc('batch_delete_installer_territories', {
-      p_installer_id: installerId,
-    });
-
-    if (deleteError) {
-      throw new Error(`Failed to clear existing territories: ${deleteError.message}`);
+    // Handle deletions
+    if (removedZips && Array.isArray(removedZips) && removedZips.length > 0) {
+      const { error: deleteError } = await supabaseAdmin.rpc('batch_delete_specific_installer_territories', {
+        p_installer_id: installerId,
+        p_zip_codes: removedZips.map(z => z.zipCode),
+      });
+      if (deleteError) throw new Error(`Failed to delete territories: ${deleteError.message}`);
     }
 
-    // Now, insert the new territories using the new batch insert function
-    if (zipCodes.length > 0) {
-        const { error: insertError } = await supabaseAdmin.rpc('batch_insert_installer_territories', {
-            p_installer_id: installerId,
-            territories: zipCodes, // Pass the array directly as JSONB
-        });
-        if (insertError) {
-            throw new Error(`Failed to insert territories: ${insertError.message}`);
-        }
+    // Handle updates
+    if (updatedZips && Array.isArray(updatedZips) && updatedZips.length > 0) {
+      const { error: updateError } = await supabaseAdmin.rpc('batch_update_installer_territories', {
+        p_installer_id: installerId,
+        p_updates: updatedZips,
+      });
+      if (updateError) throw new Error(`Failed to update territories: ${updateError.message}`);
     }
 
-    return new Response(JSON.stringify({ message: 'Territories updated successfully.' }), {
+    // Handle additions
+    if (addedZips && Array.isArray(addedZips) && addedZips.length > 0) {
+      const { error: insertError } = await supabaseAdmin.rpc('batch_insert_installer_territories', {
+        p_installer_id: installerId,
+        territories: addedZips,
+      });
+      if (insertError) throw new Error(`Failed to insert territories: ${insertError.message}`);
+    }
+
+    return new Response(JSON.stringify({ message: 'Territory changes saved successfully.' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
   } catch (error) {
-    console.error('Edge function error:', error); // Server-side log
+    console.error('Edge function error:', error);
     const errorResponse = {
       message: error.message,
       stack: error.stack,

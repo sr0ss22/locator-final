@@ -470,21 +470,49 @@ const EditInstallerPage: React.FC = () => {
       
       if (canEdit) {
         const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
-        toast.info(`Saving ${territoriesToProcess.length} territory assignments...`, { id: loadingToastId });
+        
+        // Calculate diff
+        const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
+        const currentZipMap = new Map(territoriesToProcess.map(z => [z.zipCode, z]));
 
-        const { data: functionData, error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
-          body: { installerId: currentInstaller.id, zipCodes: territoriesToProcess },
+        const addedZips: any[] = [];
+        const updatedZips: any[] = [];
+
+        currentZipMap.forEach((currentZip, zipCode) => {
+            const initialZip = initialZipMap.get(zipCode);
+            if (!initialZip) {
+                addedZips.push(currentZip);
+            } else if (initialZip.assignedStatus !== currentZip.assignedStatus) {
+                updatedZips.push(currentZip);
+            }
         });
 
-        if (territoryError) {
-          console.error("Detailed error from save-public-territory-data function:", territoryError);
-          console.error("Function response data (if any):", functionData);
-          let errorMessage = territoryError.message;
-          if (functionData?.error) {
-            errorMessage = functionData.error.message || errorMessage;
-            console.error("Edge function error details:", functionData.error.details);
+        const removedZips = initialSelectedMapZipCodes.filter(initialZip => !currentZipMap.has(initialZip.zipCode));
+
+        if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
+          toast.info(`Saving territory changes: ${addedZips.length} added, ${updatedZips.length} updated, ${removedZips.length} removed.`, { id: loadingToastId });
+
+          const { data: functionData, error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
+            body: { 
+              installerId: currentInstaller.id,
+              addedZips,
+              updatedZips,
+              removedZips,
+            },
+          });
+
+          if (territoryError) {
+            console.error("Detailed error from save-public-territory-data function:", territoryError);
+            console.error("Function response data (if any):", functionData);
+            let errorMessage = territoryError.message;
+            if (functionData?.error) {
+              errorMessage = functionData.error.message || errorMessage;
+              console.error("Edge function error details:", functionData.error.details);
+            }
+            throw new Error(`Territory Save Error: ${errorMessage}`);
           }
-          throw new Error(`Territory Save Error: ${errorMessage}`);
+        } else {
+          toast.info("No territory changes to save.", { id: loadingToastId });
         }
       }
       
@@ -859,7 +887,7 @@ const EditInstallerPage: React.FC = () => {
               </>
             )}
             <Button variant="outline" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" /> Log Out
+              <LogOut className="mr-2 h-4 w-4" /> Log Out
             </Button>
           </div>
         </div>
