@@ -84,7 +84,7 @@ const EditInstallerPage: React.FC = () => {
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
   const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
-  const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | null>(null);
+  const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | 'deselect' | null>(null);
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
   const { profile, user, loading: sessionLoading } = useSession();
@@ -354,11 +354,19 @@ const EditInstallerPage: React.FC = () => {
 
   const handleBulkSelectionComplete = useCallback((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => {
     setSelectedMapZipCodes(prevSelected => {
+      if (bulkActionType === 'deselect') {
+        const zipsToDeselect = new Set(selectedZips.map(z => z.zipCode));
+        const newList = prevSelected.filter(item => !zipsToDeselect.has(item.zipCode));
+        toast.success(`Bulk deselected ${selectedZips.length} ZIP codes.`);
+        setBulkActionType(null);
+        return newList;
+      }
+
       const prevSelectedMap = new Map(prevSelected.map(item => [item.zipCode, item]));
       const newSelectedMap = new Map(prevSelectedMap);
       selectedZips.forEach(zipInfo => {
         const existing = prevSelectedMap.get(zipInfo.zipCode);
-        const centroid = new Map<string, { lat: number, lng: number, state: string }>().get(zipInfo.zipCode); // Placeholder
+        const centroid = zipCodeCentroids.get(zipInfo.zipCode);
         const centroid_latitude = centroid?.lat || null;
         const centroid_longitude = centroid?.lng || null;
         if (bulkActionType === 'approve') {
@@ -374,7 +382,7 @@ const EditInstallerPage: React.FC = () => {
       setBulkActionType(null);
       return updatedList;
     });
-  }, [bulkActionType]);
+  }, [bulkActionType, zipCodeCentroids]);
 
   const highlightedZipCodes = useMemo(() => {
     const highlights = new Map<string, 'green' | 'orange'>();
@@ -586,13 +594,21 @@ const EditInstallerPage: React.FC = () => {
     }
   };
 
-  const handleToggleBulkSelect = (action: 'approve' | 'needs_approval') => {
+  const handleToggleBulkSelect = (action: 'approve' | 'needs_approval' | 'deselect') => {
     setBulkActionType(prev => {
       if (prev === action) {
         toast.info("Bulk selection mode deactivated.");
         return null;
       } else {
-        toast.info(`Bulk ${action === 'approve' ? 'Free Mileage' : 'Paid Mileage'} mode activated. Click and drag on the map.`);
+        let message = '';
+        if (action === 'approve') {
+          message = 'Bulk Free Mileage mode activated.';
+        } else if (action === 'needs_approval') {
+          message = 'Bulk Paid Mileage mode activated.';
+        } else if (action === 'deselect') {
+          message = 'Bulk Deselect mode activated.';
+        }
+        toast.info(`${message} Click and drag on the map.`);
         return action;
       }
     });
@@ -974,7 +990,12 @@ const EditInstallerPage: React.FC = () => {
                   </Button>
                   <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
                   <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
-                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
+                  {installerCountry === 'Canada' && (
+                    <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white hover:bg-red-700" : "border-red-600 text-red-600 hover:bg-red-100")} onClick={() => handleToggleBulkSelect('deselect')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'deselect' ? "Exit Bulk Deselect" : "Bulk Deselect"}</Button>
+                  )}
+                  {installerCountry !== 'Canada' && (
+                    <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={loading}><Upload className="mr-2 h-4 w-4" /> Import</Button>
