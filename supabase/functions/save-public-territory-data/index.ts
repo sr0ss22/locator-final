@@ -6,6 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const CHUNK_SIZE = 500; // Process up to 500 records at a time
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -77,31 +79,40 @@ serve(async (req) => {
     }
     // --- End Authorization Logic ---
 
-    // Handle deletions
+    // Handle deletions in chunks
     if (removedZips && Array.isArray(removedZips) && removedZips.length > 0) {
-      const { error: deleteError } = await supabaseAdmin.rpc('batch_delete_specific_installer_territories', {
-        p_installer_id: installerId,
-        p_zip_codes: removedZips.map(z => z.zipCode),
-      });
-      if (deleteError) throw new Error(`Failed to delete territories: ${deleteError.message}`);
+      for (let i = 0; i < removedZips.length; i += CHUNK_SIZE) {
+        const chunk = removedZips.slice(i, i + CHUNK_SIZE);
+        const { error: deleteError } = await supabaseAdmin.rpc('batch_delete_specific_installer_territories', {
+          p_installer_id: installerId,
+          p_zip_codes: chunk.map(z => z.zipCode),
+        });
+        if (deleteError) throw new Error(`Failed to delete territories chunk: ${deleteError.message}`);
+      }
     }
 
-    // Handle updates
+    // Handle updates in chunks
     if (updatedZips && Array.isArray(updatedZips) && updatedZips.length > 0) {
-      const { error: updateError } = await supabaseAdmin.rpc('batch_update_installer_territories', {
-        p_installer_id: installerId,
-        p_updates: updatedZips,
-      });
-      if (updateError) throw new Error(`Failed to update territories: ${updateError.message}`);
+      for (let i = 0; i < updatedZips.length; i += CHUNK_SIZE) {
+        const chunk = updatedZips.slice(i, i + CHUNK_SIZE);
+        const { error: updateError } = await supabaseAdmin.rpc('batch_update_installer_territories', {
+          p_installer_id: installerId,
+          p_updates: chunk,
+        });
+        if (updateError) throw new Error(`Failed to update territories chunk: ${updateError.message}`);
+      }
     }
 
-    // Handle additions
+    // Handle additions in chunks
     if (addedZips && Array.isArray(addedZips) && addedZips.length > 0) {
-      const { error: insertError } = await supabaseAdmin.rpc('batch_insert_installer_territories', {
-        p_installer_id: installerId,
-        territories: addedZips,
-      });
-      if (insertError) throw new Error(`Failed to insert territories: ${insertError.message}`);
+      for (let i = 0; i < addedZips.length; i += CHUNK_SIZE) {
+        const chunk = addedZips.slice(i, i + CHUNK_SIZE);
+        const { error: insertError } = await supabaseAdmin.rpc('batch_insert_installer_territories', {
+          p_installer_id: installerId,
+          territories: chunk,
+        });
+        if (insertError) throw new Error(`Failed to insert territories chunk: ${insertError.message}`);
+      }
     }
 
     return new Response(JSON.stringify({ message: 'Territory changes saved successfully.' }), {
