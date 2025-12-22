@@ -870,7 +870,11 @@ const EditInstallerPage: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-500" /><p className="text-gray-500 ml-2">Loading installer data...</p></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <LoadingSayings />
+      </div>
+    );
   }
   if (!currentInstaller) {
     return <div className="min-h-screen flex flex-col items-center justify-center text-red-500"><p className="text-xl mb-4">Access Denied or Installer Not Found.</p><p>Please check your link and try again.</p></div>;
@@ -899,7 +903,7 @@ const EditInstallerPage: React.FC = () => {
                 <Button variant="outline" onClick={handleCopyShareableLink} disabled={loading}><Copy className="mr-2 h-4 w-4" /> Share</Button>
               </>
             )}
-            <Button variant="outline" onClick={handleLogout}><LogOut className="h-4 w-4 mr-2" /> Log Out</Button>
+            <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" /> Log Out</Button>
           </div>
         </div>
 

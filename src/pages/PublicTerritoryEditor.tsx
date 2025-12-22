@@ -19,6 +19,7 @@ import canadaGeoJson from '@/data/canada-postal-codes.json' with { type: 'json' 
 import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { calculateDistance } from "@/utils/distance";
+import LoadingSayings from "@/components/LoadingSayings";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -451,7 +452,11 @@ const PublicTerritoryEditor: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gray-500" /><p className="text-gray-500 ml-2">Loading installer data...</p></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <LoadingSayings />
+      </div>
+    );
   }
   if (!currentInstaller) {
     return <div className="min-h-screen flex flex-col items-center justify-center text-red-500"><p className="text-xl mb-4">Access Denied or Installer Not Found.</p><p>Please check your link and try again.</p></div>;
