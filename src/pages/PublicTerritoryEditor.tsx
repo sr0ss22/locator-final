@@ -281,40 +281,18 @@ const PublicTerritoryEditor: React.FC = () => {
       if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
         toast.info(`Saving territory changes: ${addedZips.length} added, ${updatedZips.length} updated, ${removedZips.length} removed.`, { id: loadingToastId });
 
-        const CHUNK_SIZE = 200;
-        const CONCURRENCY_LIMIT = 5; // Process 5 chunks in parallel at a time
+        const { error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
+          body: { 
+            installerId, 
+            token,
+            addedZips, 
+            updatedZips, 
+            removedZips 
+          },
+        });
 
-        const allOperations: { type: 'remove' | 'update' | 'add', chunk: any[] }[] = [];
-
-        // Create a list of all chunk operations
-        for (let i = 0; i < removedZips.length; i += CHUNK_SIZE) {
-          allOperations.push({ type: 'remove', chunk: removedZips.slice(i, i + CHUNK_SIZE) });
-        }
-        for (let i = 0; i < updatedZips.length; i += CHUNK_SIZE) {
-          allOperations.push({ type: 'update', chunk: updatedZips.slice(i, i + CHUNK_SIZE) });
-        }
-        for (let i = 0; i < addedZips.length; i += CHUNK_SIZE) {
-          allOperations.push({ type: 'add', chunk: addedZips.slice(i, i + CHUNK_SIZE) });
-        }
-
-        // Process all operations in concurrent batches
-        for (let i = 0; i < allOperations.length; i += CONCURRENCY_LIMIT) {
-          const batchOperations = allOperations.slice(i, i + CONCURRENCY_LIMIT);
-          const promises = batchOperations.map(op => {
-            let body: any = { installerId, token };
-            if (op.type === 'remove') body.removedZips = op.chunk;
-            if (op.type === 'update') body.updatedZips = op.chunk;
-            if (op.type === 'add') body.addedZips = op.chunk;
-            return supabase.functions.invoke('save-public-territory-data', { body });
-          });
-
-          const results = await Promise.all(promises);
-          for (const result of results) {
-            if (result.error) {
-              throw new Error(`One or more batches failed: ${result.error.message}`);
-            }
-          }
-          toast.info(`Processed ${Math.min(i + CONCURRENCY_LIMIT, allOperations.length)} of ${allOperations.length} batches...`, { id: loadingToastId });
+        if (territoryError) {
+          throw new Error(`Failed to save territories: ${territoryError.message}`);
         }
 
       } else {

@@ -77,31 +77,16 @@ serve(async (req) => {
     }
     // --- End Authorization Logic ---
 
-    // Handle deletions
-    if (removedZips && Array.isArray(removedZips) && removedZips.length > 0) {
-      const { error: deleteError } = await supabaseAdmin.rpc('batch_delete_specific_installer_territories', {
-        p_installer_id: installerId,
-        p_zip_codes: removedZips.map(z => z.zipCode),
-      });
-      if (deleteError) throw new Error(`Failed to delete territories: ${deleteError.message}`);
-    }
+    // Call the new single RPC function
+    const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
+      p_installer_id: installerId,
+      p_removed_zips: (removedZips || []).map(z => z.zipCode),
+      p_updated_zips: updatedZips || [],
+      p_added_zips: addedZips || [],
+    });
 
-    // Handle updates
-    if (updatedZips && Array.isArray(updatedZips) && updatedZips.length > 0) {
-      const { error: updateError } = await supabaseAdmin.rpc('batch_update_installer_territories', {
-        p_installer_id: installerId,
-        p_updates: updatedZips,
-      });
-      if (updateError) throw new Error(`Failed to update territories: ${updateError.message}`);
-    }
-
-    // Handle additions
-    if (addedZips && Array.isArray(addedZips) && addedZips.length > 0) {
-      const { error: insertError } = await supabaseAdmin.rpc('batch_insert_installer_territories', {
-        p_installer_id: installerId,
-        territories: addedZips,
-      });
-      if (insertError) throw new Error(`Failed to insert territories: ${insertError.message}`);
+    if (rpcError) {
+      throw new Error(`RPC Error: ${rpcError.message}`);
     }
 
     return new Response(JSON.stringify({ message: 'Territory changes saved successfully.' }), {
