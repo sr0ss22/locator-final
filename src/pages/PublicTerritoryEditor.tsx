@@ -281,7 +281,7 @@ const PublicTerritoryEditor: React.FC = () => {
       if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
         toast.info(`Saving territory changes: ${addedZips.length} added, ${updatedZips.length} updated, ${removedZips.length} removed.`, { id: loadingToastId });
 
-        const CHUNK_SIZE = 500;
+        const CHUNK_SIZE = 200;
 
         // Process removals in chunks
         for (let i = 0; i < removedZips.length; i += CHUNK_SIZE) {
