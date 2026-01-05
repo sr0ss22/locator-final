@@ -148,7 +148,6 @@ const PublicTerritoryEditor: React.FC = () => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       if (isDirty) {
         event.preventDefault();
-        // Standard for most browsers to show the confirmation dialog
         event.returnValue = '';
       }
     };
@@ -257,7 +256,7 @@ const PublicTerritoryEditor: React.FC = () => {
   const handleSubmit = async (territoriesOverride?: any[]) => {
     if (!installerId || !token) { toast.error("Missing ID or token. Cannot save."); return; }
     setLoading(true);
-    const loadingToastId = toast.loading("Saving territory changes...");
+    const loadingToastId = toast.loading("Saving changes...");
     try {
       const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
       
@@ -279,7 +278,7 @@ const PublicTerritoryEditor: React.FC = () => {
       const removedZips = initialSelectedMapZipCodes.filter(initialZip => !currentZipMap.has(initialZip.zipCode));
 
       if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
-        toast.info(`Saving territory changes: ${addedZips.length} added, ${updatedZips.length} updated, ${removedZips.length} removed.`, { id: loadingToastId });
+        toast.info(`Syncing territory changes...`, { id: loadingToastId });
 
         const { error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
           body: { 
@@ -294,14 +293,11 @@ const PublicTerritoryEditor: React.FC = () => {
         if (territoryError) {
           throw new Error(`Failed to save territories: ${territoryError.message}`);
         }
-
-      } else {
-        toast.info("No territory changes to save.", { id: loadingToastId });
       }
 
       toast.success("Territory changes saved successfully! Refreshing data...", { id: loadingToastId });
       await loadAllData();
-      toast.success("Save complete. Data is up to date.", { id: loadingToastId, duration: 4000 });
+      toast.success("Save complete.", { id: loadingToastId, duration: 4000 });
     } catch (err: any) {
       console.error("Error saving territories:", err);
       toast.error(`Failed to save changes: ${err.message}`, { id: loadingToastId });
@@ -384,14 +380,13 @@ const PublicTerritoryEditor: React.FC = () => {
         loadingToastId = toast.loading(`Finding territories within 25 miles...`);
         toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
-        const radiusKm = 25 * 1.60934; // 25 miles in km
+        const radiusKm = 25 * 1.60934;
         const options = { steps: 64, units: 'kilometers' as const };
         const radiusCircle = turf.circle(center, radiusKm, options);
 
         usGeoJson.features.forEach(feature => {
           if (feature.geometry) {
             try {
-              // booleanIntersects is faster as it stops on first intersection
               if (turf.booleanIntersects(radiusCircle, feature as any)) {
                 const zipCode = feature.properties.ZCTA5CE20;
                 const state = feature.properties.STUSPS;
@@ -404,7 +399,6 @@ const PublicTerritoryEditor: React.FC = () => {
                 });
               }
             } catch (e) {
-              // Log error for a specific feature but continue
               console.warn(`Could not process feature for ZIP ${feature.properties.ZCTA5CE20}:`, e);
             }
           }

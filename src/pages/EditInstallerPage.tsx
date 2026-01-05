@@ -315,7 +315,7 @@ const EditInstallerPage: React.FC = () => {
   const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
     setSelectedMapZipCodes(prevSelected => {
       const existingEntryIndex = prevSelected.findIndex(item => item.zipCode === zipCode);
-      const centroid = new Map<string, { lat: number, lng: number, state: string }>().get(zipCode); // This is a placeholder, as we don't have access to the full map here.
+      const centroid = zipCodeCentroids.get(zipCode);
       const centroid_latitude = centroid?.lat || null;
       const centroid_longitude = centroid?.lng || null;
       if (existingEntryIndex !== -1) {
@@ -329,7 +329,7 @@ const EditInstallerPage: React.FC = () => {
         return [...prevSelected, { zipCode, assignedStatus: 'Approved', stateProvince, centroid_latitude, centroid_longitude }];
       }
     });
-  }, []);
+  }, [zipCodeCentroids]);
 
   const handleBulkZipCodeUpdate = useCallback((updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => {
     setSelectedMapZipCodes(prevSelected => {
@@ -432,13 +432,12 @@ const EditInstallerPage: React.FC = () => {
       return;
     }
     setLoading(true);
-    const loadingToastId = toast.loading("Saving installer changes...");
+    const loadingToastId = toast.loading("Saving changes...");
   
     try {
       // Step 1: Update installer profile data (if changed)
       if (JSON.stringify(formData) !== JSON.stringify(initialFormData)) {
         const formattedData: any = {};
-        // ... (rest of the formatting logic remains the same)
         for (const key in formData) {
             if (Object.prototype.hasOwnProperty.call(formData, key)) {
               const value = formData[key];
@@ -479,7 +478,7 @@ const EditInstallerPage: React.FC = () => {
         if (updateInstallerError) throw new Error(`Supabase Update Error: ${updateInstallerError.message}`);
       }
   
-      // Step 2: Process territory changes
+      // Step 2: Process all territory changes in ONE request
       if (canEdit) {
         const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
         const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
@@ -498,8 +497,9 @@ const EditInstallerPage: React.FC = () => {
         const removedZips = initialSelectedMapZipCodes.filter(initialZip => !currentZipMap.has(initialZip.zipCode));
   
         if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
-          toast.info(`Saving territory changes: ${addedZips.length} added, ${updatedZips.length} updated, ${removedZips.length} removed.`, { id: loadingToastId });
+          toast.info(`Syncing territory changes...`, { id: loadingToastId });
   
+          // Send EVERYTHING in one request. The server now handles chunking internally.
           const { error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
             body: { 
               installerId: currentInstaller.id, 
@@ -513,16 +513,14 @@ const EditInstallerPage: React.FC = () => {
             throw new Error(`Failed to save territories: ${territoryError.message}`);
           }
 
-        } else {
-          toast.info("No territory changes to save.", { id: loadingToastId });
         }
       }
   
-      toast.success("Changes saved successfully! Refreshing data...", { id: loadingToastId });
+      toast.success("All changes saved successfully! Refreshing data...", { id: loadingToastId });
       await loadAllData();
-      toast.success("Save complete. Data is up to date.", { id: loadingToastId, duration: 4000 });
+      toast.success("Save complete.", { id: loadingToastId, duration: 4000 });
     } catch (err: any) {
-      console.error("Error saving installer and/or ZIP associations:", err);
+      console.error("Error saving changes:", err);
       toast.error(`Failed to save changes: ${err.message || err.toString()}`, { id: loadingToastId });
     } finally {
       setLoading(false);
@@ -673,7 +671,7 @@ const EditInstallerPage: React.FC = () => {
       importedCount = territoriesToUpsert.length;
       toast.success(`Successfully imported ${importedCount} territories. ${skippedCount > 0 ? `${skippedCount} rows skipped.` : ''}`, { id: loadingToastId, duration: 5000 });
       await fetchTerritoryStatuses();
-      await loadAllData(); // Reload all data to get enriched zips
+      await loadAllData();
     } catch (err: any) {
       console.error("Error during territory import:", err);
       toast.error(`Territory import failed: ${err.message || err.toString()}`, { id: loadingToastId, duration: 8000 });
@@ -808,7 +806,6 @@ const EditInstallerPage: React.FC = () => {
         usGeoJson.features.forEach(feature => {
           if (feature.geometry) {
             try {
-              // booleanIntersects is faster as it stops on first intersection
               if (turf.booleanIntersects(radiusCircle, feature as any)) {
                 const zipCode = feature.properties.ZCTA5CE20;
                 const state = feature.properties.STUSPS;
@@ -821,7 +818,6 @@ const EditInstallerPage: React.FC = () => {
                 });
               }
             } catch (e) {
-              // Log error for a specific feature but continue
               console.warn(`Could not process feature for ZIP ${feature.properties.ZCTA5CE20}:`, e);
             }
           }
