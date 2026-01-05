@@ -501,41 +501,40 @@ const EditInstallerPage: React.FC = () => {
           toast.info(`Saving territory changes: ${addedZips.length} added, ${updatedZips.length} updated, ${removedZips.length} removed.`, { id: loadingToastId });
   
           const CHUNK_SIZE = 200;
-          const allPromises: Promise<any>[] = [];
-  
-          // Process removals in chunks
+          const CONCURRENCY_LIMIT = 5; // Process 5 chunks in parallel at a time
+
+          const allOperations: { type: 'remove' | 'update' | 'add', chunk: any[] }[] = [];
+
+          // Create a list of all chunk operations
           for (let i = 0; i < removedZips.length; i += CHUNK_SIZE) {
-            const chunk = removedZips.slice(i, i + CHUNK_SIZE);
-            const promise = supabase.functions.invoke('save-public-territory-data', {
-              body: { installerId: currentInstaller.id, removedZips: chunk },
-            });
-            allPromises.push(promise);
+            allOperations.push({ type: 'remove', chunk: removedZips.slice(i, i + CHUNK_SIZE) });
           }
-  
-          // Process updates in chunks
           for (let i = 0; i < updatedZips.length; i += CHUNK_SIZE) {
-            const chunk = updatedZips.slice(i, i + CHUNK_SIZE);
-            const promise = supabase.functions.invoke('save-public-territory-data', {
-              body: { installerId: currentInstaller.id, updatedZips: chunk },
-            });
-            allPromises.push(promise);
+            allOperations.push({ type: 'update', chunk: updatedZips.slice(i, i + CHUNK_SIZE) });
           }
-  
-          // Process additions in chunks
           for (let i = 0; i < addedZips.length; i += CHUNK_SIZE) {
-            const chunk = addedZips.slice(i, i + CHUNK_SIZE);
-            const promise = supabase.functions.invoke('save-public-territory-data', {
-              body: { installerId: currentInstaller.id, addedZips: chunk },
-            });
-            allPromises.push(promise);
+            allOperations.push({ type: 'add', chunk: addedZips.slice(i, i + CHUNK_SIZE) });
           }
 
-          const results = await Promise.all(allPromises);
-          results.forEach(result => {
-            if (result.error) {
-              throw new Error(`One or more batches failed: ${result.error.message}`);
+          // Process all operations in concurrent batches
+          for (let i = 0; i < allOperations.length; i += CONCURRENCY_LIMIT) {
+            const batchOperations = allOperations.slice(i, i + CONCURRENCY_LIMIT);
+            const promises = batchOperations.map(op => {
+              let body: any = { installerId: currentInstaller.id }; // No token needed for authenticated users
+              if (op.type === 'remove') body.removedZips = op.chunk;
+              if (op.type === 'update') body.updatedZips = op.chunk;
+              if (op.type === 'add') body.addedZips = op.chunk;
+              return supabase.functions.invoke('save-public-territory-data', { body });
+            });
+
+            const results = await Promise.all(promises);
+            for (const result of results) {
+              if (result.error) {
+                throw new Error(`One or more batches failed: ${result.error.message}`);
+              }
             }
-          });
+            toast.info(`Processed ${Math.min(i + CONCURRENCY_LIMIT, allOperations.length)} of ${allOperations.length} batches...`, { id: loadingToastId });
+          }
 
         } else {
           toast.info("No territory changes to save.", { id: loadingToastId });
@@ -1063,7 +1062,7 @@ const EditInstallerPage: React.FC = () => {
             <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
               <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
               <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
-                {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
+                {['0-25', '25-50', '50-75', '75-100', '100-125', '150+'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
                 <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
               </RadioGroup>
             </div>
