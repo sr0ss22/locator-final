@@ -77,7 +77,7 @@ serve(async (req) => {
     }
     // --- End Authorization Logic ---
 
-    // Call the new single RPC function
+    // Call the single RPC function that handles its own chunking
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
       p_removed_zips: (removedZips || []).map(z => z.zipCode),
