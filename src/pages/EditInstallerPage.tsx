@@ -501,36 +501,42 @@ const EditInstallerPage: React.FC = () => {
           toast.info(`Saving territory changes: ${addedZips.length} added, ${updatedZips.length} updated, ${removedZips.length} removed.`, { id: loadingToastId });
   
           const CHUNK_SIZE = 200;
+          const allPromises: Promise<any>[] = [];
   
           // Process removals in chunks
           for (let i = 0; i < removedZips.length; i += CHUNK_SIZE) {
             const chunk = removedZips.slice(i, i + CHUNK_SIZE);
-            toast.info(`Removing ${i + chunk.length} of ${removedZips.length} territories...`, { id: loadingToastId });
-            const { error } = await supabase.functions.invoke('save-public-territory-data', {
+            const promise = supabase.functions.invoke('save-public-territory-data', {
               body: { installerId: currentInstaller.id, removedZips: chunk },
             });
-            if (error) throw new Error(`Failed to remove territories chunk: ${error.message}`);
+            allPromises.push(promise);
           }
   
           // Process updates in chunks
           for (let i = 0; i < updatedZips.length; i += CHUNK_SIZE) {
             const chunk = updatedZips.slice(i, i + CHUNK_SIZE);
-            toast.info(`Updating ${i + chunk.length} of ${updatedZips.length} territories...`, { id: loadingToastId });
-            const { error } = await supabase.functions.invoke('save-public-territory-data', {
+            const promise = supabase.functions.invoke('save-public-territory-data', {
               body: { installerId: currentInstaller.id, updatedZips: chunk },
             });
-            if (error) throw new Error(`Failed to update territories chunk: ${error.message}`);
+            allPromises.push(promise);
           }
   
           // Process additions in chunks
           for (let i = 0; i < addedZips.length; i += CHUNK_SIZE) {
             const chunk = addedZips.slice(i, i + CHUNK_SIZE);
-            toast.info(`Adding ${i + chunk.length} of ${addedZips.length} territories...`, { id: loadingToastId });
-            const { error } = await supabase.functions.invoke('save-public-territory-data', {
+            const promise = supabase.functions.invoke('save-public-territory-data', {
               body: { installerId: currentInstaller.id, addedZips: chunk },
             });
-            if (error) throw new Error(`Failed to add territories chunk: ${error.message}`);
+            allPromises.push(promise);
           }
+
+          const results = await Promise.all(allPromises);
+          results.forEach(result => {
+            if (result.error) {
+              throw new Error(`One or more batches failed: ${result.error.message}`);
+            }
+          });
+
         } else {
           toast.info("No territory changes to save.", { id: loadingToastId });
         }
