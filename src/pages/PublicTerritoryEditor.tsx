@@ -263,21 +263,27 @@ const PublicTerritoryEditor: React.FC = () => {
       const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
       const currentZipMap = new Map(territoriesToProcess.map(z => [z.zipCode, z]));
 
-      const addedZips: any[] = [];
-      const updatedZips: any[] = [];
+      // We'll map these to match the snake_case keys expected by the database function
+      const addedZips = Array.from(currentZipMap.values())
+          .filter(z => !initialZipMap.has(z.zipCode))
+          .map(z => ({
+              zip_code: z.zipCode,
+              state_province: z.stateProvince,
+              assigned_status: z.assignedStatus
+          }));
+          
+      const updatedZips = Array.from(currentZipMap.values())
+          .filter(z => initialZipMap.has(z.zipCode) && initialZipMap.get(z.zipCode)!.assignedStatus !== z.assignedStatus)
+          .map(z => ({
+              zip_code: z.zipCode,
+              assigned_status: z.assignedStatus
+          }));
 
-      currentZipMap.forEach((currentZip, zipCode) => {
-          const initialZip = initialZipMap.get(zipCode);
-          if (!initialZip) {
-              addedZips.push(currentZip);
-          } else if (initialZip.assignedStatus !== currentZip.assignedStatus) {
-              updatedZips.push(currentZip);
-          }
-      });
+      const removedZipCodes = initialSelectedMapZipCodes
+          .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
+          .map(initialZip => initialZip.zipCode);
 
-      const removedZips = initialSelectedMapZipCodes.filter(initialZip => !currentZipMap.has(initialZip.zipCode));
-
-      if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
+      if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
         toast.info(`Syncing territory changes...`, { id: loadingToastId });
 
         const { error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
@@ -286,7 +292,7 @@ const PublicTerritoryEditor: React.FC = () => {
             token,
             addedZips, 
             updatedZips, 
-            removedZips 
+            removedZips: removedZipCodes.map(zipCode => ({ zipCode })) // Standardize structure
           },
         });
 
