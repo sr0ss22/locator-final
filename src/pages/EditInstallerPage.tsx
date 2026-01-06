@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import TerritoryMap from "@/components/TerritoryMap";
 import { supabase } from "@/integrations/supabase/client";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import InstallerTerritoryList from "@/components/InstallerTerritoryList";
 import { InstallerZipAssignment, TerritoryStatus } from "@/types/territory";
 import { run as getCoordinates } from "@/functions/getCoordinates";
@@ -28,7 +29,6 @@ import { calculateDistance } from "@/utils/distance";
 import LoadingSayings from "@/components/LoadingSayings";
 import DebugPostalCodeChecker from "@/components/DebugPostalCodeChecker";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -427,6 +427,12 @@ const EditInstallerPage: React.FC = () => {
     const loadingToastId = toast.loading("Saving changes...");
   
     try {
+      // Force a session refresh before starting the long operation
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        throw new Error(`Authentication error: ${refreshError.message}. Your session may have expired.`);
+      }
+
       // Step 1: Update installer profile data
       if (JSON.stringify(formData) !== JSON.stringify(initialFormData)) {
         const formattedData: any = {};
@@ -542,7 +548,13 @@ const EditInstallerPage: React.FC = () => {
       toast.success("Save complete.", { id: loadingToastId, duration: 4000 });
     } catch (err: any) {
       console.error("Error saving changes:", err);
-      toast.error(`Failed to save changes: ${err.message || err.toString()}`, { id: loadingToastId });
+      if (err.message && (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized') || err.message.toLowerCase().includes('authentication error'))) {
+        toast.error("Your session has expired or is invalid. Please log in again to save your changes.", { id: loadingToastId, duration: 8000 });
+        await supabase.auth.signOut();
+        navigate('/login');
+      } else {
+        toast.error(`Failed to save changes: ${err.message || err.toString()}`, { id: loadingToastId });
+      }
     } finally {
       setLoading(false);
     }
