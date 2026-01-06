@@ -73,24 +73,19 @@ const EditInstallerPage: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<boolean>(true);
-  const [isSaving, setIsSaving] = useState<boolean>(false); // Separate saving state
-  const [mapRefreshKey, setMapRefreshKey] = useState<number>(0); // Key to force map style refresh
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [mapRefreshKey, setMapRefreshKey] = useState<number>(0); 
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
   const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
   const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | 'deselect' | null>(null);
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
-  const { profile, user, loading: sessionLoading } = useSession();
+  const { profile, loading: sessionLoading } = useSession();
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast.error("Logout failed: " + error.message);
-    } else {
-      toast.success("You have been logged out.");
-      navigate('/login');
-    }
+    await supabase.auth.signOut();
+    navigate('/login');
   };
 
   const installerCountry = useMemo(() => {
@@ -111,15 +106,13 @@ const EditInstallerPage: React.FC = () => {
             const transformedGeometry = turf.clone(feature.geometry);
             turf.coordEach(transformedGeometry, (currentCoord) => {
               const [lon, lat] = proj4('EPSG:3347', 'EPSG:4326').forward(currentCoord);
-              currentCoord[0] = lon;
-              currentCoord[1] = lat;
+              currentCoord[0] = lon; currentCoord[1] = lat;
             });
             const centroid = turf.centroid(transformedGeometry);
             if (centroid?.geometry?.coordinates) {
-              lng = centroid.geometry.coordinates[0];
-              lat = centroid.geometry.coordinates[1];
+              lng = centroid.geometry.coordinates[0]; lat = centroid.geometry.coordinates[1];
             }
-          } catch (e) { console.warn("Error calculating centroid for Canadian feature:", feature, e); }
+          } catch (e) {}
         } else {
           zipCode = feature.properties.ZCTA5CE20; state = feature.properties.STUSPS;
           lat = parseFloat(feature.properties.INTPTLAT20); lng = parseFloat(feature.properties.INTPTLON20);
@@ -149,27 +142,10 @@ const EditInstallerPage: React.FC = () => {
 
   const requiredFields = ["name", "email", "primary_phone", "address1", "city", "state", "postalcode"];
 
-  const standardizeCertificationName = (cert: string | null | undefined): InstallerCertification | null => {
-    if (!cert) return null;
-    const normalizedCert = cert.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-    if (normalizedCert.includes("motorization pro") || normalizedCert === 'pv pro' || normalizedCert === 'powerview pro certified') {
-        return "Motorization Pro";
-    }
-    const validCertificationsMap: { [key: string]: InstallerCertification } = {
-      "certified installer": "Certified Installer", "master installer": "Master Installer",
-      "master shutter": "Shutter Pro", "drapery pro": "Drapery Pro", "pip certified": "PIP Certified",
-    };
-    return validCertificationsMap[normalizedCert] || null;
-  };
-
   const fetchTerritoryStatuses = useCallback(async () => {
-    const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status');
-    if (error) {
-      console.error("Error fetching all territory statuses:", error);
-      toast.error("Failed to load map territory statuses.");
-      return new Map();
-    } else {
-      const statusMap = new Map<string, TerritoryStatus>();
+    const { data } = await supabase.from('installer_zip_codes').select('zip_code, status');
+    const statusMap = new Map<string, TerritoryStatus>();
+    if (data) {
       for (const item of data) {
         if (item.zip_code) {
           const existingStatus = statusMap.get(item.zip_code);
@@ -178,91 +154,35 @@ const EditInstallerPage: React.FC = () => {
           }
         }
       }
-      setTerritoryStatuses(statusMap);
-      return statusMap;
     }
+    setTerritoryStatuses(statusMap);
+    return statusMap;
   }, []);
 
   const loadAllData = useCallback(async (silent = false) => {
-    if (!installerId) {
-      toast.error("No installer ID provided.");
-      navigate("/installers");
-      return;
-    }
+    if (!installerId) return;
     if (!silent) setLoading(true);
     
-    const { data: installerData, error: fetchError } = await supabase.from('installers').select('*').eq('id', installerId).single();
-    if (fetchError || !installerData) {
-      console.error("Error fetching installer:", fetchError);
-      toast.error("Failed to load installer data.");
+    const { data: installerData } = await supabase.from('installers').select('*').eq('id', installerId).single();
+    if (!installerData) {
       navigate("/installers");
-      setLoading(false);
       return;
     }
 
-    const country = installerData.country?.toUpperCase();
-    const isCanada = country === 'CANADA' || country === 'CA' || country === 'CAN';
-    const currentInstallerCountry = isCanada ? 'Canada' : 'USA';
-
-    const centroids = new Map<string, { lat: number, lng: number, state: string }>();
-    const geoJsonToProcess = currentInstallerCountry === 'Canada' ? canadaGeoJson : usGeoJson;
-    if (geoJsonToProcess && geoJsonToProcess.features) {
-      geoJsonToProcess.features.forEach(feature => {
-        let zipCode: string | null = null, state: string | null = null, lat: number | null = null, lng: number | null = null;
-        if (currentInstallerCountry === 'Canada') {
-          zipCode = feature.properties.CFSAUID; state = feature.properties.PRNAME;
-          try {
-            const transformedGeometry = turf.clone(feature.geometry);
-            turf.coordEach(transformedGeometry, (currentCoord) => {
-              const [lon, lat] = proj4('EPSG:3347', 'EPSG:4326').forward(currentCoord);
-              currentCoord[0] = lon;
-              currentCoord[1] = lat;
-            });
-            const centroid = turf.centroid(transformedGeometry);
-            if (centroid?.geometry?.coordinates) {
-              lng = centroid.geometry.coordinates[0];
-              lat = centroid.geometry.coordinates[1];
-            }
-          } catch (e) { console.warn("Error calculating centroid for Canadian feature:", feature, e); }
-        } else {
-          zipCode = feature.properties.ZCTA5CE20; state = feature.properties.STUSPS;
-          lat = parseFloat(feature.properties.INTPTLAT20); lng = parseFloat(feature.properties.INTPTLON20);
-        }
-        if (zipCode && lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
-          centroids.set(zipCode, { lat, lng, state: state || 'Unknown' });
-        }
-      });
-    }
-
+    const currentCountry = (installerData.country?.toUpperCase() === 'CANADA' || installerData.country?.toUpperCase() === 'CA') ? 'Canada' : 'USA';
+    
     let allZipData: any[] = [];
     let page = 0;
-    const pageSize = 1000;
     let hasMore = true;
     while(hasMore) {
-      const { data: zipData, error: zipError } = await supabase
-        .from('installer_zip_codes')
-        .select('zip_code, status, state_province')
-        .eq('installer_id', installerId)
-        .range(page * pageSize, (page + 1) * pageSize - 1);
-
-      if (zipError) {
-        console.error("Error fetching installer zip codes:", zipError);
-        toast.error("Failed to load installer's assigned ZIP codes.");
-        hasMore = false;
-      } else {
-        if (zipData) {
-          allZipData = allZipData.concat(zipData);
-        }
-        if (!zipData || zipData.length < pageSize) {
-          hasMore = false;
-        } else {
-          page++;
-        }
-      }
+      const { data: zipData } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', installerId).range(page * 1000, (page + 1) * 1000 - 1);
+      if (zipData) allZipData = allZipData.concat(zipData);
+      if (!zipData || zipData.length < 1000) hasMore = false;
+      else page++;
     }
 
-    const enrichedZips = (allZipData || []).map(item => {
-      const centroid = centroids.get(item.zip_code);
+    const enrichedZips = allZipData.map(item => {
+      const centroid = zipCodeCentroids.get(item.zip_code);
       return {
         zipCode: item.zip_code, assignedStatus: item.status as TerritoryStatus, stateProvince: item.state_province,
         centroid_latitude: centroid?.lat || null, centroid_longitude: centroid?.lng || null,
@@ -270,870 +190,202 @@ const EditInstallerPage: React.FC = () => {
     });
 
     await fetchTerritoryStatuses();
-
-    // Map skills, brands, and certifications for the installer display
-    const skills: InstallerSkill[] = [];
-    if (toBoolean(installerData.blinds_and_shades)) skills.push("Blinds & Shades");
-    if (toBoolean(installerData.power_view)) skills.push("Automation");
-    if (toBoolean(installerData.shutters)) skills.push("Shutters");
-    if (toBoolean(installerData.draperies)) skills.push("Drapery");
-    if (toBoolean(installerData.service_call)) skills.push("Service Call");
-    if (toBoolean(installerData.tall_window)) skills.push("Tall Window");
-    if (toBoolean(installerData.fixture_displays)) skills.push("Fixture Displays");
-    if (toBoolean(installerData.outdoor)) skills.push("Outdoor");
-    if (toBoolean(installerData.high_voltage_hardwired)) skills.push("High Voltage Hardwired");
-
-    const brands: InstallerBrand[] = [];
-    if (toBoolean(installerData.hunter_douglas)) brands.push("Hunter Douglas");
-    if (toBoolean(installerData.alta)) brands.push("Alta");
-    if (toBoolean(installerData.carole)) brands.push("Carole");
-    if (toBoolean(installerData.architectural)) brands.push("Architectural");
-    if (toBoolean(installerData.levolor)) brands.push("Levolor");
-    if (toBoolean(installerData.three_day_blinds)) brands.push("Three Day Blinds");
-
-    const certifications: InstallerCertification[] = [];
-    const pvCert = standardizeCertificationName(installerData.powerview_certification);
-    if (pvCert) certifications.push(pvCert);
-    const shutterCert = standardizeCertificationName(installerData.shutter_certification_level);
-    if (shutterCert) certifications.push(shutterCert);
-    const draperyCert = standardizeCertificationName(installerData.draperies_certification_level);
-    if (draperyCert) certifications.push(draperyCert);
-    const pipCert = standardizeCertificationName(installerData.pip_certification_level);
-    if (pipCert) certifications.push(pipCert);
-
-    const mappedInstaller: Installer = {
-      id: installerData.id, name: installerData.name,
-      address: `${installerData.address1 || ''} ${installerData.add2 || ''}, ${installerData.city || ''}, ${installerData.state || ''} ${installerData.postalcode || ''}`.trim(),
-      zipCode: installerData.postalcode, phone: installerData.primary_phone, email: installerData.email,
-      skills, brands, certifications,
-      latitude: installerData.latitude, longitude: installerData.longitude,
-      installerVendorId: installerData.installer_vendor_id?.toString(),
-      acceptsShipments: toBoolean(installerData.shipment),
-      is_active: toBoolean(installerData.is_active),
-      rawSupabaseData: installerData,
-    };
+    
     setFormData(installerData);
     setInitialFormData(JSON.parse(JSON.stringify(installerData)));
-    setCurrentInstaller(mappedInstaller);
-    setErrors({});
+    setCurrentInstaller({
+      ...installerData,
+      id: installerData.id,
+      name: installerData.name,
+      skills: [], brands: [], certifications: [],
+      rawSupabaseData: installerData
+    });
     setSelectedMapZipCodes(enrichedZips);
     setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
     setIsDirty(false);
-    setMapRefreshKey(prev => prev + 1); // Increment refresh key to force map update
-
+    setMapRefreshKey(p => p + 1);
     if (!silent) setLoading(false);
-  }, [installerId, navigate, fetchTerritoryStatuses]);
+  }, [installerId, navigate, fetchTerritoryStatuses, zipCodeCentroids]);
 
   useEffect(() => {
-    if (!sessionLoading && installerId) {
-      loadAllData();
-    } else if (!installerId) {
-      setLoading(false);
-    }
+    if (!sessionLoading && installerId) loadAllData();
+    else if (!installerId) setLoading(false);
   }, [installerId, sessionLoading, loadAllData]);
 
   useEffect(() => {
     if (loading || sessionLoading || !initialFormData) return;
-
-    const formDataChanged = JSON.stringify(formData) !== JSON.stringify(initialFormData);
-
     const normalizeZips = (zips: any[]) => zips.map(({ zipCode, assignedStatus }) => ({ zipCode, assignedStatus })).sort((a, b) => a.zipCode.localeCompare(b.zipCode));
     const zipCodesChanged = JSON.stringify(normalizeZips(selectedMapZipCodes)) !== JSON.stringify(normalizeZips(initialSelectedMapZipCodes));
-
-    setIsDirty(formDataChanged || zipCodesChanged);
+    setIsDirty(JSON.stringify(formData) !== JSON.stringify(initialFormData) || zipCodesChanged);
   }, [formData, selectedMapZipCodes, initialFormData, initialSelectedMapZipCodes, loading, sessionLoading]);
 
-  const memoizedCenterLocation = useMemo(() => {
-    if (currentInstaller?.latitude != null && currentInstaller?.longitude != null) {
-      return { lat: currentInstaller.latitude, lng: currentInstaller.longitude };
-    }
-    return null;
-  }, [currentInstaller?.latitude, currentInstaller?.longitude]);
-
   const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
-    setSelectedMapZipCodes(prevSelected => {
-      const existingEntryIndex = prevSelected.findIndex(item => item.zipCode === zipCode);
+    setSelectedMapZipCodes(prev => {
+      const idx = prev.findIndex(item => item.zipCode === zipCode);
       const centroid = zipCodeCentroids.get(zipCode);
-      const centroid_latitude = centroid?.lat || null;
-      const centroid_longitude = centroid?.lng || null;
-      if (existingEntryIndex !== -1) {
-        const currentEntry = prevSelected[existingEntryIndex];
-        if (currentEntry.assignedStatus === 'Approved') {
-          return [...prevSelected.slice(0, existingEntryIndex), { ...currentEntry, assignedStatus: 'Needs Approval' }, ...prevSelected.slice(existingEntryIndex + 1)];
-        } else {
-          return prevSelected.filter(item => item.zipCode !== zipCode);
+      if (idx !== -1) {
+        if (prev[idx].assignedStatus === 'Approved') {
+          return [...prev.slice(0, idx), { ...prev[idx], assignedStatus: 'Needs Approval' }, ...prev.slice(idx + 1)];
         }
-      } else {
-        return [...prevSelected, { zipCode, assignedStatus: 'Approved', stateProvince, centroid_latitude, centroid_longitude }];
+        return prev.filter(item => item.zipCode !== zipCode);
       }
+      return [...prev, { zipCode, assignedStatus: 'Approved', stateProvince, centroid_latitude: centroid?.lat || null, centroid_longitude: centroid?.lng || null }];
     });
+    setMapRefreshKey(p => p + 1);
   }, [zipCodeCentroids]);
-
-  const handleBulkZipCodeUpdate = useCallback((updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => {
-    setSelectedMapZipCodes(prevSelected => {
-      const newSelectedMap = new Map(prevSelected.map(item => [item.zipCode, item]));
-      updates.forEach(update => {
-        if (update.newStatus === null) {
-          newSelectedMap.delete(update.zipCode);
-        } else {
-          const centroid = zipCodeCentroids.get(update.zipCode);
-          newSelectedMap.set(update.zipCode, {
-            zipCode: update.zipCode,
-            assignedStatus: update.newStatus,
-            stateProvince: update.stateProvince,
-            centroid_latitude: centroid?.lat || null,
-            centroid_longitude: centroid?.lng || null,
-          });
-        }
-      });
-      return Array.from(newSelectedMap.values());
-    });
-  }, [zipCodeCentroids]);
-
-  const handleBulkSelectionComplete = useCallback((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => {
-    setSelectedMapZipCodes(prevSelected => {
-      if (bulkActionType === 'deselect') {
-        const zipsToDeselect = new Set(selectedZips.map(z => z.zipCode));
-        const newList = prevSelected.filter(item => !zipsToDeselect.has(item.zipCode));
-        toast.success(`Bulk deselected ${selectedZips.length} ZIP codes.`);
-        setBulkActionType(null);
-        return newList;
-      }
-
-      const prevSelectedMap = new Map(prevSelected.map(item => [item.zipCode, item]));
-      const newSelectedMap = new Map(prevSelectedMap);
-      selectedZips.forEach(zipInfo => {
-        const existing = prevSelectedMap.get(zipInfo.zipCode);
-        const centroid = zipCodeCentroids.get(zipInfo.zipCode);
-        const centroid_latitude = centroid?.lat || null;
-        const centroid_longitude = centroid?.lng || null;
-        if (bulkActionType === 'approve') {
-          newSelectedMap.set(zipInfo.zipCode, { ...zipInfo, assignedStatus: 'Approved', centroid_latitude, centroid_longitude });
-        } else if (bulkActionType === 'needs_approval') {
-          if (!existing || existing.assignedStatus === 'Needs Approval') {
-            newSelectedMap.set(zipInfo.zipCode, { ...zipInfo, assignedStatus: 'Needs Approval', centroid_latitude, centroid_longitude });
-          }
-        }
-      });
-      const updatedList = Array.from(newSelectedMap.values());
-      toast.success(`Bulk selected ${selectedZips.length} ZIP codes.`);
-      setBulkActionType(null);
-      return updatedList;
-    });
-  }, [bulkActionType, zipCodeCentroids]);
-
-  const highlightedZipCodes = useMemo(() => {
-    const highlights = new Map<string, 'green' | 'orange'>();
-    selectedMapZipCodes.forEach(item => {
-      highlights.set(item.zipCode, item.assignedStatus === 'Approved' ? 'green' : 'orange');
-    });
-    return highlights;
-  }, [selectedMapZipCodes]);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev: any) => ({ ...prev, [name]: value }));
-    if (errors[name]) setErrors(prev => { const newErrors = { ...prev }; delete newErrors[name]; return newErrors; });
-  };
-
-  const handleCheckboxChange = (name: string, checked: boolean) => setFormData((prev: any) => ({ ...prev, [name]: checked }));
-
-  const handleCertificationCheckboxChange = (dbColumn: string, value: string, checked: boolean) => {
-    setFormData((prev: any) => {
-      const currentCerts = Array.isArray(prev[dbColumn]) ? prev[dbColumn] : (prev[dbColumn] ? String(prev[dbColumn]).split(', ').filter(Boolean) : []);
-      const newCerts = checked ? [...new Set([...currentCerts, value])] : currentCerts.filter((cert: string) => cert !== value);
-      return { ...prev, [dbColumn]: newCerts };
-    });
-  };
-
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-    requiredFields.forEach(field => {
-      if (!formData[field] || String(formData[field]).trim() === "") {
-        newErrors[field] = `${columnDisplayNames[field] || field.replace(/_/g, ' ')} is required.`;
-      }
-    });
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const isAdmin = profile?.role === 'admin';
-  const canEdit = isAdmin || (profile?.role === 'installer' && currentInstaller?.rawSupabaseData.account_id === profile.id);
 
   const handleSubmit = async (territoriesOverride?: any[]) => {
-    if (!validateForm()) {
-      toast.error("Please fill in all required fields.");
-      return;
-    }
-    if (!currentInstaller?.id) {
-      toast.error("Installer ID is missing. Cannot save changes.");
-      return;
-    }
-    setIsSaving(true); // Start saving
-    const loadingToastId = toast.loading("Saving installer details...");
+    if (!validateForm() || !currentInstaller?.id) return;
+    setIsSaving(true);
+    const loadingToastId = toast.loading("Saving changes...");
   
     try {
-      // Force a session refresh before starting potentially long operations
-      const { error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) throw new Error(`Authentication error: ${refreshError.message}. Session expired.`);
+      await supabase.auth.refreshSession();
 
-      // Step 1: Update installer profile data
       if (JSON.stringify(formData) !== JSON.stringify(initialFormData)) {
         const formattedData: any = {};
         for (const key in formData) {
-            if (Object.prototype.hasOwnProperty.call(formData, key)) {
-              const value = formData[key];
-              if (typeof value === 'boolean') {
-                formattedData[key] = fromBooleanToSupabase(key, value);
-              } else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) {
-                formattedData[key] = Array.isArray(value) ? value.join(', ') : value;
-              } else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof value === 'string' && value !== '') {
-                formattedData[key] = parseFloat(value);
-              } else if (value === "") {
-                formattedData[key] = null;
-              } else {
-                formattedData[key] = value;
-              }
-            }
-          }
-          
-          const addressFields = ["address1", "add2", "city", "state", "postalcode", "country"];
-          let addressChanged = false;
-          const originalRawData = initialFormData || {};
-          for (const field of addressFields) {
-            if (String(originalRawData[field] || '') !== String(formattedData[field] || '')) {
-              addressChanged = true; break;
-            }
-          }
-          
-          if (addressChanged) {
-            toast.loading("Address changed, updating coordinates...", { id: loadingToastId });
-            const fullAddress = `${formattedData.address1 || ''}, ${formattedData.city || ''}, ${formattedData.state || ''} ${formattedData.postalcode || ''}, ${formattedData.country || ''}`.trim();
-            const coords = await getCoordinates({ searchText: fullAddress });
-            if (coords.lat != null && coords.lng != null) {
-              formattedData.latitude = coords.lat; formattedData.longitude = coords.lng;
-            } else {
-              formattedData.latitude = null; formattedData.longitude = null;
-            }
-          }
-          
-        const { error: updateInstallerError } = await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
-        if (updateInstallerError) throw new Error(`Profile Update Error: ${updateInstallerError.message}`);
-      }
-  
-      // Step 2: Process all territory changes
-      if (canEdit) {
-        const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
-        const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
-        const currentZipMap = new Map(territoriesToProcess.map(z => [z.zipCode, z]));
-  
-        const addedZips: any[] = [];
-        const updatedZips: any[] = [];
-        currentZipMap.forEach((currentZip, zipCode) => {
-          const initialZip = initialZipMap.get(zipCode);
-          if (!initialZip) {
-            addedZips.push({
-              zip_code: currentZip.zipCode,
-              state_province: currentZip.stateProvince,
-              assigned_status: currentZip.assignedStatus
-            });
-          } else if (initialZip.assignedStatus !== currentZip.assignedStatus) {
-            updatedZips.push({
-              zip_code: currentZip.zipCode,
-              assigned_status: currentZip.assignedStatus
-            });
-          }
-        });
-
-        const removedZipCodes = initialSelectedMapZipCodes
-          .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-          .map(initialZip => ({ zipCode: initialZip.zipCode }));
-  
-        if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
-          const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
-          toast.loading(`Updating ${totalChanges} territories...`, { id: loadingToastId });
-          
-          const CHUNK_SIZE = 500; 
-          
-          const processChunks = async (type: string, items: any[]) => {
-            for (let i = 0; i < items.length; i += CHUNK_SIZE) {
-              const { data: { session } } = await supabase.auth.getSession();
-              if (!session) throw new Error("Auth session lost.");
-
-              const chunk = items.slice(i, i + CHUNK_SIZE);
-              const payload: any = { installerId: currentInstaller.id };
-              if (type === 'added') payload.addedZips = chunk;
-              if (type === 'updated') payload.updatedZips = chunk;
-              if (type === 'removed') payload.removedZips = chunk;
-
-              const { data, error } = await supabase.functions.invoke('save-public-territory-data', {
-                headers: { Authorization: `Bearer ${session.access_token}` },
-                body: payload,
-              });
-
-              if (error) throw new Error(`Edge Function error (${type}): ${error.message}`);
-              if (data?.error) throw new Error(`Server error (${type}): ${data.error} ${data.details || ''}`);
-              
-              const progress = Math.round(((i + chunk.length) / items.length) * 100);
-              toast.loading(`Saving ${type} territories: ${progress}%...`, { id: loadingToastId });
-            }
-          };
-
-          if (removedZipCodes.length > 0) await processChunks('removed', removedZipCodes);
-          if (updatedZips.length > 0) await processChunks('updated', updatedZips);
-          if (addedZips.length > 0) await processChunks('added', addedZips);
-        }
-      }
-  
-      toast.success("Successfully saved all changes!", { id: loadingToastId });
-      setMapRefreshKey(prev => prev + 1); // Trigger a map update
-      await loadAllData(true); // Silent re-fetch to update initial states
-    } catch (err: any) {
-      console.error("Error during save process:", err);
-      toast.error(`Save failed: ${err.message || "An unexpected error occurred."}`, { id: loadingToastId, duration: 8000 });
-    } finally {
-      setIsSaving(false); // End saving
-    }
-  };
-
-  const handleClone = async () => {
-    if (!currentInstaller?.id) {
-      toast.error("Cannot clone. Original installer data is not available.");
-      return;
-    }
-
-    setLoading(true);
-    const loadingToastId = toast.loading("Cloning installer...");
-
-    try {
-      const clonedData: any = {};
-      for (const key in formData) {
-        if (Object.prototype.hasOwnProperty.call(formData, key)) {
-          const value = formData[key];
-          if (typeof value === 'boolean') {
-            clonedData[key] = fromBooleanToSupabase(key, value);
-          } else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) {
-            clonedData[key] = Array.isArray(value) ? value.join(', ') : value;
-          } else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof value === 'string' && value !== '') {
-            clonedData[key] = parseFloat(value);
-          } else if (value === "") {
-            clonedData[key] = null;
-          } else {
-            clonedData[key] = value;
+          if (Object.prototype.hasOwnProperty.call(formData, key)) {
+            const val = formData[key];
+            if (typeof val === 'boolean') formattedData[key] = fromBooleanToSupabase(key, val);
+            else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) formattedData[key] = Array.isArray(val) ? val.join(', ') : val;
+            else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof val === 'string' && val !== '') formattedData[key] = parseFloat(val);
+            else formattedData[key] = val === "" ? null : val;
           }
         }
+        await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
       }
+  
+      const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
+      const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
+      const currentZipMap = new Map(territoriesToProcess.map(z => [z.zipCode, z]));
+  
+      const addedZips = territoriesToProcess.filter(z => !initialZipMap.has(z.zipCode)).map(z => ({ zip_code: z.zipCode, state_province: z.stateProvince, assigned_status: z.assignedStatus }));
+      const updatedZips = territoriesToProcess.filter(z => initialZipMap.has(z.zipCode) && initialZipMap.get(z.zipCode)!.assignedStatus !== z.assignedStatus).map(z => ({ zip_code: z.zipCode, assigned_status: z.assignedStatus }));
+      const removedZips = initialSelectedMapZipCodes.filter(z => !currentZipMap.has(z.zipCode)).map(z => ({ zipCode: z.zipCode }));
 
-      clonedData.name = `${formData.name || 'Installer'} - Copy`;
-      clonedData.address1 = "";
-      clonedData.add2 = null;
-      clonedData.city = "";
-      clonedData.state = "";
-      clonedData.postalcode = "";
-      clonedData.latitude = null;
-      clonedData.longitude = null;
-      delete clonedData.id;
-      delete clonedData.created_at;
-      delete clonedData.updated_at;
-      clonedData.account_id = null;
-
-      const { data: newInstaller, error: insertError } = await supabase
-        .from('installers')
-        .insert([clonedData])
-        .select('id')
-        .single();
-
-      if (insertError) {
-        throw new Error(`Failed to create clone: ${insertError.message}`);
+      if (addedZips.length || updatedZips.length || removedZips.length) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const CHUNK = 500;
+        const process = async (type: string, items: any[]) => {
+          for (let i = 0; i < items.length; i += CHUNK) {
+            const chunk = items.slice(i, i + CHUNK);
+            const body: any = { installerId: currentInstaller.id };
+            if (type === 'added') body.addedZips = chunk;
+            if (type === 'updated') body.updatedZips = chunk;
+            if (type === 'removed') body.removedZips = chunk;
+            await supabase.functions.invoke('save-public-territory-data', { headers: { Authorization: `Bearer ${session?.access_token}` }, body });
+          }
+        };
+        if (removedZips.length) await process('removed', removedZips);
+        if (updatedZips.length) await process('updated', updatedZips);
+        if (addedZips.length) await process('added', addedZips);
       }
-
-      if (!newInstaller) {
-        throw new Error("Failed to retrieve the new installer record after creation.");
-      }
-
-      toast.success(`Installer cloned successfully. You are now editing the copy. Please fill in the required address details.`, { id: loadingToastId });
-      navigate(`/installers/edit/${newInstaller.id}`);
-
+  
+      toast.success("Changes saved successfully!", { id: loadingToastId });
+      setInitialFormData(JSON.parse(JSON.stringify(formData)));
+      setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(territoriesToProcess)));
+      setIsDirty(false);
+      setMapRefreshKey(p => p + 1);
     } catch (err: any) {
-      console.error("Error cloning installer:", err);
-      toast.error(`Failed to clone installer: ${err.message}`, { id: loadingToastId });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleToggleBulkSelect = (action: 'approve' | 'needs_approval' | 'deselect') => {
-    setBulkActionType(prev => {
-      if (prev === action) {
-        toast.info("Bulk selection mode deactivated.");
-        return null;
-      } else {
-        let message = '';
-        if (action === 'approve') {
-          message = 'Bulk Free Mileage mode activated.';
-        } else if (action === 'needs_approval') {
-          message = 'Bulk Paid Mileage mode activated.';
-        } else if (action === 'deselect') {
-          message = 'Bulk Deselect mode activated.';
-        }
-        toast.info(`${message} Click and drag on the map.`);
-        return action;
-      }
-    });
-  };
-
-  const handleClearAllAssignedZips = () => {
-    setSelectedMapZipCodes([]);
-    toast.info("All assigned territories cleared from local selection. Click Save to commit changes.");
-  };
-
-  const handleImportInstallerTerritories = async (file: File, mode: "overwrite" | "append") => {
-    if (!installerId) { toast.error("Installer ID is missing. Cannot import territories."); return; }
-    setIsSaving(true);
-    const loadingToastId = toast.loading(`Importing territories from ${file.name} in ${mode} mode...`);
-    let importedCount = 0, skippedCount = 0;
-    try {
-      if (!canEdit) {
-        toast.error("You do not have permission to import territories.", { id: loadingToastId });
-        setIsSaving(false); return;
-      }
-      const text = await file.text();
-      const cleanedText = text.startsWith('\ufeff') ? text.substring(1) : text;
-      const { data, errors: parseErrors, meta } = Papa.parse(cleanedText, { header: true, skipEmptyLines: true, dynamicTyping: false });
-      if (parseErrors.length > 0) {
-        toast.error(`CSV parsing errors found: ${parseErrors[0].message}`, { id: loadingToastId });
-        setIsSaving(false); return;
-      }
-      const expectedHeaders = ["ZipCode", "Status", "StateProvince"];
-      const csvHeaders = meta.fields || [];
-      const missingHeaders = expectedHeaders.filter(header => !csvHeaders.includes(header));
-      if (missingHeaders.length > 0) {
-        toast.error(`Missing required CSV headers: ${missingHeaders.join(', ')}.`, { id: loadingToastId, duration: 8000 });
-        setIsSaving(false); return;
-      }
-      if (mode === "overwrite") {
-        toast.info("Overwriting existing territories for this installer...", { id: loadingToastId });
-        const { error: deleteError = null } = await supabase.from('installer_zip_codes').delete().eq('installer_id', installerId);
-        if (deleteError) throw new Error(`Failed to clear existing territories: ${deleteError.message}`);
-        toast.success("Existing territories cleared.", { id: loadingToastId });
-      }
-      const territoriesToUpsert: any[] = [];
-      const statusMap: { [key: string]: TerritoryStatus } = {
-        'Free_Mileage': 'Approved',
-        'Paid_Mileage': 'Needs Approval',
-        'Approved': 'Approved',
-        'Needs Approval': 'Needs Approval'
-      };
-      for (const row of data) {
-        const zipCode = row.ZipCode?.trim(), statusRaw = row.Status?.trim(), stateProvince = row.StateProvince?.trim();
-        if (!zipCode || !statusRaw || !stateProvince) { skippedCount++; continue; }
-        const status = statusMap[statusRaw];
-        if (!status) { skippedCount++; continue; }
-        territoriesToUpsert.push({ installer_id: installerId, zip_code: zipCode, status: status, state_province: stateProvince });
-      }
-      if (territoriesToUpsert.length === 0) {
-        toast.info("No valid territories found in the CSV to import.", { id: loadingToastId });
-        setIsSaving(false); setIsImportTerritoriesModalOpen(false); return;
-      }
-      const { error: upsertError } = await supabase.from('installer_zip_codes').upsert(territoriesToUpsert, { onConflict: 'installer_id,zip_code' });
-      if (upsertError) throw new Error(`Failed to upsert territories: ${upsertError.message}`);
-      importedCount = territoriesToUpsert.length;
-      toast.success(`Successfully imported ${importedCount} territories. ${skippedCount > 0 ? `${skippedCount} rows skipped.` : ''}`, { id: loadingToastId, duration: 5000 });
-      await loadAllData(true);
-    } catch (err: any) {
-      console.error("Error during territory import:", err);
-      toast.error(`Territory import failed: ${err.message || err.toString()}`, { id: loadingToastId, duration: 8000 });
+      toast.error(`Save failed: ${err.message}`, { id: loadingToastId });
     } finally {
       setIsSaving(false);
-      setIsImportTerritoriesModalOpen(false);
-    }
-  };
-
-  const handleExportInstallerTerritories = async () => {
-    if (!installerId) { toast.error("Installer ID is missing."); return; }
-    setIsSaving(true);
-    const loadingToastId = toast.loading("Preparing territories for export...");
-    try {
-      const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', installerId);
-      if (error) throw new Error(`Supabase Fetch Error: ${error.message}`);
-      if (!data || data.length === 0) { toast.info("No territories found for this installer to export.", { id: loadingToastId }); return; }
-      const dataToExport = data.map(item => {
-        const statusMap: { [key in TerritoryStatus]: string } = {
-          'Approved': 'Free_Mileage',
-          'Needs Approval': 'Paid_Mileage'
-        };
-        return {
-          'State/Province': item.state_province,
-          'ZIP Code': item.zip_code,
-          'Status': statusMap[item.status as TerritoryStatus] || item.status
-        };
-      });
-      const csv = Papa.unparse(dataToExport);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      
-      const sanitize = (str: string | number | null | undefined) => String(str || '').replace(/[^a-zA-Z0-9_-]/g, '');
-      const vendorNumber = sanitize(formData.installer_vendor_id) || 'NoVendorID';
-      const nameParts = (formData.name || 'Unknown Installer').split(' ');
-      const firstName = sanitize(nameParts[0]);
-      const lastName = sanitize(nameParts.slice(1).join(' '));
-      const filename = `${vendorNumber}_${firstName}_${lastName}_territories.csv`;
-
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success("Territories exported successfully!", { id: loadingToastId });
-    } catch (err: any) {
-      console.error("Error during territory export:", err);
-      toast.error(`Failed to export territories: ${err.message}`, { id: loadingToastId });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleCopyShareableLink = async () => {
-    if (!installerId) return;
-    const loadingToastId = toast.loading("Generating link...");
-    try {
-      const { data, error } = await supabase
-        .from('installers')
-        .select('territory_access_token')
-        .eq('id', installerId)
-        .single();
-
-      if (error || !data?.territory_access_token) {
-        throw new Error(error?.message || "Could not retrieve access token.");
-      }
-
-      const token = data.territory_access_token;
-      const url = `${window.location.origin}/territory-editor/${installerId}/${token}`;
-      
-      await navigator.clipboard.writeText(url);
-      toast.success("Sharable link copied to clipboard!", { id: loadingToastId });
-    } catch (err: any) {
-      console.error("Error generating shareable link:", err);
-      toast.error(`Failed to generate link: ${err.message}`, { id: loadingToastId });
     }
   };
 
   const handleAutoApprove = async () => {
-    if (!currentInstaller?.latitude || !currentInstaller?.longitude) {
-      toast.error("Installer location is not set. Cannot auto-approve.");
-      return;
-    }
-  
+    if (!currentInstaller?.latitude || !currentInstaller?.longitude) return;
     setIsSaving(true);
-    const isCanada = installerCountry === 'Canada';
-    const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
-    
-    let loadingToastId: string | number | undefined;
-  
+    const loadingToastId = toast.loading("Finding territories...");
     try {
-      let zipsToApprove: Array<{ zipCode: string, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }> = [];
-  
-      if (isCanada) {
-        loadingToastId = toast.loading("Fetching all territories within 35km radius...");
-
-        const { data, error } = await supabase.functions.invoke('get-territories-in-radius', {
-          body: { 
-            country: 'Canada', 
-            center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude }, 
-            radius: radiusMeters 
-          },
-        });
-
-        if (error) {
-          throw new Error(`Failed to fetch Canadian postal codes: ${error.message}`);
-        }
-        if (data.error) {
-          throw new Error(`Failed to fetch Canadian postal codes: ${data.error}`);
-        }
-
-        if (!data.data || data.data.length === 0) {
-          toast.info("No Canadian postal codes found within the 35km radius.", { id: loadingToastId });
-          setIsSaving(false);
-          return;
-        }
-
-        zipsToApprove = (data.data || []).map((p: any) => ({
-          zipCode: p.POSTAL_CODE,
-          stateProvince: p.PROVINCE_ABBR,
-          centroid_latitude: p.LATITUDE,
-          centroid_longitude: p.LONGITUDE,
-        }));
-      } else { // USA
-        loadingToastId = toast.loading(`Finding territories within 25 miles...`);
-        toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
+      let zips: any[] = [];
+      if (installerCountry === 'Canada') {
+        const { data } = await supabase.functions.invoke('get-territories-in-radius', { body: { country: 'Canada', center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude }, radius: 35000 } });
+        zips = (data.data || []).map((p: any) => ({ zipCode: p.POSTAL_CODE, stateProvince: p.PROVINCE_ABBR, centroid_latitude: p.LATITUDE, centroid_longitude: p.LONGITUDE }));
+      } else {
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
-        const radiusKm = 25 * 1.60934;
-        const options = { steps: 64, units: 'kilometers' as const };
-        const radiusCircle = turf.circle(center, radiusKm, options);
-
-        usGeoJson.features.forEach(feature => {
-          if (feature.geometry) {
-            try {
-              if (turf.booleanIntersects(radiusCircle, feature as any)) {
-                const zipCode = feature.properties.ZCTA5CE20;
-                const state = feature.properties.STUSPS;
-                const centroid = zipCodeCentroids.get(zipCode);
-                zipsToApprove.push({
-                  zipCode,
-                  stateProvince: state,
-                  centroid_latitude: centroid?.lat || null,
-                  centroid_longitude: centroid?.lng || null,
-                });
-              }
-            } catch (e) {
-              console.warn(`Could not process feature for ZIP ${feature.properties.ZCTA5CE20}:`, e);
-            }
+        const radiusCircle = turf.circle(center, 25 * 1.60934, { steps: 64, units: 'kilometers' });
+        usGeoJson.features.forEach(f => {
+          if (f.geometry && turf.booleanIntersects(radiusCircle, f as any)) {
+            const code = f.properties.ZCTA5CE20;
+            const c = zipCodeCentroids.get(code);
+            zips.push({ zipCode: code, stateProvince: f.properties.STUSPS, centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null });
           }
         });
       }
-  
-      const newSelectedMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
-      zipsToApprove.forEach(zipInfo => {
-        newSelectedMap.set(zipInfo.zipCode, {
-          ...zipInfo,
-          assignedStatus: 'Approved',
-        });
-      });
-      const finalListOfZips = Array.from(newSelectedMap.values());
-      
-      // Update UI immediately
-      setSelectedMapZipCodes(finalListOfZips);
-      toast.success(`Locally approved ${zipsToApprove.length} territories. Saving to database...`, { id: loadingToastId });
-  
-      await handleSubmit(finalListOfZips);
-  
+      const newMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
+      zips.forEach(z => newMap.set(z.zipCode, { ...z, assignedStatus: 'Approved' }));
+      const final = Array.from(newMap.values());
+      setSelectedMapZipCodes(final);
+      setMapRefreshKey(p => p + 1);
+      await handleSubmit(final);
     } catch (err: any) {
-      console.error("Error during auto-approve:", err);
-      if (loadingToastId) {
-        toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
-      } else {
-        toast.error(`Auto-approve failed: ${err.message}`);
-      }
+      toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
       setIsSaving(false);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <LoadingSayings />
-      </div>
-    );
-  }
-  if (!currentInstaller) {
-    return <div className="min-h-screen flex flex-col items-center justify-center text-red-500"><p className="text-xl mb-4">Access Denied or Installer Not Found.</p><p>Please check your link and try again.</p></div>;
-  }
+  const handleClearAllAssignedZips = () => {
+    setSelectedMapZipCodes([]);
+    setMapRefreshKey(p => p + 1);
+    toast.info("Cleared locally. Click Save to apply.");
+  };
+
+  const handleBulkSelectionComplete = useCallback((selectedZips: any[]) => {
+    setSelectedMapZipCodes(prev => {
+      const map = new Map(prev.map(item => [item.zipCode, item]));
+      selectedZips.forEach(z => {
+        const c = zipCodeCentroids.get(z.zipCode);
+        if (bulkActionType === 'deselect') map.delete(z.zipCode);
+        else if (bulkActionType === 'approve') map.set(z.zipCode, { ...z, assignedStatus: 'Approved', centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null });
+        else if (bulkActionType === 'needs_approval' && (!map.has(z.zipCode) || map.get(z.zipCode)!.assignedStatus === 'Needs Approval')) map.set(z.zipCode, { ...z, assignedStatus: 'Needs Approval', centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null });
+      });
+      return Array.from(map.values());
+    });
+    setMapRefreshKey(p => p + 1);
+    setBulkActionType(null);
+  }, [bulkActionType, zipCodeCentroids]);
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><LoadingSayings /></div>;
 
   return (
     <>
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 pb-24">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
           <div className="flex items-center gap-4">
-            {isAdmin && (
-              <Button variant="outline" size="sm" onClick={() => navigate("/installers")} className="mr-2">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            )}
-            <div>
-              <h1 className="text-2xl font-bold text-gray-700">Edit Installer: {currentInstaller.name}</h1>
-              {currentInstaller.email && <p className="text-md text-gray-500">{currentInstaller.email}</p>}
-            </div>
+            {profile?.role === 'admin' && <Button variant="outline" size="sm" onClick={() => navigate("/installers")} className="mr-2"><ArrowLeft className="h-4 w-4" /></Button>}
+            <div><h1 className="text-2xl font-bold text-gray-700">{currentInstaller?.name}</h1></div>
           </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            {isAdmin && (
-              <>
-                <Button variant="outline" onClick={() => navigate("/locator")}><Home className="mr-2 h-4 w-4" /> Locator</Button>
-                <Button variant="outline" onClick={handleClone} disabled={isSaving}><Copy className="mr-2 h-4 w-4" /> Clone</Button>
-                <Button variant="outline" onClick={handleCopyShareableLink} disabled={isSaving}><Copy className="mr-2 h-4 w-4" /> Share</Button>
-              </>
-            )}
-            <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" /> Log Out</Button>
-          </div>
+          <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" /> Log Out</Button>
         </div>
-
-        <Collapsible defaultOpen={false} className="mb-8">
-          <CollapsibleTrigger asChild>
-            <div className="flex justify-between items-center p-4 border rounded-lg shadow-sm bg-card cursor-pointer">
-              <h2 className="text-xl font-semibold">Installer Profile Details</h2>
-              <Button variant="outline" size="sm">
-                <ChevronsUpDown className="h-4 w-4" />
-                <span className="ml-2">Show/Hide Details</span>
-              </Button>
-            </div>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="grid gap-6 py-4 border-x border-b rounded-b-lg p-4">
-              <div className="flex justify-between items-center col-span-full mt-4 mb-2">
-                <h3 className="text-lg font-semibold">Contact & Address Information</h3>
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="is_active"
-                    name="is_active"
-                    checked={toBoolean(formData.is_active)}
-                    onCheckedChange={(checked) => handleCheckboxChange('is_active', checked as boolean)}
-                    disabled={!canEdit}
-                    className={cn(
-                      toBoolean(formData.is_active) ? 'switch-active' : 'switch-inactive'
-                    )}
-                  />
-                  <Label htmlFor="is_active" className={cn(
-                    "font-semibold",
-                    toBoolean(formData.is_active) ? 'text-green-700' : 'text-red-700'
-                  )}>
-                    {toBoolean(formData.is_active) ? 'Active' : 'Inactive'}
-                  </Label>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
-                {contactAddressFields.map((key) => (
-                  <div key={key} className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor={key} className="text-right">{columnDisplayNames[key] || key.replace(/_/g, ' ')}{requiredFields.includes(key) && <span className="text-red-500 ml-1">*</span>}:</Label>
-                    <Input id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className={`col-span-3 ${errors[key] ? 'border-red-500' : ''}`} type="text" disabled={!canEdit} />
-                    {errors[key] && <p className="col-span-4 text-right text-red-500 text-sm">{errors[key]}</p>}
-                  </div>
-                ))}
-              </div>
-
-              <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Brands & Skills</h3>
-              <div className="col-span-full">
-                <h4 className="font-medium text-base mb-2">Brands (Level 1)</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {brandCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((item) => (
-                    <div key={item.key} className="flex items-center space-x-2">
-                      <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!canEdit} />
-                      <Label htmlFor={item.key}>{item.label}</Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="col-span-full mt-4">
-                <h4 className="font-medium text-base mb-2">Product Skills (Level 2)</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {productSkillCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((item) => (
-                    <div key={item.key} className="flex items-center space-x-2">
-                      <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!canEdit} />
-                      <Label htmlFor={item.key}>{item.label}</Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Certifications</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 col-span-full">
-                {certificationCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((cert) => {
-                  const currentCerts = formData[cert.dbColumn] ? String(formData[cert.dbColumn]).split(', ').filter(Boolean) : [];
-                  const isChecked = currentCerts.includes(cert.value);
-                  return (
-                    <div key={cert.label} className="flex items-center space-x-2">
-                      <Checkbox id={cert.label} name={cert.label} checked={isChecked} onCheckedChange={(checked) => handleCertificationCheckboxChange(cert.dbColumn, cert.value, checked as boolean)} disabled={!canEdit} />
-                      <Label htmlFor={cert.label}>{cert.label}</Label>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Other Details</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
-                {otherFields.sort((a, b) => (columnDisplayNames[a]?.localeCompare(columnDisplayNames[b] || b) || a.localeCompare(b))).map((key) => (
-                  <div key={key} className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor={key} className="text-right">{columnDisplayNames[key] || key.replace(/_/g, ' ')}:</Label>
-                    {key === 'shipment' ? (
-                      <Checkbox id={key} name={key} checked={toBoolean(formData[key])} onCheckedChange={(checked) => handleCheckboxChange(key, checked as boolean)} className="col-span-3" disabled={!canEdit} />
-                    ) : (
-                      <Input id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className="col-span-3" type={['installer_vendor_id', 'star_rating'].includes(key) ? 'number' : 'text'} disabled={!canEdit} />
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
-                {textAreaFields.sort((a, b) => (columnDisplayNames[a]?.localeCompare(columnDisplayNames[b] || b) || a.localeCompare(b))).map((key) => (
-                  <div key={key} className="grid grid-cols-4 items-start gap-4">
-                    <Label htmlFor={key} className="text-right pt-2">{columnDisplayNames[key] || key.replace(/_/g, ' ')}:</Label>
-                    <Textarea id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className="col-span-3 min-h-[80px]" disabled={!canEdit} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
 
         <div className="grid gap-6 py-4">
           <div className="col-span-full mt-6">
             <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
             <div className="flex flex-wrap justify-between gap-2 mb-4">
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={handleAutoApprove} disabled={isSaving || !canEdit}>
-                  <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
-                </Button>
-                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={isSaving || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={isSaving || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
-                {installerCountry === 'Canada' && (
-                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white hover:bg-red-700" : "border-red-600 text-red-600 hover:bg-red-100")} onClick={() => handleToggleBulkSelect('deselect')} disabled={isSaving || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'deselect' ? "Exit Bulk Deselect" : "Bulk Deselect"}</Button>
-                )}
-                {installerCountry !== 'Canada' && (
-                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={isSaving || selectedMapZipCodes.length === 0 || !canEdit}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
-                )}
+                <Button variant="outline" onClick={handleAutoApprove} disabled={isSaving}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={isSaving}>Bulk Free Mileage</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={isSaving}>Bulk Paid Mileage</Button>
+                <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={isSaving}><Eraser className="mr-2 h-4 w-4" /> Clear All</Button>
               </div>
-              {isAdmin && (
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={isSaving}><Upload className="mr-2 h-4 w-4" /> Import</Button>
-                  <Button variant="outline" onClick={handleExportInstallerTerritories} disabled={isSaving}><Download className="mr-2 h-4 w-4" /> Export</Button>
-                </div>
-              )}
             </div>
-            <div className="h-[800px] w-full rounded-lg overflow-hidden shadow-sm border">
-              <TerritoryMap
-                country={installerCountry}
-                isOpen={true}
-                centerLocation={memoizedCenterLocation}
-                onZipCodeClick={handleMapZipCodeClick}
-                onBulkZipCodeUpdate={handleBulkZipCodeUpdate}
-                selectedZipCodes={selectedMapZipCodes}
-                currentDisplayRadius={mapDisplayRadius}
-                showRadiusCircles={true}
-                territoryStatuses={territoryStatuses}
-                highlightedZipCodes={highlightedZipCodes}
-                isBulkSelecting={bulkActionType !== null}
-                onBulkSelectionComplete={handleBulkSelectionComplete}
-                refreshKey={mapRefreshKey}
-              />
-            </div>
-            <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them. In bulk select mode, click and drag to select multiple ZIP codes.</p>
-            <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
-              <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
-              <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
-                {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
-                <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
-              </RadioGroup>
+            <div className="h-[800px] w-full border rounded-lg overflow-hidden">
+              <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} />
             </div>
             <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} onZipCodeClick={handleMapZipCodeClick} mapClickStates={highlightedZipCodes} installerLocation={memoizedCenterLocation} listDisplayRadius={listDisplayRadius} />
-            {isAdmin && installerCountry === 'Canada' && <DebugPostalCodeChecker />}
           </div>
         </div>
       </div>
       {isDirty && (
-        <div className="sticky bottom-0 left-0 w-full z-[1000] bg-background/80 backdrop-blur-sm border-t border-border">
-          <div className="container mx-auto p-4 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => loadAllData()} disabled={isSaving}>
-              <XCircle className="mr-2 h-4 w-4" /> Discard Changes
-            </Button>
-            <Button onClick={() => handleSubmit()} disabled={isSaving || !canEdit} className="bg-green-600 hover:bg-green-700">
-              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Changes
-            </Button>
-          </div>
+        <div className="fixed bottom-0 left-0 w-full z-[1000] bg-white border-t p-4 flex justify-end gap-2">
+          <Button variant="outline" onClick={() => loadAllData()} disabled={isSaving}>Discard</Button>
+          <Button onClick={() => handleSubmit()} disabled={isSaving} className="bg-green-600">
+            {isSaving ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />} Save
+          </Button>
         </div>
       )}
-      <ImportInstallerTerritoriesModal
-        isOpen={isImportTerritoriesModalOpen}
-        onClose={() => setIsImportTerritoriesModalOpen(false)}
-        onImport={handleImportInstallerTerritories}
-        loading={isSaving}
-      />
     </>
   );
 };

@@ -35,11 +35,10 @@ interface TerritoryMapProps {
   onBulkSelectionComplete?: (selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void;
   onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
   country?: 'USA' | 'Canada';
-  refreshKey?: number; // Prop to force a complete layer refresh
+  refreshKey?: number; 
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
-const FETCH_BATCH_SIZE = 1000;
 const RENDER_BATCH_SIZE = 2000;
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
@@ -305,20 +304,14 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
         try {
           const radiusMeters = (currentDisplayRadius as number) * 1000;
-          
-          // 1. Get the total count first
           const { data: count, error: countError } = await supabase.rpc('get_canadian_points_in_radius_count', {
             center_lat: centerLocation!.lat,
             center_lng: centerLocation!.lng,
             radius_meters: radiusMeters,
           });
 
-          if (countError) {
-            throw new Error(`Failed to get count of points: ${countError.message}`);
-          }
-
+          if (countError) throw new Error(`Failed to get count: ${countError.message}`);
           if (count === 0) {
-            toast.info("No Canadian postal codes found in the selected radius.");
             setLoadingStage('complete');
             return;
           }
@@ -326,7 +319,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           setTotalPointsToLoad(count);
           setLoadingStage('fetching');
 
-          // 2. Fetch all pages in controlled parallel chunks
           const PAGE_SIZE = 1000;
           const totalPages = Math.ceil(count / PAGE_SIZE);
           const CONCURRENCY_LIMIT = 10;
@@ -335,34 +327,23 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           for (let i = 0; i < totalPages; i += CONCURRENCY_LIMIT) {
             const promises = [];
             const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalPages);
-            
             for (let j = i; j < chunkEnd; j++) {
               const page = j + 1;
-              const promise = supabase
-                .rpc('get_all_canadian_points_in_radius', {
+              promises.push(supabase.rpc('get_all_canadian_points_in_radius', {
                   center_lat: centerLocation!.lat,
                   center_lng: centerLocation!.lng,
                   radius_meters: radiusMeters,
                   page_size: PAGE_SIZE,
                   page_number: page,
-                });
-              promises.push(promise);
+                }));
             }
-
             const results = await Promise.all(promises);
-
             for (const result of results) {
-              if (result.error) {
-                console.error(`Error fetching a page of results: ${result.error.message}`);
-              }
-              if (result.data) {
-                fetchedPoints = fetchedPoints.concat(result.data);
-              }
+              if (result.data) fetchedPoints = fetchedPoints.concat(result.data);
             }
             setLoadingProgress(fetchedPoints.length);
           }
           
-          console.log(`FETCH COMPLETE: Fetched ${fetchedPoints.length} total points.`);
           setAllCanadaPoints(fetchedPoints);
           setLoadingStage('rendering');
 
@@ -393,10 +374,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           });
           setAllGeoJsonData({ type: 'FeatureCollection', features: processedFeatures });
         } catch (error: any) {
-          const errorMessage = `CRITICAL ERROR: Could not load GeoJSON data for USA. ${error.message}`;
-          console.error(errorMessage, error);
-          toast.error(errorMessage, { duration: 10000 });
-          setDataError(errorMessage);
+          setDataError(error.message);
         } finally {
           setLoadingStage('complete');
         }
@@ -405,67 +383,44 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     loadAndRenderData();
   }, [isCanada, centerLocation, currentDisplayRadius]);
 
-  // Effect for progressive rendering of Canadian points
   useEffect(() => {
-    if (loadingStage !== 'rendering' || !isCanada || allCanadaPoints.length === 0) {
-      return;
-    }
+    if (loadingStage !== 'rendering' || !isCanada || allCanadaPoints.length === 0) return;
   
     setRenderedCanadaPoints([]);
     setLoadingProgress(0);
     let renderIndex = 0;
-    const animationFrameIdRef = React.createRef<number>();
+    let animationFrameId: number;
   
     const renderNextBatch = () => {
       if (renderIndex >= allCanadaPoints.length) {
-        console.log(`RENDER COMPLETE: Rendered ${renderIndex} total points.`);
         setLoadingStage('complete');
         return;
       }
-  
       const nextBatch = allCanadaPoints.slice(renderIndex, renderIndex + RENDER_BATCH_SIZE);
-  
       setRenderedCanadaPoints(prev => [...prev, ...nextBatch]);
       setLoadingProgress(prev => prev + nextBatch.length);
       renderIndex += RENDER_BATCH_SIZE;
-  
-      animationFrameIdRef.current = requestAnimationFrame(renderNextBatch);
+      animationFrameId = requestAnimationFrame(renderNextBatch);
     };
   
-    animationFrameIdRef.current = requestAnimationFrame(renderNextBatch);
-  
-    return () => {
-      if (animationFrameIdRef.current) {
-        cancelAnimationFrame(animationFrameIdRef.current);
-      }
-    };
+    animationFrameId = requestAnimationFrame(renderNextBatch);
+    return () => cancelAnimationFrame(animationFrameId);
   }, [loadingStage, allCanadaPoints, isCanada]);
 
   const filteredGeoJsonData = useMemo(() => {
     if (isCanada || !allGeoJsonData || !centerLocation?.lat || !centerLocation.lng || currentDisplayRadius === 'all') {
       return allGeoJsonData;
     }
-
     const radius = typeof currentDisplayRadius === 'number' ? currentDisplayRadius : DEFAULT_DISPLAY_RADIUS_MILES;
-
     const filteredFeatures = allGeoJsonData.features.filter((feature: any) => {
       const centroid = getCentroid(feature);
       if (centroid.lat && centroid.lng) {
-        const distance = calculateDistance(
-          centerLocation.lat!,
-          centerLocation.lng!,
-          centroid.lat,
-          centroid.lng
-        );
+        const distance = calculateDistance(centerLocation.lat!, centerLocation.lng!, centroid.lat, centroid.lng);
         return distance <= radius;
       }
       return false;
     });
-
-    return {
-      ...allGeoJsonData,
-      features: filteredFeatures,
-    };
+    return { ...allGeoJsonData, features: filteredFeatures };
   }, [allGeoJsonData, centerLocation, currentDisplayRadius, isCanada]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
@@ -481,16 +436,16 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E';
-      fillOpacity = 0.1;
+      fillOpacity = 0.3; // Increased visibility
       color = '#166534';
       weight = 2;
-      opacity = 0.4;
+      opacity = 0.6;
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316';
-      fillOpacity = 0.1;
+      fillOpacity = 0.3; // Increased visibility
       color = '#9A3412';
       weight = 2;
-      opacity = 0.4;
+      opacity = 0.6;
     } else if (isTerritoryManagementPage) {
       if (status === 'Approved') {
         fillColor = '#D4EDDA';
@@ -504,66 +459,40 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         opacity = 0.5;
       }
     }
-
     return { fillColor, weight, opacity, color, fillOpacity, interactive: true };
   }, [highlightedZipCodes, selectedZipCodes, territoryStatuses, isTerritoryManagementPage]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
-    
     layer.off('click'); 
     layer.on({
       click: (e) => {
         L.DomEvent.stopPropagation(e);
-        if (!isBulkSelecting) {
-          onZipCodeClickRef.current(zipCode, stateProvince); 
-        }
+        if (!isBulkSelecting) onZipCodeClickRef.current(zipCode, stateProvince); 
       },
     });
-
     const label = isCanada ? 'FSA' : 'ZIP';
     let tooltipText = `${label}: ${zipCode}`;
-    if (stateProvince && stateProvince !== 'Unknown') {
-      tooltipText += ` (${stateProvince})`;
-    }
-    
+    if (stateProvince && stateProvince !== 'Unknown') tooltipText += ` (${stateProvince})`;
     layer.bindTooltip(tooltipText, { permanent: false, direction: 'auto' });
   };
 
+  // The key change is the only reliable way to force React-Leaflet GeoJSON to re-draw colors
   const geoJsonStyleKey = useMemo(() => {
-    // Simplified key that doesn't stringify the entire list.
-    // It relies on count and explicitly passed refreshKey to trigger re-renders.
-    const selectedCount = selectedZipCodes.length;
-    const highlightedCount = highlightedZipCodes.size;
-    const statusMapSize = territoryStatuses.size;
-    return `${selectedCount}-${highlightedCount}-${currentDisplayRadius}-${isBulkSelecting}-${statusMapSize}-${refreshKey}-${country}`;
-  }, [selectedZipCodes.length, highlightedZipCodes.size, currentDisplayRadius, isBulkSelecting, territoryStatuses.size, refreshKey, country]);
+    // We use a combination of simple markers to trigger a redraw without huge strings
+    return `${currentDisplayRadius}-${isBulkSelecting}-${refreshKey}-${country}`;
+  }, [currentDisplayRadius, isBulkSelecting, refreshKey, country]);
 
-  const usRadii = [
-    { radius: 25, color: '#22c55e' },
-    { radius: 50, color: '#facc15' },
-    { radius: 100, color: '#f97316' },
-    { radius: 150, color: '#ef4444' },
-  ];
-
-  const caRadii = [
-    { radius: 35, color: '#22c55e' },
-    { radius: 50, color: '#facc15' },
-    { radius: 75, color: '#f97316' },
-  ];
-
-  const radiiConfig = isCanada ? caRadii : usRadii;
+  const radiiConfig = isCanada ? [{ radius: 35, color: '#22c55e' }, { radius: 50, color: '#facc15' }, { radius: 75, color: '#f97316' }] 
+                               : [{ radius: 25, color: '#22c55e' }, { radius: 50, color: '#facc15' }, { radius: 100, color: '#f97316' }, { radius: 150, color: '#ef4444' }];
   const unit = isCanada ? 'km' : 'miles';
   const conversionFactor = isCanada ? 1000 : 1609.34;
 
   if (dataError && !isCanada) {
     return (
-      <div className="h-full w-full flex items-center justify-center bg-red-100 text-red-800 p-4 border-4 border-dashed border-red-500">
-        <div className="text-center">
-          <h3 className="font-bold text-lg mb-2">Map Data Error</h3>
-          <p>{dataError}</p>
-        </div>
+      <div className="h-full w-full flex items-center justify-center bg-red-100 text-red-800 p-4 border-4 border-dashed border-red-500 text-center">
+        <div><h3 className="font-bold text-lg mb-2">Map Data Error</h3><p>{dataError}</p></div>
       </div>
     );
   }
@@ -571,7 +500,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   return (
     <MapContainer
       center={isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795]}
-      zoom={isCanada ? 4 : 4}
+      zoom={4}
       minZoom={3}
       maxZoom={18}
       scrollWheelZoom={true}
@@ -579,14 +508,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       renderer={L.canvas()}
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        attribution='&copy; CARTO'
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
-      
       <Pane name="polygons" style={{ zIndex: 450 }} />
-      
       {(loadingStage === 'counting' || loadingStage === 'fetching' || loadingStage === 'rendering') && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} stage={loadingStage} />}
-
       {isCanada && renderedCanadaPoints.length > 0 && (
         renderedCanadaPoints.map(point => {
           const postalCode = point.POSTAL_CODE;
@@ -594,112 +520,38 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           let color = '#3b82f6';
           let fillOpacity = 0.5;
           let pointRadius = 2;
-
-          if (status === 'green') {
-            color = '#22c55e';
-            fillOpacity = 0.7;
-            pointRadius = 3;
-          } else if (status === 'orange') {
-            color = '#f97316';
-            fillOpacity = 0.7;
-            pointRadius = 3;
-          }
-          
+          if (status === 'green') { color = '#22c55e'; fillOpacity = 0.7; pointRadius = 3; }
+          else if (status === 'orange') { color = '#f97316'; fillOpacity = 0.7; pointRadius = 3; }
           return (
-            <CircleMarker
-              key={point.id}
-              center={[point.LATITUDE, point.LONGITUDE]}
-              radius={pointRadius}
-              pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }}
-              eventHandlers={{
-                click: () => onZipCodeClick(postalCode, point.PROVINCE_ABBR),
-              }}
-            >
+            <CircleMarker key={point.id} center={[point.LATITUDE, point.LONGITUDE]} radius={pointRadius} pathOptions={{ color, fillColor: color, fillOpacity, weight: 1 }} eventHandlers={{ click: () => onZipCodeClick(postalCode, point.PROVINCE_ABBR) }}>
               <Tooltip>{postalCode}</Tooltip>
             </CircleMarker>
           );
         })
       )}
-
       {!isCanada && filteredGeoJsonData && (
-        <GeoJSON
-          key={geoJsonStyleKey}
-          ref={geoJsonLayerRef}
-          data={filteredGeoJsonData as any}
-          style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))}
-          onEachFeature={onEachFeature}
-          pane="polygons"
-        />
+        <GeoJSON key={geoJsonStyleKey} ref={geoJsonLayerRef} data={filteredGeoJsonData as any} style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))} onEachFeature={onEachFeature} pane="polygons" />
       )}
-
       {centerLocation?.lat != null && centerLocation?.lng != null && (
-        <Marker position={[centerLocation.lat, centerLocation.lng]} icon={createStarIcon()}>
-          <Popup>Installer Location</Popup>
-        </Marker>
+        <Marker position={[centerLocation.lat, centerLocation.lng]} icon={createStarIcon()}><Popup>Installer Location</Popup></Marker>
       )}
-
       {showRadiusCircles && centerLocation?.lat != null && centerLocation?.lng != null && (
         radiiConfig.map(({ radius, color }) => {
           const centerPoint = turf.point([centerLocation.lng!, centerLocation.lat!]);
           const radiusInKmForLabel = isCanada ? radius : radius * 1.60934;
           const topPoint = turf.destination(centerPoint, radiusInKmForLabel, 0, { units: 'kilometers' });
           const labelPosition: [number, number] = [topPoint.geometry.coordinates[1], topPoint.geometry.coordinates[0]];
-
-          const labelIcon = L.divIcon({
-            className: 'radius-label-icon',
-            html: `<div>${radius} ${unit}</div>`,
-            iconAnchor: [25, 10],
-          });
-
+          const labelIcon = L.divIcon({ className: 'radius-label-icon', html: `<div>${radius} ${unit}</div>`, iconAnchor: [25, 10] });
           return (
             <React.Fragment key={radius}>
-              <Circle
-                center={[centerLocation.lat!, centerLocation.lng!]}
-                radius={radius * conversionFactor}
-                pathOptions={{
-                  color: color,
-                  fillOpacity: 0,
-                  weight: 2,
-                  dashArray: '5, 10',
-                  interactive: false,
-                }}
-              />
+              <Circle center={[centerLocation.lat!, centerLocation.lng!]} radius={radius * conversionFactor} pathOptions={{ color: color, fillOpacity: 0, weight: 2, dashArray: '5, 10', interactive: false }} />
               <Marker position={labelPosition} icon={labelIcon} interactive={false} />
             </React.Fragment>
           );
         })
       )}
-      
-      <MapUpdater
-        centerLocation={centerLocation}
-        isOpen={isOpen}
-        country={country}
-      />
-      <MapInteractionHandler
-        isBulkSelecting={isBulkSelecting}
-        geoJsonData={allGeoJsonData}
-        onBulkSelectionComplete={onBulkSelectionComplete}
-        isCanada={isCanada}
-      />
-      {isTerritoryManagementPage && (
-        <div className="leaflet-bottom leaflet-left p-2">
-          <div className="bg-white p-3 rounded-lg shadow-md flex flex-col space-y-2 text-sm">
-            <div className="font-semibold mb-1">Territory Status</div>
-            <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: '#D4EDDA', border: '1px solid #94a3b8' }}></div>
-              <span>Approved (by any installer)</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: '#FFF3CD', border: '1px solid #94a3b8' }}></div>
-              <span>Needs Approval (by any installer)</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: '#F0F0F0', border: '1px solid #94a3b8' }}></div>
-              <span>Unassigned</span>
-            </div>
-          </div>
-        </div>
-      )}
+      <MapUpdater centerLocation={centerLocation} isOpen={isOpen} country={country} />
+      <MapInteractionHandler isBulkSelecting={isBulkSelecting} geoJsonData={allGeoJsonData} onBulkSelectionComplete={onBulkSelectionComplete} isCanada={isCanada} />
     </MapContainer>
   );
 };
