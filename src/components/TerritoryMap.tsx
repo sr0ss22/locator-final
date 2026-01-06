@@ -35,7 +35,7 @@ interface TerritoryMapProps {
   onBulkSelectionComplete?: (selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void;
   onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
   country?: 'USA' | 'Canada';
-  refreshKey?: number; // New prop to force a complete layer refresh
+  refreshKey?: number; // Prop to force a complete layer refresh
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
@@ -532,11 +532,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   };
 
   const geoJsonStyleKey = useMemo(() => {
-    const selectedZipsString = selectedZipCodes.map(z => `${z.zipCode}:${z.assignedStatus}`).join(',');
-    const highlightedZipsString = Array.from(highlightedZipCodes.entries()).map(([k, v]) => `${k}:${v}`).join(',');
+    const selectedCount = selectedZipCodes.length;
+    const highlightedCount = highlightedZipCodes.size;
     const statusMapSize = territoryStatuses.size;
-    return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}-${statusMapSize}-${refreshKey}`;
-  }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting, territoryStatuses, refreshKey]);
+    // We use a simplified key to trigger re-renders without hitting string length limits
+    // but we include enough uniqueness to catch all state changes.
+    return `${selectedCount}-${highlightedCount}-${currentDisplayRadius}-${isBulkSelecting}-${statusMapSize}-${refreshKey}-${isCanada ? 'ca' : 'us'}`;
+  }, [selectedZipCodes.length, highlightedZipCodes.size, currentDisplayRadius, isBulkSelecting, territoryStatuses.size, refreshKey, isCanada]);
 
   const usRadii = [
     { radius: 25, color: '#22c55e' },

@@ -586,7 +586,8 @@ const EditInstallerPage: React.FC = () => {
       }
   
       toast.success("Successfully saved all changes!", { id: loadingToastId });
-      await loadAllData(true); // Silent re-fetch to update state without unmounting map
+      setMapRefreshKey(prev => prev + 1); // Trigger a map update
+      await loadAllData(true); // Silent re-fetch to update initial states
     } catch (err: any) {
       console.error("Error during save process:", err);
       toast.error(`Save failed: ${err.message || "An unexpected error occurred."}`, { id: loadingToastId, duration: 8000 });
@@ -683,7 +684,7 @@ const EditInstallerPage: React.FC = () => {
 
   const handleClearAllAssignedZips = () => {
     setSelectedMapZipCodes([]);
-    toast.info("All assigned ZIP codes cleared from selection.");
+    toast.info("All assigned territories cleared from local selection. Click Save to commit changes.");
   };
 
   const handleImportInstallerTerritories = async (file: File, mode: "overwrite" | "append") => {
@@ -899,6 +900,10 @@ const EditInstallerPage: React.FC = () => {
         });
       });
       const finalListOfZips = Array.from(newSelectedMap.values());
+      
+      // Update UI immediately
+      setSelectedMapZipCodes(finalListOfZips);
+      toast.success(`Locally approved ${zipsToApprove.length} territories. Saving to database...`, { id: loadingToastId });
   
       await handleSubmit(finalListOfZips);
   

@@ -315,7 +315,8 @@ const PublicTerritoryEditor: React.FC = () => {
       }
 
       toast.success("Territory changes saved successfully!", { id: loadingToastId });
-      await loadAllData(true); // Silent re-fetch to update state without unmounting map
+      setMapRefreshKey(prev => prev + 1); // Trigger a map update
+      await loadAllData(true); // Silent re-fetch to update initial states
       toast.success("Save complete.", { id: loadingToastId, duration: 4000 });
     } catch (err: any) {
       console.error("Error saving territories:", err);
@@ -347,7 +348,7 @@ const PublicTerritoryEditor: React.FC = () => {
 
   const handleClearAllAssignedZips = () => {
     setSelectedMapZipCodes([]);
-    toast.info("All assigned ZIP codes cleared from selection.");
+    toast.info("All assigned territories cleared from local selection. Click Save to commit changes.");
   };
 
   const handleAutoApprove = async () => {
@@ -432,6 +433,10 @@ const PublicTerritoryEditor: React.FC = () => {
         });
       });
       const finalListOfZips = Array.from(newSelectedMap.values());
+      
+      // Update UI immediately
+      setSelectedMapZipCodes(finalListOfZips);
+      toast.success(`Locally approved ${zipsToApprove.length} territories. Saving to database...`, { id: loadingToastId });
   
       await handleSubmit(finalListOfZips);
   
