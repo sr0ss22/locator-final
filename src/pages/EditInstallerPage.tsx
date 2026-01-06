@@ -338,7 +338,10 @@ const EditInstallerPage: React.FC = () => {
   const handleAutoApprove = async () => {
     if (!currentInstaller?.latitude || !currentInstaller?.longitude) return;
     setIsSaving(true);
-    const loadingToastId = toast.loading("Finding territories...");
+    let loadingToastId: string | number | undefined;
+    if (installerCountry === 'Canada') {
+      loadingToastId = toast.loading("Finding territories...");
+    }
     try {
       let zips: any[] = [];
       if (installerCountry === 'Canada') {
@@ -360,6 +363,9 @@ const EditInstallerPage: React.FC = () => {
       const final = Array.from(newMap.values());
       setSelectedMapZipCodes(final);
       setMapRefreshKey(p => p + 1);
+      if (loadingToastId) {
+        toast.dismiss(loadingToastId);
+      }
       await handleSubmit(final);
     } catch (err: any) {
       toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
