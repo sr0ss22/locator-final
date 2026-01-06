@@ -42,10 +42,13 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized.' }), { headers: corsHeaders, status: 401 });
     }
 
+    // The RPC function expects an array of strings for removed zips, not an array of objects.
+    const removedZipsArray = Array.isArray(removedZips) ? removedZips.map(item => item.zipCode) : [];
+
     // Process the provided batch immediately
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
-      p_removed_zips: removedZips,
+      p_removed_zips: removedZipsArray, // Pass the corrected array of strings
       p_updated_zips: updatedZips,
       p_added_zips: addedZips,
     });
