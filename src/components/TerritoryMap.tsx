@@ -532,13 +532,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   };
 
   const geoJsonStyleKey = useMemo(() => {
+    // Simplified key that doesn't stringify the entire list.
+    // It relies on count and explicitly passed refreshKey to trigger re-renders.
     const selectedCount = selectedZipCodes.length;
     const highlightedCount = highlightedZipCodes.size;
     const statusMapSize = territoryStatuses.size;
-    // We use a simplified key to trigger re-renders without hitting string length limits
-    // but we include enough uniqueness to catch all state changes.
-    return `${selectedCount}-${highlightedCount}-${currentDisplayRadius}-${isBulkSelecting}-${statusMapSize}-${refreshKey}-${isCanada ? 'ca' : 'us'}`;
-  }, [selectedZipCodes.length, highlightedZipCodes.size, currentDisplayRadius, isBulkSelecting, territoryStatuses.size, refreshKey, isCanada]);
+    return `${selectedCount}-${highlightedCount}-${currentDisplayRadius}-${isBulkSelecting}-${statusMapSize}-${refreshKey}-${country}`;
+  }, [selectedZipCodes.length, highlightedZipCodes.size, currentDisplayRadius, isBulkSelecting, territoryStatuses.size, refreshKey, country]);
 
   const usRadii = [
     { radius: 25, color: '#22c55e' },

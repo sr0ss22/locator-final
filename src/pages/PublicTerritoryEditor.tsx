@@ -317,7 +317,6 @@ const PublicTerritoryEditor: React.FC = () => {
       toast.success("Territory changes saved successfully!", { id: loadingToastId });
       setMapRefreshKey(prev => prev + 1); // Trigger a map update
       await loadAllData(true); // Silent re-fetch to update initial states
-      toast.success("Save complete.", { id: loadingToastId, duration: 4000 });
     } catch (err: any) {
       console.error("Error saving territories:", err);
       toast.error(`Failed to save changes: ${err.message}`, { id: loadingToastId });
