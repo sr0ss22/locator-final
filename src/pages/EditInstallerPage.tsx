@@ -127,6 +127,21 @@ const EditInstallerPage: React.FC = () => {
 
   const mapDisplayRadius = useMemo(() => (installerCountry === 'Canada' ? 75 : 150), [installerCountry]);
 
+  const memoizedCenterLocation = useMemo(() => {
+    if (currentInstaller?.latitude != null && currentInstaller?.longitude != null) {
+      return { lat: currentInstaller.latitude, lng: currentInstaller.longitude };
+    }
+    return null;
+  }, [currentInstaller?.latitude, currentInstaller?.longitude]);
+
+  const highlightedZipCodes = useMemo(() => {
+    const highlights = new Map<string, 'green' | 'orange'>();
+    selectedMapZipCodes.forEach(item => {
+      highlights.set(item.zipCode, item.assignedStatus === 'Approved' ? 'green' : 'orange');
+    });
+    return highlights;
+  }, [selectedMapZipCodes]);
+
   const columnDisplayNames: { [key: string]: string } = useMemo(() => ({
     name: "Name", email: "Email", primary_phone: "Phone", secondary_phone: "Secondary Phone", address1: "Address Line 1",
     add2: "Address Line 2", city: "City", state: "State", postalcode: installerCountry === 'Canada' ? 'Postal Code' : 'Zip Code',
@@ -233,6 +248,33 @@ const EditInstallerPage: React.FC = () => {
     });
     setMapRefreshKey(p => p + 1);
   }, [zipCodeCentroids]);
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    requiredFields.forEach(field => {
+      if (!formData[field] || String(formData[field]).trim() === "") {
+        newErrors[field] = `${columnDisplayNames[field] || field.replace(/_/g, ' ')} is required.`;
+      }
+    });
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev: any) => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors(prev => { const newErrors = { ...prev }; delete newErrors[name]; return newErrors; });
+  };
+
+  const handleCheckboxChange = (name: string, checked: boolean) => setFormData((prev: any) => ({ ...prev, [name]: checked }));
+
+  const handleCertificationCheckboxChange = (dbColumn: string, value: string, checked: boolean) => {
+    setFormData((prev: any) => {
+      const currentCerts = Array.isArray(prev[dbColumn]) ? prev[dbColumn] : (prev[dbColumn] ? String(prev[dbColumn]).split(', ').filter(Boolean) : []);
+      const newCerts = checked ? [...new Set([...currentCerts, value])] : currentCerts.filter((cert: string) => cert !== value);
+      return { ...prev, [dbColumn]: newCerts };
+    });
+  };
 
   const handleSubmit = async (territoriesOverride?: any[]) => {
     if (!validateForm() || !currentInstaller?.id) return;
@@ -348,6 +390,9 @@ const EditInstallerPage: React.FC = () => {
   }, [bulkActionType, zipCodeCentroids]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><LoadingSayings /></div>;
+  if (!currentInstaller) return null;
+
+  const canEdit = profile?.role === 'admin' || (profile?.role === 'installer' && currentInstaller.rawSupabaseData?.account_id === user?.id);
 
   return (
     <>
@@ -355,20 +400,123 @@ const EditInstallerPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
           <div className="flex items-center gap-4">
             {profile?.role === 'admin' && <Button variant="outline" size="sm" onClick={() => navigate("/installers")} className="mr-2"><ArrowLeft className="h-4 w-4" /></Button>}
-            <div><h1 className="text-2xl font-bold text-gray-700">{currentInstaller?.name}</h1></div>
+            <div><h1 className="text-2xl font-bold text-gray-700">{currentInstaller.name}</h1></div>
           </div>
           <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" /> Log Out</Button>
         </div>
+
+        <Collapsible defaultOpen={false} className="mb-8">
+          <CollapsibleTrigger asChild>
+            <div className="flex justify-between items-center p-4 border rounded-lg shadow-sm bg-card cursor-pointer">
+              <h2 className="text-xl font-semibold">Installer Profile Details</h2>
+              <Button variant="outline" size="sm">
+                <ChevronsUpDown className="h-4 w-4" />
+                <span className="ml-2">Show/Hide Details</span>
+              </Button>
+            </div>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="grid gap-6 py-4 border-x border-b rounded-b-lg p-4">
+              <div className="flex justify-between items-center col-span-full mt-4 mb-2">
+                <h3 className="text-lg font-semibold">Contact & Address Information</h3>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="is_active"
+                    name="is_active"
+                    checked={toBoolean(formData.is_active)}
+                    onCheckedChange={(checked) => handleCheckboxChange('is_active', checked as boolean)}
+                    disabled={!canEdit}
+                    className={cn(
+                      toBoolean(formData.is_active) ? 'switch-active' : 'switch-inactive'
+                    )}
+                  />
+                  <Label htmlFor="is_active" className={cn(
+                    "font-semibold",
+                    toBoolean(formData.is_active) ? 'text-green-700' : 'text-red-700'
+                  )}>
+                    {toBoolean(formData.is_active) ? 'Active' : 'Inactive'}
+                  </Label>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
+                {contactAddressFields.map((key) => (
+                  <div key={key} className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor={key} className="text-right">{columnDisplayNames[key] || key.replace(/_/g, ' ')}{requiredFields.includes(key) && <span className="text-red-500 ml-1">*</span>}:</Label>
+                    <Input id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className={`col-span-3 ${errors[key] ? 'border-red-500' : ''}`} type="text" disabled={!canEdit} />
+                    {errors[key] && <p className="col-span-4 text-right text-red-500 text-sm">{errors[key]}</p>}
+                  </div>
+                ))}
+              </div>
+              <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Brands & Skills</h3>
+              <div className="col-span-full">
+                <h4 className="font-medium text-base mb-2">Brands (Level 1)</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {brandCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((item) => (
+                    <div key={item.key} className="flex items-center space-x-2">
+                      <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!canEdit} />
+                      <Label htmlFor={item.key}>{item.label}</Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="col-span-full mt-4">
+                <h4 className="font-medium text-base mb-2">Product Skills (Level 2)</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {productSkillCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((item) => (
+                    <div key={item.key} className="flex items-center space-x-2">
+                      <Checkbox id={item.key} name={item.key} checked={toBoolean(formData[item.key])} onCheckedChange={(checked) => handleCheckboxChange(item.key, checked as boolean)} disabled={!canEdit} />
+                      <Label htmlFor={item.key}>{item.label}</Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Certifications</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 col-span-full">
+                {certificationCheckboxes.sort((a, b) => a.label.localeCompare(b.label)).map((cert) => {
+                  const currentCerts = formData[cert.dbColumn] ? String(formData[cert.dbColumn]).split(', ').filter(Boolean) : [];
+                  const isChecked = currentCerts.includes(cert.value);
+                  return (
+                    <div key={cert.label} className="flex items-center space-x-2">
+                      <Checkbox id={cert.label} name={cert.label} checked={isChecked} onCheckedChange={(checked) => handleCertificationCheckboxChange(cert.dbColumn, cert.value, checked as boolean)} disabled={!canEdit} />
+                      <Label htmlFor={cert.label}>{cert.label}</Label>
+                    </div>
+                  );
+                })}
+              </div>
+              <h3 className="text-lg font-semibold col-span-full mt-4 mb-2">Other Details</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
+                {otherFields.sort((a, b) => (columnDisplayNames[a]?.localeCompare(columnDisplayNames[b] || b) || a.localeCompare(b))).map((key) => (
+                  <div key={key} className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor={key} className="text-right">{columnDisplayNames[key] || key.replace(/_/g, ' ')}:</Label>
+                    {key === 'shipment' ? (
+                      <Checkbox id={key} name={key} checked={toBoolean(formData[key])} onCheckedChange={(checked) => handleCheckboxChange(key, checked as boolean)} className="col-span-3" disabled={!canEdit} />
+                    ) : (
+                      <Input id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className="col-span-3" type={['installer_vendor_id', 'star_rating'].includes(key) ? 'number' : 'text'} disabled={!canEdit} />
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 col-span-full">
+                {textAreaFields.sort((a, b) => (columnDisplayNames[a]?.localeCompare(columnDisplayNames[b] || b) || a.localeCompare(b))).map((key) => (
+                  <div key={key} className="grid grid-cols-4 items-start gap-4">
+                    <Label htmlFor={key} className="text-right pt-2">{columnDisplayNames[key] || key.replace(/_/g, ' ')}:</Label>
+                    <Textarea id={key} name={key} value={formData[key] ?? ''} onChange={handleInputChange} className="col-span-3 min-h-[80px]" disabled={!canEdit} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         <div className="grid gap-6 py-4">
           <div className="col-span-full mt-6">
             <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
             <div className="flex flex-wrap justify-between gap-2 mb-4">
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={handleAutoApprove} disabled={isSaving}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={isSaving}>Bulk Free Mileage</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={isSaving}>Bulk Paid Mileage</Button>
-                <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={isSaving}><Eraser className="mr-2 h-4 w-4" /> Clear All</Button>
+                <Button variant="outline" onClick={handleAutoApprove} disabled={isSaving || !canEdit}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={isSaving || !canEdit}>Bulk Free Mileage</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={isSaving || !canEdit}>Bulk Paid Mileage</Button>
+                <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={isSaving || !canEdit}><Eraser className="mr-2 h-4 w-4" /> Clear All</Button>
               </div>
             </div>
             <div className="h-[800px] w-full border rounded-lg overflow-hidden">

@@ -39,6 +39,23 @@ const PublicTerritoryEditor: React.FC = () => {
     return (c === 'CANADA' || c === 'CA') ? 'Canada' : 'USA';
   }, [formData?.country]);
 
+  const mapDisplayRadius = useMemo(() => (installerCountry === 'Canada' ? 75 : 150), [installerCountry]);
+
+  const memoizedCenterLocation = useMemo(() => {
+    if (currentInstaller?.latitude != null && currentInstaller?.longitude != null) {
+      return { lat: currentInstaller.latitude, lng: currentInstaller.longitude };
+    }
+    return null;
+  }, [currentInstaller?.latitude, currentInstaller?.longitude]);
+
+  const highlightedZipCodes = useMemo(() => {
+    const highlights = new Map<string, 'green' | 'orange'>();
+    selectedMapZipCodes.forEach(item => {
+      highlights.set(item.zipCode, item.assignedStatus === 'Approved' ? 'green' : 'orange');
+    });
+    return highlights;
+  }, [selectedMapZipCodes]);
+
   const zipCodeCentroids = useMemo(() => {
     const map = new Map<string, { lat: number, lng: number, state: string }>();
     const geoJsonToProcess = installerCountry === 'Canada' ? canadaGeoJson : usGeoJson;
@@ -216,9 +233,9 @@ const PublicTerritoryEditor: React.FC = () => {
               <Button variant="outline" onClick={() => { setSelectedMapZipCodes([]); setMapRefreshKey(p => p + 1); }} disabled={isSaving}><Eraser className="mr-2 h-4 w-4" /> Clear All</Button>
             </div>
             <div className="h-[800px] w-full border rounded-lg overflow-hidden">
-              <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} highlightedZipCodes={new Map()} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} />
+              <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} />
             </div>
-            <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} onZipCodeClick={handleMapZipCodeClick} mapClickStates={new Map()} installerLocation={memoizedCenterLocation} listDisplayRadius="all" />
+            <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} onZipCodeClick={handleMapZipCodeClick} mapClickStates={highlightedZipCodes} installerLocation={memoizedCenterLocation} listDisplayRadius="all" />
           </div>
         </div>
       </div>
