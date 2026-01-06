@@ -305,13 +305,19 @@ const EditInstallerPage: React.FC = () => {
         for (const key in formData) {
           if (Object.prototype.hasOwnProperty.call(formData, key)) {
             const val = formData[key];
-            if (typeof val === 'boolean') formattedData[key] = fromBooleanToSupabase(key, val);
-            else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) formattedData[key] = Array.isArray(val) ? val.join(', ') : val;
-            else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof val === 'string' && val !== '') formattedData[key] = parseFloat(val);
-            else formattedData[key] = val === "" ? null : val;
+            if (typeof val === 'boolean') {
+              formattedData[key] = fromBooleanToSupabase(key, val);
+            } else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) {
+              formattedData[key] = Array.isArray(val) ? val.join(', ') : val;
+            } else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof val === 'string' && val !== '') {
+              formattedData[key] = parseFloat(val);
+            } else {
+              formattedData[key] = val === "" ? null : val;
+            }
           }
         }
-        await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
+        const { error: updateError } = await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
+        if (updateError) throw updateError;
       }
   
       const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
@@ -322,22 +328,47 @@ const EditInstallerPage: React.FC = () => {
       const updatedZips = territoriesToProcess.filter(z => initialZipMap.has(z.zipCode) && initialZipMap.get(z.zipCode)!.assignedStatus !== z.assignedStatus).map(z => ({ zip_code: z.zipCode, assigned_status: z.assignedStatus }));
       const removedZips = initialSelectedMapZipCodes.filter(z => !currentZipMap.has(z.zipCode)).map(z => ({ zipCode: z.zipCode }));
 
-      if (addedZips.length || updatedZips.length || removedZips.length) {
+      if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
         const { data: { session } } = await supabase.auth.getSession();
-        const CHUNK = 500;
-        const process = async (type: string, items: any[]) => {
-          for (let i = 0; i < items.length; i += CHUNK) {
-            const chunk = items.slice(i, i + CHUNK);
-            const body: any = { installerId: currentInstaller.id };
-            if (type === 'added') body.addedZips = chunk;
-            if (type === 'updated') body.updatedZips = chunk;
-            if (type === 'removed') body.removedZips = chunk;
-            await supabase.functions.invoke('save-public-territory-data', { headers: { Authorization: `Bearer ${session?.access_token}` }, body });
+        const CHUNK_SIZE = 500;
+
+        const processChanges = async (type: 'added' | 'updated' | 'removed', items: any[]) => {
+          if (items.length === 0) return;
+
+          for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+            const chunk = items.slice(i, i + CHUNK_SIZE);
+            
+            if (installerCountry === 'Canada') {
+              const processedCount = Math.min(i + CHUNK_SIZE, items.length);
+              const percentage = Math.round((processedCount / items.length) * 100);
+              let action = type.charAt(0).toUpperCase() + type.slice(1);
+              if (action === 'Added') action = 'Adding';
+              if (action === 'Updated') action = 'Updating';
+              if (action === 'Removed') action = 'Removing';
+              toast.loading(`${action} ${processedCount} of ${items.length} territories... (${percentage}%)`, { id: loadingToastId });
+            }
+
+            const body = {
+              installerId: currentInstaller.id,
+              addedZips: type === 'added' ? chunk : [],
+              updatedZips: type === 'updated' ? chunk : [],
+              removedZips: type === 'removed' ? chunk : [],
+            };
+
+            const { error } = await supabase.functions.invoke('save-public-territory-data', {
+              headers: { Authorization: `Bearer ${session?.access_token}` },
+              body,
+            });
+
+            if (error) {
+              throw new Error(`Failed during ${type} step: ${error.message}`);
+            }
           }
         };
-        if (removedZips.length) await process('removed', removedZips);
-        if (updatedZips.length) await process('updated', updatedZips);
-        if (addedZips.length) await process('added', addedZips);
+
+        await processChanges('removed', removedZips);
+        await processChanges('updated', updatedZips);
+        await processChanges('added', addedZips);
       }
   
       toast.success("Changes saved successfully!", { id: loadingToastId });
@@ -347,6 +378,7 @@ const EditInstallerPage: React.FC = () => {
       setIsDirty(false);
       setMapRefreshKey(p => p + 1);
     } catch (err: any) {
+      console.error("Save failed:", err);
       toast.error(`Save failed: ${err.message}`, { id: loadingToastId });
     } finally {
       setIsSaving(false);
