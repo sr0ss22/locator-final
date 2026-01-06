@@ -467,14 +467,12 @@ const EditInstallerPage: React.FC = () => {
       return;
     }
     setLoading(true);
-    const loadingToastId = toast.loading("Saving changes...");
+    const loadingToastId = toast.loading("Saving installer details...");
   
     try {
-      // Force a session refresh before starting the long operation
+      // Force a session refresh before starting potentially long operations
       const { error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        throw new Error(`Authentication error: ${refreshError.message}. Your session may have expired.`);
-      }
+      if (refreshError) throw new Error(`Authentication error: ${refreshError.message}. Session expired.`);
 
       // Step 1: Update installer profile data
       if (JSON.stringify(formData) !== JSON.stringify(initialFormData)) {
@@ -495,28 +493,29 @@ const EditInstallerPage: React.FC = () => {
               }
             }
           }
+          
           const addressFields = ["address1", "add2", "city", "state", "postalcode", "country"];
           let addressChanged = false;
-          const originalRawData = currentInstaller.rawSupabaseData || {};
+          const originalRawData = initialFormData || {};
           for (const field of addressFields) {
             if (String(originalRawData[field] || '') !== String(formattedData[field] || '')) {
               addressChanged = true; break;
             }
           }
+          
           if (addressChanged) {
-            toast.info("Address changed, updating coordinates...", { id: loadingToastId });
+            toast.loading("Address changed, updating coordinates...", { id: loadingToastId });
             const fullAddress = `${formattedData.address1 || ''}, ${formattedData.city || ''}, ${formattedData.state || ''} ${formattedData.postalcode || ''}, ${formattedData.country || ''}`.trim();
             const coords = await getCoordinates({ searchText: fullAddress });
             if (coords.lat != null && coords.lng != null) {
               formattedData.latitude = coords.lat; formattedData.longitude = coords.lng;
-              toast.success("Coordinates updated successfully!", { id: loadingToastId });
             } else {
               formattedData.latitude = null; formattedData.longitude = null;
-              toast.warning("Could not find coordinates for the new address. Latitude and longitude cleared.", { id: loadingToastId });
             }
           }
+          
         const { error: updateInstallerError } = await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
-        if (updateInstallerError) throw new Error(`Supabase Update Error: ${updateInstallerError.message}`);
+        if (updateInstallerError) throw new Error(`Profile Update Error: ${updateInstallerError.message}`);
       }
   
       // Step 2: Process all territory changes
@@ -545,18 +544,18 @@ const EditInstallerPage: React.FC = () => {
 
         const removedZipCodes = initialSelectedMapZipCodes
           .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-          .map(initialZip => initialZip.zipCode);
+          .map(initialZip => ({ zipCode: initialZip.zipCode })); // FORMAT AS OBJECT
   
         if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
           const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
-          toast.loading(`Updating ${totalChanges} territory changes, large changes can take a few minutes.`, { id: loadingToastId });
+          toast.loading(`Updating ${totalChanges} territories...`, { id: loadingToastId });
           
           const CHUNK_SIZE = 500; 
           
           const processChunks = async (type: string, items: any[]) => {
             for (let i = 0; i < items.length; i += CHUNK_SIZE) {
-              const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-              if (sessionError || !session) throw new Error("Authentication session error.");
+              const { data: { session } } = await supabase.auth.getSession();
+              if (!session) throw new Error("Auth session lost.");
 
               const chunk = items.slice(i, i + CHUNK_SIZE);
               const payload: any = { installerId: currentInstaller.id };
@@ -565,17 +564,15 @@ const EditInstallerPage: React.FC = () => {
               if (type === 'removed') payload.removedZips = chunk;
 
               const { data, error } = await supabase.functions.invoke('save-public-territory-data', {
-                headers: {
-                  Authorization: `Bearer ${session.access_token}`
-                },
+                headers: { Authorization: `Bearer ${session.access_token}` },
                 body: payload,
               });
 
-              if (error) throw new Error(`Failed to save ${type} chunk: ${error.message}`);
-              if (data?.error) throw new Error(`Failed to save ${type} chunk: ${data.error} ${data.details || ''}`);
+              if (error) throw new Error(`Edge Function error (${type}): ${error.message}`);
+              if (data?.error) throw new Error(`Server error (${type}): ${data.error} ${data.details || ''}`);
               
               const progress = Math.round(((i + chunk.length) / items.length) * 100);
-              toast.loading(`Progress (${type}): ${progress}%...`, { id: loadingToastId });
+              toast.loading(`Saving ${type} territories: ${progress}%...`, { id: loadingToastId });
             }
           };
 
@@ -585,18 +582,11 @@ const EditInstallerPage: React.FC = () => {
         }
       }
   
-      toast.success("All changes saved successfully! Refreshing data...", { id: loadingToastId });
+      toast.success("Successfully saved all changes!", { id: loadingToastId });
       await loadAllData();
-      toast.success("Save complete.", { id: loadingToastId, duration: 4000 });
     } catch (err: any) {
-      console.error("Error saving changes:", err);
-      if (err.message && (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized') || err.message.toLowerCase().includes('authentication error'))) {
-        toast.error("Your session has expired. Please log in again.", { id: loadingToastId, duration: 8000 });
-        await supabase.auth.signOut();
-        navigate('/login');
-      } else {
-        toast.error(`Error: ${err.message || "Failed to save changes. Please try again."}`, { id: loadingToastId, duration: 8000 });
-      }
+      console.error("Error during save process:", err);
+      toast.error(`Save failed: ${err.message || "An unexpected error occurred."}`, { id: loadingToastId, duration: 8000 });
     } finally {
       setLoading(false);
     }

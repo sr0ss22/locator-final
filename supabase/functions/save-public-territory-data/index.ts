@@ -15,7 +15,15 @@ serve(async (req) => {
     const payload = await req.json();
     const { installerId, token, addedZips = [], updatedZips = [], removedZips = [] } = payload;
 
+    console.log("[save-public-territory-data] Received save request:", { 
+      installerId, 
+      addedCount: addedZips.length, 
+      updatedCount: updatedZips.length, 
+      removedCount: removedZips.length 
+    });
+
     if (!installerId) {
+      console.error("[save-public-territory-data] Error: Missing installerId");
       return new Response(JSON.stringify({ error: 'Installer ID is required.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
@@ -39,11 +47,12 @@ serve(async (req) => {
     }
 
     if (!authorized) {
+      console.warn("[save-public-territory-data] Unauthorized access attempt for installer:", installerId);
       return new Response(JSON.stringify({ error: 'Unauthorized.' }), { headers: corsHeaders, status: 401 });
     }
 
     // Call the high-performance RPC
-    // We pass the arrays directly. SQL handles removedZips as objects or strings.
+    console.log("[save-public-territory-data] Executing batch_process_territory_changes...");
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
       p_removed_zips: removedZips, 
@@ -52,17 +61,20 @@ serve(async (req) => {
     });
 
     if (rpcError) {
+      console.error("[save-public-territory-data] RPC Error encountered:", rpcError);
       return new Response(JSON.stringify({ error: rpcError.message, details: rpcError.details }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       });
     }
 
+    console.log("[save-public-territory-data] Successfully updated territories.");
     return new Response(JSON.stringify({ status: 'success' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
   } catch (error) {
+    console.error('[save-public-territory-data] Unexpected system error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
