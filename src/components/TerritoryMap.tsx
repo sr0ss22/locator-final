@@ -538,7 +538,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   ];
 
   const caRadii = [
-    { radius: 25, color: '#22c55e' },
+    { radius: 35, color: '#22c55e' },
     { radius: 50, color: '#facc15' },
     { radius: 75, color: '#f97316' },
   ];
