@@ -157,19 +157,6 @@ const EditInstallerPage: React.FC = () => {
 
   const requiredFields = ["name", "email", "primary_phone", "address1", "city", "state", "postalcode"];
 
-  const standardizeCertificationName = (cert: string | null | undefined): InstallerCertification | null => {
-    if (!cert) return null;
-    const normalizedCert = cert.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-    if (normalizedCert.includes("motorization pro") || normalizedCert === 'pv pro' || normalizedCert === 'powerview pro certified') {
-        return "Motorization Pro";
-    }
-    const validCertificationsMap: { [key: string]: InstallerCertification } = {
-      "certified installer": "Certified Installer", "master installer": "Master Installer",
-      "master shutter": "Shutter Pro", "drapery pro": "Drapery Pro", "pip certified": "PIP Certified",
-    };
-    return validCertificationsMap[normalizedCert] || null;
-  };
-
   const fetchTerritoryStatuses = useCallback(async () => {
     const { data } = await supabase.from('installer_zip_codes').select('zip_code, status');
     const statusMap = new Map<string, TerritoryStatus>();
@@ -295,8 +282,6 @@ const EditInstallerPage: React.FC = () => {
     const loadingToastId = toast.loading("Saving changes...");
   
     try {
-      await supabase.auth.refreshSession();
-
       if (JSON.stringify(formData) !== JSON.stringify(initialFormData)) {
         const formattedData: any = {};
         for (const key in formData) {
@@ -341,7 +326,6 @@ const EditInstallerPage: React.FC = () => {
       const savedTerritories = JSON.parse(JSON.stringify(territoriesToProcess));
       setInitialFormData(JSON.parse(JSON.stringify(formData)));
       setInitialSelectedMapZipCodes(savedTerritories);
-      setSelectedMapZipCodes(savedTerritories);
       setIsDirty(false);
       setMapRefreshKey(p => p + 1);
     } catch (err: any) {
