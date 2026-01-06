@@ -42,53 +42,22 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized.' }), { headers: corsHeaders, status: 401 });
     }
 
-    console.log(`[save-public-territory-data] Bulk sync for ${installerId}. Add: ${addedZips.length}, Update: ${updatedZips.length}, Remove: ${removedZips.length}`);
+    // Process the provided batch immediately
+    const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
+      p_installer_id: installerId,
+      p_removed_zips: removedZips,
+      p_updated_zips: updatedZips,
+      p_added_zips: addedZips,
+    });
 
-    // CHUNKING LOGIC: Break the work into small, safe batches of 100
-    const CHUNK_SIZE = 100;
-    
-    // Process removals in chunks
-    for (let i = 0; i < removedZips.length; i += CHUNK_SIZE) {
-      const chunk = removedZips.slice(i, i + CHUNK_SIZE);
-      const { error } = await supabaseAdmin.rpc('batch_process_territory_changes', {
-        p_installer_id: installerId,
-        p_removed_zips: chunk,
-        p_updated_zips: [],
-        p_added_zips: [],
-      });
-      if (error) throw new Error(`Removal Chunk ${i}: ${error.message}`);
-    }
-
-    // Process updates in chunks
-    for (let i = 0; i < updatedZips.length; i += CHUNK_SIZE) {
-      const chunk = updatedZips.slice(i, i + CHUNK_SIZE);
-      const { error } = await supabaseAdmin.rpc('batch_process_territory_changes', {
-        p_installer_id: installerId,
-        p_removed_zips: [],
-        p_updated_zips: chunk,
-        p_added_zips: [],
-      });
-      if (error) throw new Error(`Update Chunk ${i}: ${error.message}`);
-    }
-
-    // Process additions in chunks
-    for (let i = 0; i < addedZips.length; i += CHUNK_SIZE) {
-      const chunk = addedZips.slice(i, i + CHUNK_SIZE);
-      const { error } = await supabaseAdmin.rpc('batch_process_territory_changes', {
-        p_installer_id: installerId,
-        p_removed_zips: [],
-        p_updated_zips: [],
-        p_added_zips: chunk,
-      });
-      if (error) throw new Error(`Addition Chunk ${i}: ${error.message}`);
-    }
+    if (rpcError) throw rpcError;
 
     return new Response(JSON.stringify({ status: 'success' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
   } catch (error) {
-    console.error('[save-public-territory-data] Error:', error.message);
+    console.error('[save-public-territory-data] Batch Error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

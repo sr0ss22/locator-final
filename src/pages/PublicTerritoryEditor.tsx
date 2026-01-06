@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import TerritoryMap from "@/components/TerritoryMap";
 import { supabase } from "@/integrations/supabase/client";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/group";
+import { RadioGroup as ShadcnRadioGroup, RadioGroupItem as ShadcnRadioGroupItem } from "@/components/ui/radio-group";
 import InstallerTerritoryList from "@/components/InstallerTerritoryList";
 import { TerritoryStatus } from "@/types/territory";
 import { cn } from "@/lib/utils";
@@ -263,7 +264,6 @@ const PublicTerritoryEditor: React.FC = () => {
       const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
       const currentZipMap = new Map(territoriesToProcess.map(z => [z.zipCode, z]));
 
-      // We'll map these to match the snake_case keys expected by the database function
       const addedZips = Array.from(currentZipMap.values())
           .filter(z => !initialZipMap.has(z.zipCode))
           .map(z => ({
@@ -284,21 +284,32 @@ const PublicTerritoryEditor: React.FC = () => {
           .map(initialZip => initialZip.zipCode);
 
       if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
-        toast.info(`Syncing territory changes...`, { id: loadingToastId });
+        const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
+        toast.info(`Saving ${totalChanges} territory changes in chunks...`, { id: loadingToastId });
 
-        const { error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
-          body: { 
-            installerId, 
-            token,
-            addedZips, 
-            updatedZips, 
-            removedZips: removedZipCodes.map(zipCode => ({ zipCode })) // Standardize structure
-          },
-        });
+        const CHUNK_SIZE = 500;
 
-        if (territoryError) {
-          throw new Error(`Failed to save territories: ${territoryError.message}`);
-        }
+        const processChunks = async (type: string, items: any[]) => {
+          for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+            const chunk = items.slice(i, i + CHUNK_SIZE);
+            const payload: any = { installerId, token };
+            if (type === 'added') payload.addedZips = chunk;
+            if (type === 'updated') payload.updatedZips = chunk;
+            if (type === 'removed') payload.removedZips = chunk.map(zc => ({ zipCode: zc }));
+
+            const { error } = await supabase.functions.invoke('save-public-territory-data', {
+              body: payload,
+            });
+            if (error) throw new Error(`Failed to save ${type} chunk starting at ${i}: ${error.message}`);
+            
+            const progress = Math.round(((i + chunk.length) / items.length) * 100);
+            toast.info(`Saving ${type} territories: ${progress}%...`, { id: loadingToastId });
+          }
+        };
+
+        if (removedZipCodes.length > 0) await processChunks('removed', removedZipCodes);
+        if (updatedZips.length > 0) await processChunks('updated', updatedZips);
+        if (addedZips.length > 0) await processChunks('added', addedZips);
       }
 
       toast.success("Territory changes saved successfully! Refreshing data...", { id: loadingToastId });
@@ -463,7 +474,7 @@ const PublicTerritoryEditor: React.FC = () => {
                   <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
                 </Button>
                 <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
                 {installerCountry === 'Canada' && (
                   <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white hover:bg-red-700" : "border-red-600 text-red-600 hover:bg-red-100")} onClick={() => handleToggleBulkSelect('deselect')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'deselect' ? "Exit Bulk Deselect" : "Bulk Deselect"}</Button>
                 )}
@@ -491,10 +502,10 @@ const PublicTerritoryEditor: React.FC = () => {
             <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them. In bulk select mode, click and drag to select multiple ZIP codes.</p>
             <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
               <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
-              <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
-                {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
-                <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
-              </RadioGroup>
+              <ShadcnRadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
+                {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><ShadcnRadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
+                <div className="flex items-center space-x-2"><ShadcnRadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
+              </ShadcnRadioGroup>
             </div>
             <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} onZipCodeClick={handleMapZipCodeClick} mapClickStates={highlightedZipCodes} installerLocation={memoizedCenterLocation} listDisplayRadius={listDisplayRadius} />
           </div>

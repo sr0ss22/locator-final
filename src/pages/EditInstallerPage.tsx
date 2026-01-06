@@ -494,26 +494,39 @@ const EditInstallerPage: React.FC = () => {
           }
         });
 
-        const removedZips = initialSelectedMapZipCodes
+        const removedZipCodes = initialSelectedMapZipCodes
           .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-          .map(initialZip => ({ zip_code: initialZip.zipCode }));
+          .map(initialZip => initialZip.zipCode);
   
-        if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
-          toast.info(`Synchronizing ${addedZips.length + updatedZips.length + removedZips.length} territory records in robust chunks...`, { id: loadingToastId });
-  
-          // The Edge Function now handles the chunking for us to prevent 500 errors
-          const { error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
-            body: { 
-              installerId: currentInstaller.id, 
-              addedZips, 
-              updatedZips, 
-              removedZips 
-            },
-          });
+        if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
+          const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
+          toast.info(`Syncing ${totalChanges} territory changes in chunks...`, { id: loadingToastId });
+          
+          const CHUNK_SIZE = 500;
+          
+          // Helper to process a specific set of changes in chunks
+          const processChunks = async (type: string, items: any[]) => {
+            for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+              const chunk = items.slice(i, i + CHUNK_SIZE);
+              const payload: any = { installerId: currentInstaller.id };
+              if (type === 'added') payload.addedZips = chunk;
+              if (type === 'updated') payload.updatedZips = chunk;
+              if (type === 'removed') payload.removedZips = chunk.map(zc => ({ zipCode: zc }));
 
-          if (territoryError) {
-            throw new Error(`Failed to save territories: ${territoryError.message}`);
-          }
+              const { error } = await supabase.functions.invoke('save-public-territory-data', {
+                body: payload,
+              });
+              if (error) throw new Error(`Failed to save ${type} chunk starting at ${i}: ${error.message}`);
+              
+              const progress = Math.round(((i + chunk.length) / items.length) * 100);
+              toast.info(`Saving ${type} territories: ${progress}%...`, { id: loadingToastId });
+            }
+          };
+
+          // Run syncs sequentially to prevent overlap
+          if (removedZipCodes.length > 0) await processChunks('removed', removedZipCodes);
+          if (updatedZips.length > 0) await processChunks('updated', updatedZips);
+          if (addedZips.length > 0) await processChunks('added', addedZips);
         }
       }
   
