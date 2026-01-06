@@ -43,7 +43,7 @@ serve(async (req) => {
     }
 
     // Call the high-performance RPC
-    // We pass the arrays directly; the SQL function is designed to handle them.
+    // We pass the arrays directly. SQL handles removedZips as objects or strings.
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
       p_removed_zips: removedZips, 
@@ -52,10 +52,9 @@ serve(async (req) => {
     });
 
     if (rpcError) {
-      // Return the specific database error to the browser
       return new Response(JSON.stringify({ error: rpcError.message, details: rpcError.details }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400, // Change to 400 so we can see it as a "known" error
+        status: 400,
       });
     }
 

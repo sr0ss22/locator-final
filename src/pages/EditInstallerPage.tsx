@@ -260,7 +260,7 @@ const EditInstallerPage: React.FC = () => {
       id: installerData.id, name: installerData.name,
       address: `${installerData.address1 || ''} ${installerData.add2 || ''}, ${installerData.city || ''}, ${installerData.state || ''} ${installerData.postalcode || ''}`.trim(),
       zipCode: installerData.postalcode, phone: installerData.primary_phone, email: installerData.email,
-      skills: [], brands: [], certifications: [],
+      skills: [], brands, certifications: [],
       latitude: installerData.latitude, longitude: installerData.longitude,
       installerVendorId: installerData.installer_vendor_id?.toString(),
       acceptsShipments: toBoolean(installerData.shipment),
@@ -461,12 +461,12 @@ const EditInstallerPage: React.FC = () => {
             }
           }
           if (addressChanged) {
-            toast.info("Address changed, updating coordinates...", { id: loadingToastId });
+            toast.loading("Address changed, updating coordinates...", { id: loadingToastId });
             const fullAddress = `${formattedData.address1 || ''}, ${formattedData.city || ''}, ${formattedData.state || ''} ${formattedData.postalcode || ''}, ${formattedData.country || ''}`.trim();
             const coords = await getCoordinates({ searchText: fullAddress });
             if (coords.lat != null && coords.lng != null) {
               formattedData.latitude = coords.lat; formattedData.longitude = coords.lng;
-              toast.success("Coordinates updated successfully!", { id: loadingToastId });
+              toast.loading("Coordinates updated successfully!", { id: loadingToastId });
             } else {
               formattedData.latitude = null; formattedData.longitude = null;
               toast.warning("Could not find coordinates for the new address. Latitude and longitude cleared.", { id: loadingToastId });
@@ -500,23 +500,21 @@ const EditInstallerPage: React.FC = () => {
           }
         });
 
-        // Map removed zip codes to objects to match API expectation and improve reliability
+        // REVERTED: Send as simple strings for maximum SQL compatibility
         const removedZipsPayload = initialSelectedMapZipCodes
           .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-          .map(initialZip => ({ zipCode: initialZip.zipCode }));
+          .map(initialZip => initialZip.zipCode);
   
         if (addedZips.length > 0 || updatedZips.length > 0 || removedZipsPayload.length > 0) {
           const totalChanges = addedZips.length + updatedZips.length + removedZipsPayload.length;
           toast.loading(`Updating ${totalChanges} territory changes, large changes can take a few minutes.`, { id: loadingToastId });
           
-          const CHUNK_SIZE = 200;
+          const CHUNK_SIZE = 500; // Increased chunk size for better throughput
           
           const processChunks = async (type: string, items: any[]) => {
             for (let i = 0; i < items.length; i += CHUNK_SIZE) {
               const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-              if (sessionError || !session) {
-                throw new Error("Authentication session error. Please log in again.");
-              }
+              if (sessionError || !session) throw new Error("Authentication session error.");
 
               const chunk = items.slice(i, i + CHUNK_SIZE);
               const payload: any = { installerId: currentInstaller.id };
@@ -524,15 +522,19 @@ const EditInstallerPage: React.FC = () => {
               if (type === 'updated') payload.updatedZips = chunk;
               if (type === 'removed') payload.removedZips = chunk;
 
-              const { data, error } = await supabase.functions.invoke('save-public-territory-data', {
+              const response = await fetch(`${(window as any).location.origin.replace('8080', '54321')}/functions/v1/save-public-territory-data`, {
+                method: 'POST',
                 headers: {
-                  Authorization: `Bearer ${session.access_token}`
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.access_token}`
                 },
-                body: payload,
+                body: JSON.stringify(payload)
               });
-              
-              if (error) throw new Error(`Failed to save ${type} chunk: ${error.message}`);
-              if (data?.error) throw new Error(`Failed to save ${type} chunk: ${data.error} ${data.details || ''}`);
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || errorData.message || `Server returned ${response.status}`);
+              }
               
               const progress = Math.round(((i + chunk.length) / items.length) * 100);
               toast.loading(`Progress (${type}): ${progress}%...`, { id: loadingToastId });
@@ -551,11 +553,11 @@ const EditInstallerPage: React.FC = () => {
     } catch (err: any) {
       console.error("Error saving changes:", err);
       if (err.message && (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized') || err.message.toLowerCase().includes('authentication error'))) {
-        toast.error("Your session has expired or is invalid. Please log in again to save your changes.", { id: loadingToastId, duration: 8000 });
+        toast.error("Your session has expired. Please log in again.", { id: loadingToastId, duration: 8000 });
         await supabase.auth.signOut();
         navigate('/login');
       } else {
-        toast.error(`Failed to save changes: ${err.message || err.toString()}`, { id: loadingToastId });
+        toast.error(`Error: ${err.message || "Failed to save changes. Please try again."}`, { id: loadingToastId, duration: 8000 });
       }
     } finally {
       setLoading(false);
@@ -832,7 +834,7 @@ const EditInstallerPage: React.FC = () => {
         }));
       } else { // USA
         loadingToastId = toast.loading(`Finding territories within 25 miles...`);
-        toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
+        toast.loading("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
         const radiusKm = 25 * 1.60934;
         const options = { steps: 64, units: 'kilometers' as const };
