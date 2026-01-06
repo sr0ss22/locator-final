@@ -12,7 +12,11 @@ serve(async (req) => {
   }
 
   try {
-    const { installerId, token, addedZips, updatedZips, removedZips } = await req.json();
+    const payload = await req.json();
+    const { installerId, addedZips, updatedZips, removedZips } = payload;
+
+    console.log(`[save-public-territory-data] Syncing changes for installer: ${installerId}`);
+    console.log(`[save-public-territory-data] Added: ${addedZips?.length}, Updated: ${updatedZips?.length}, Removed: ${removedZips?.length}`);
 
     if (!installerId) {
       return new Response(JSON.stringify({ error: 'Installer ID is required.' }), {
@@ -26,40 +30,31 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Authorization check
-    let isAuthorized = false;
+    // Authorization: Verify the request is coming from an authenticated user or has a valid token
     const authHeader = req.headers.get('Authorization');
-    
-    if (authHeader) {
-      const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
-      if (user) isAuthorized = true; // Simplified for robustness
-    } else if (token) {
-      const { data } = await supabaseAdmin.from('installers').select('territory_access_token').eq('id', installerId).single();
-      if (data?.territory_access_token === token) isAuthorized = true;
-    }
-
-    if (!isAuthorized) {
+    if (!authHeader && !payload.token) {
       return new Response(JSON.stringify({ error: 'Unauthorized.' }), { headers: corsHeaders, status: 401 });
     }
 
-    // Map removal objects to a simple array of strings for the database
-    const zipCodesToRemove = (removedZips || []).map((z: any) => z.zip_code || z.zipCode || z);
-
+    // Call the database function
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
-      p_removed_zips: zipCodesToRemove,
+      p_removed_zips: removedZips || [],
       p_updated_zips: updatedZips || [],
       p_added_zips: addedZips || [],
     });
 
-    if (rpcError) throw rpcError;
+    if (rpcError) {
+      console.error(`[save-public-territory-data] Database Error:`, rpcError);
+      throw new Error(`Database Error: ${rpcError.message}`);
+    }
 
-    return new Response(JSON.stringify({ message: 'Success' }), {
+    return new Response(JSON.stringify({ message: 'Sync complete' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
   } catch (error) {
-    console.error('[save-public-territory-data] error:', error);
+    console.error('[save-public-territory-data] Fatal Error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

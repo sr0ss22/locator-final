@@ -491,11 +491,13 @@ const EditInstallerPage: React.FC = () => {
             });
           }
         });
-        const removedZipCodes = initialSelectedMapZipCodes
+
+        // FIXED: Explicitly map removals to a consistent object format for the Edge Function
+        const removedZips = initialSelectedMapZipCodes
           .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-          .map(initialZip => initialZip.zipCode);
+          .map(initialZip => ({ zip_code: initialZip.zipCode }));
   
-        if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
+        if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
           toast.info(`Syncing territory changes...`, { id: loadingToastId });
   
           const { error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
@@ -503,7 +505,7 @@ const EditInstallerPage: React.FC = () => {
               installerId: currentInstaller.id, 
               addedZips, 
               updatedZips, 
-              removedZips: removedZipCodes // Send simple array of strings
+              removedZips // Sending array of objects for consistency
             },
           });
 
@@ -641,7 +643,7 @@ const EditInstallerPage: React.FC = () => {
       }
       if (mode === "overwrite") {
         toast.info("Overwriting existing territories for this installer...", { id: loadingToastId });
-        const { error: deleteError } = await supabase.from('installer_zip_codes').delete().eq('installer_id', installerId);
+        const { error: deleteError = null } = await supabase.from('installer_zip_codes').delete().eq('installer_id', installerId);
         if (deleteError) throw new Error(`Failed to clear existing territories: ${deleteError.message}`);
         toast.success("Existing territories cleared.", { id: loadingToastId });
       }
@@ -796,7 +798,7 @@ const EditInstallerPage: React.FC = () => {
         loadingToastId = toast.loading(`Finding territories within 25 miles...`);
         toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
-        const radiusKm = 25 * 1.60934;
+        const radiusKm = 25 * 1.60934; // 25 miles in km
         const options = { steps: 64, units: 'kilometers' as const };
         const radiusCircle = turf.circle(center, radiusKm, options);
 
@@ -997,7 +999,7 @@ const EditInstallerPage: React.FC = () => {
                   <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
                 </Button>
                 <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-orange-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
                 {installerCountry === 'Canada' && (
                   <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white hover:bg-red-700" : "border-red-600 text-red-600 hover:bg-red-100")} onClick={() => handleToggleBulkSelect('deselect')} disabled={loading || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'deselect' ? "Exit Bulk Deselect" : "Bulk Deselect"}</Button>
                 )}
@@ -1032,7 +1034,7 @@ const EditInstallerPage: React.FC = () => {
             <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
               <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
               <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
-                {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
+                {['0-25', '25-50', '50-75', '75-100', '100-125', '150+'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
                 <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
               </RadioGroup>
             </div>
