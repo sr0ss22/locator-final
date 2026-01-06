@@ -329,9 +329,31 @@ const EditInstallerPage: React.FC = () => {
           for (let i = 0; i < items.length; i += CHUNK) {
             const chunk = items.slice(i, i + CHUNK);
             const body: any = { installerId: currentInstaller.id };
-            if (type === 'added') body.addedZips = chunk;
-            if (type === 'updated') body.updatedZips = chunk;
-            if (type === 'removed') body.removedZips = chunk;
+
+            if (installerCountry === 'Canada') {
+                let message = "";
+                const processedCount = Math.min(i + CHUNK, items.length);
+                const percentage = Math.round((processedCount / items.length) * 100);
+
+                if (type === 'added') {
+                  body.addedZips = chunk;
+                  message = `Adding ${processedCount} of ${items.length} territories... (${percentage}%)`;
+                }
+                if (type === 'updated') {
+                  body.updatedZips = chunk;
+                  message = `Updating ${processedCount} of ${items.length} territories... (${percentage}%)`;
+                }
+                if (type === 'removed') {
+                  body.removedZips = chunk;
+                  message = `Removing ${processedCount} of ${items.length} territories... (${percentage}%)`;
+                }
+                toast.loading(message, { id: loadingToastId });
+            } else {
+                if (type === 'added') body.addedZips = chunk;
+                if (type === 'updated') body.updatedZips = chunk;
+                if (type === 'removed') body.removedZips = chunk;
+            }
+            
             await supabase.functions.invoke('save-public-territory-data', { headers: { Authorization: `Bearer ${session?.access_token}` }, body });
           }
         };
