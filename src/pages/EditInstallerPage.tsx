@@ -73,6 +73,8 @@ const EditInstallerPage: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<boolean>(true);
+  const [isSaving, setIsSaving] = useState<boolean>(false); // Separate saving state
+  const [mapRefreshKey, setMapRefreshKey] = useState<number>(0); // Key to force map style refresh
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
   const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
@@ -181,13 +183,13 @@ const EditInstallerPage: React.FC = () => {
     }
   }, []);
 
-  const loadAllData = useCallback(async () => {
+  const loadAllData = useCallback(async (silent = false) => {
     if (!installerId) {
       toast.error("No installer ID provided.");
       navigate("/installers");
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     
     const { data: installerData, error: fetchError } = await supabase.from('installers').select('*').eq('id', installerId).single();
     if (fetchError || !installerData) {
@@ -317,8 +319,9 @@ const EditInstallerPage: React.FC = () => {
     setSelectedMapZipCodes(enrichedZips);
     setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
     setIsDirty(false);
+    setMapRefreshKey(prev => prev + 1); // Increment refresh key to force map update
 
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [installerId, navigate, fetchTerritoryStatuses]);
 
   useEffect(() => {
@@ -466,7 +469,7 @@ const EditInstallerPage: React.FC = () => {
       toast.error("Installer ID is missing. Cannot save changes.");
       return;
     }
-    setLoading(true);
+    setIsSaving(true); // Start saving
     const loadingToastId = toast.loading("Saving installer details...");
   
     try {
@@ -544,7 +547,7 @@ const EditInstallerPage: React.FC = () => {
 
         const removedZipCodes = initialSelectedMapZipCodes
           .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-          .map(initialZip => ({ zipCode: initialZip.zipCode })); // FORMAT AS OBJECT
+          .map(initialZip => ({ zipCode: initialZip.zipCode }));
   
         if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
           const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
@@ -583,12 +586,12 @@ const EditInstallerPage: React.FC = () => {
       }
   
       toast.success("Successfully saved all changes!", { id: loadingToastId });
-      await loadAllData();
+      await loadAllData(true); // Silent re-fetch to update state without unmounting map
     } catch (err: any) {
       console.error("Error during save process:", err);
       toast.error(`Save failed: ${err.message || "An unexpected error occurred."}`, { id: loadingToastId, duration: 8000 });
     } finally {
-      setLoading(false);
+      setIsSaving(false); // End saving
     }
   };
 
@@ -685,27 +688,27 @@ const EditInstallerPage: React.FC = () => {
 
   const handleImportInstallerTerritories = async (file: File, mode: "overwrite" | "append") => {
     if (!installerId) { toast.error("Installer ID is missing. Cannot import territories."); return; }
-    setLoading(true);
+    setIsSaving(true);
     const loadingToastId = toast.loading(`Importing territories from ${file.name} in ${mode} mode...`);
     let importedCount = 0, skippedCount = 0;
     try {
       if (!canEdit) {
         toast.error("You do not have permission to import territories.", { id: loadingToastId });
-        setLoading(false); return;
+        setIsSaving(false); return;
       }
       const text = await file.text();
       const cleanedText = text.startsWith('\ufeff') ? text.substring(1) : text;
       const { data, errors: parseErrors, meta } = Papa.parse(cleanedText, { header: true, skipEmptyLines: true, dynamicTyping: false });
       if (parseErrors.length > 0) {
         toast.error(`CSV parsing errors found: ${parseErrors[0].message}`, { id: loadingToastId });
-        setLoading(false); return;
+        setIsSaving(false); return;
       }
       const expectedHeaders = ["ZipCode", "Status", "StateProvince"];
       const csvHeaders = meta.fields || [];
       const missingHeaders = expectedHeaders.filter(header => !csvHeaders.includes(header));
       if (missingHeaders.length > 0) {
         toast.error(`Missing required CSV headers: ${missingHeaders.join(', ')}.`, { id: loadingToastId, duration: 8000 });
-        setLoading(false); return;
+        setIsSaving(false); return;
       }
       if (mode === "overwrite") {
         toast.info("Overwriting existing territories for this installer...", { id: loadingToastId });
@@ -729,26 +732,25 @@ const EditInstallerPage: React.FC = () => {
       }
       if (territoriesToUpsert.length === 0) {
         toast.info("No valid territories found in the CSV to import.", { id: loadingToastId });
-        setLoading(false); setIsImportTerritoriesModalOpen(false); return;
+        setIsSaving(false); setIsImportTerritoriesModalOpen(false); return;
       }
       const { error: upsertError } = await supabase.from('installer_zip_codes').upsert(territoriesToUpsert, { onConflict: 'installer_id,zip_code' });
       if (upsertError) throw new Error(`Failed to upsert territories: ${upsertError.message}`);
       importedCount = territoriesToUpsert.length;
       toast.success(`Successfully imported ${importedCount} territories. ${skippedCount > 0 ? `${skippedCount} rows skipped.` : ''}`, { id: loadingToastId, duration: 5000 });
-      await fetchTerritoryStatuses();
-      await loadAllData();
+      await loadAllData(true);
     } catch (err: any) {
       console.error("Error during territory import:", err);
       toast.error(`Territory import failed: ${err.message || err.toString()}`, { id: loadingToastId, duration: 8000 });
     } finally {
-      setLoading(false);
+      setIsSaving(false);
       setIsImportTerritoriesModalOpen(false);
     }
   };
 
   const handleExportInstallerTerritories = async () => {
     if (!installerId) { toast.error("Installer ID is missing."); return; }
-    setLoading(true);
+    setIsSaving(true);
     const loadingToastId = toast.loading("Preparing territories for export...");
     try {
       const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', installerId);
@@ -786,7 +788,7 @@ const EditInstallerPage: React.FC = () => {
       console.error("Error during territory export:", err);
       toast.error(`Failed to export territories: ${err.message}`, { id: loadingToastId });
     } finally {
-      setLoading(false);
+      setIsSaving(false);
     }
   };
 
@@ -821,7 +823,7 @@ const EditInstallerPage: React.FC = () => {
       return;
     }
   
-    setLoading(true);
+    setIsSaving(true);
     const isCanada = installerCountry === 'Canada';
     const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
     
@@ -850,7 +852,7 @@ const EditInstallerPage: React.FC = () => {
 
         if (!data.data || data.data.length === 0) {
           toast.info("No Canadian postal codes found within the 35km radius.", { id: loadingToastId });
-          setLoading(false);
+          setIsSaving(false);
           return;
         }
 
@@ -907,8 +909,7 @@ const EditInstallerPage: React.FC = () => {
       } else {
         toast.error(`Auto-approve failed: ${err.message}`);
       }
-    } finally {
-      setLoading(false);
+      setIsSaving(false);
     }
   };
 
@@ -942,8 +943,8 @@ const EditInstallerPage: React.FC = () => {
             {isAdmin && (
               <>
                 <Button variant="outline" onClick={() => navigate("/locator")}><Home className="mr-2 h-4 w-4" /> Locator</Button>
-                <Button variant="outline" onClick={handleClone} disabled={loading}><Copy className="mr-2 h-4 w-4" /> Clone</Button>
-                <Button variant="outline" onClick={handleCopyShareableLink} disabled={loading}><Copy className="mr-2 h-4 w-4" /> Share</Button>
+                <Button variant="outline" onClick={handleClone} disabled={isSaving}><Copy className="mr-2 h-4 w-4" /> Clone</Button>
+                <Button variant="outline" onClick={handleCopyShareableLink} disabled={isSaving}><Copy className="mr-2 h-4 w-4" /> Share</Button>
               </>
             )}
             <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" /> Log Out</Button>
@@ -1061,22 +1062,22 @@ const EditInstallerPage: React.FC = () => {
             <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
             <div className="flex flex-wrap justify-between gap-2 mb-4">
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={handleAutoApprove} disabled={loading || !canEdit}>
+                <Button variant="outline" onClick={handleAutoApprove} disabled={isSaving || !canEdit}>
                   <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
                 </Button>
-                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={isSaving || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={isSaving || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
                 {installerCountry === 'Canada' && (
-                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white hover:bg-red-700" : "border-red-600 text-red-600 hover:bg-red-100")} onClick={() => handleToggleBulkSelect('deselect')} disabled={loading || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'deselect' ? "Exit Bulk Deselect" : "Bulk Deselect"}</Button>
+                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white hover:bg-red-700" : "border-red-600 text-red-600 hover:bg-red-100")} onClick={() => handleToggleBulkSelect('deselect')} disabled={isSaving || !canEdit}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'deselect' ? "Exit Bulk Deselect" : "Bulk Deselect"}</Button>
                 )}
                 {installerCountry !== 'Canada' && (
-                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0 || !canEdit}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
+                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={isSaving || selectedMapZipCodes.length === 0 || !canEdit}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
                 )}
               </div>
               {isAdmin && (
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={loading}><Upload className="mr-2 h-4 w-4" /> Import</Button>
-                  <Button variant="outline" onClick={handleExportInstallerTerritories} disabled={loading}><Download className="mr-2 h-4 w-4" /> Export</Button>
+                  <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={isSaving}><Upload className="mr-2 h-4 w-4" /> Import</Button>
+                  <Button variant="outline" onClick={handleExportInstallerTerritories} disabled={isSaving}><Download className="mr-2 h-4 w-4" /> Export</Button>
                 </div>
               )}
             </div>
@@ -1094,6 +1095,7 @@ const EditInstallerPage: React.FC = () => {
                 highlightedZipCodes={highlightedZipCodes}
                 isBulkSelecting={bulkActionType !== null}
                 onBulkSelectionComplete={handleBulkSelectionComplete}
+                refreshKey={mapRefreshKey}
               />
             </div>
             <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them. In bulk select mode, click and drag to select multiple ZIP codes.</p>
@@ -1112,11 +1114,11 @@ const EditInstallerPage: React.FC = () => {
       {isDirty && (
         <div className="sticky bottom-0 left-0 w-full z-[1000] bg-background/80 backdrop-blur-sm border-t border-border">
           <div className="container mx-auto p-4 flex justify-end gap-2">
-            <Button variant="outline" onClick={loadAllData} disabled={loading}>
+            <Button variant="outline" onClick={() => loadAllData()} disabled={isSaving}>
               <XCircle className="mr-2 h-4 w-4" /> Discard Changes
             </Button>
-            <Button onClick={() => handleSubmit()} disabled={loading || !canEdit} className="bg-green-600 hover:bg-green-700">
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Changes
+            <Button onClick={() => handleSubmit()} disabled={isSaving || !canEdit} className="bg-green-600 hover:bg-green-700">
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Changes
             </Button>
           </div>
         </div>
@@ -1125,7 +1127,7 @@ const EditInstallerPage: React.FC = () => {
         isOpen={isImportTerritoriesModalOpen}
         onClose={() => setIsImportTerritoriesModalOpen(false)}
         onImport={handleImportInstallerTerritories}
-        loading={loading}
+        loading={isSaving}
       />
     </>
   );

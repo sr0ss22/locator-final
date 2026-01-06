@@ -38,6 +38,8 @@ const PublicTerritoryEditor: React.FC = () => {
   const [initialSelectedMapZipCodes, setInitialSelectedMapZipCodes] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isSaving, setIsSaving] = useState<boolean>(false); // Separate saving state
+  const [mapRefreshKey, setMapRefreshKey] = useState<number>(0); // Key to force map style refresh
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
   const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
@@ -91,13 +93,13 @@ const PublicTerritoryEditor: React.FC = () => {
     });
   }, []);
 
-  const loadAllData = useCallback(async () => {
+  const loadAllData = useCallback(async (silent = false) => {
     if (!installerId || !token) {
       toast.error("Installer ID or access token is missing.");
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('get-public-territory-data', {
         body: { installerId, token },
@@ -131,12 +133,13 @@ const PublicTerritoryEditor: React.FC = () => {
       setSelectedMapZipCodes(enrichedZips);
       setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
       setIsDirty(false);
+      setMapRefreshKey(prev => prev + 1); // Increment refresh key to force map update
     } catch (err: any) {
       console.error("Error loading public installer data:", err);
       toast.error(`Access Denied: ${err.message}`);
       setCurrentInstaller(null);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [installerId, token, zipCodeCentroids]);
 
@@ -255,7 +258,7 @@ const PublicTerritoryEditor: React.FC = () => {
 
   const handleSubmit = async (territoriesOverride?: any[]) => {
     if (!installerId || !token) { toast.error("Missing ID or token. Cannot save."); return; }
-    setLoading(true);
+    setIsSaving(true);
     const loadingToastId = toast.loading("Saving changes...");
     try {
       const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
@@ -280,11 +283,11 @@ const PublicTerritoryEditor: React.FC = () => {
 
       const removedZipCodes = initialSelectedMapZipCodes
           .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-          .map(initialZip => initialZip.zipCode);
+          .map(initialZip => ({ zipCode: initialZip.zipCode }));
 
       if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
         const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
-        toast.info(`Updating ${totalChanges} territory changes, large changes can take a few minutes.`, { id: loadingToastId });
+        toast.info(`Updating ${totalChanges} territory changes...`, { id: loadingToastId });
 
         const CHUNK_SIZE = 500;
 
@@ -294,7 +297,7 @@ const PublicTerritoryEditor: React.FC = () => {
             const payload: any = { installerId, token };
             if (type === 'added') payload.addedZips = chunk;
             if (type === 'updated') payload.updatedZips = chunk;
-            if (type === 'removed') payload.removedZips = chunk.map(zc => ({ zipCode: zc }));
+            if (type === 'removed') payload.removedZips = chunk;
 
             const { error } = await supabase.functions.invoke('save-public-territory-data', {
               body: payload,
@@ -311,14 +314,14 @@ const PublicTerritoryEditor: React.FC = () => {
         if (addedZips.length > 0) await processChunks('added', addedZips);
       }
 
-      toast.success("Territory changes saved successfully! Refreshing data...", { id: loadingToastId });
-      await loadAllData();
+      toast.success("Territory changes saved successfully!", { id: loadingToastId });
+      await loadAllData(true); // Silent re-fetch to update state without unmounting map
       toast.success("Save complete.", { id: loadingToastId, duration: 4000 });
     } catch (err: any) {
       console.error("Error saving territories:", err);
       toast.error(`Failed to save changes: ${err.message}`, { id: loadingToastId });
     } finally {
-      setLoading(false);
+      setIsSaving(false);
     }
   };
 
@@ -353,7 +356,7 @@ const PublicTerritoryEditor: React.FC = () => {
       return;
     }
   
-    setLoading(true);
+    setIsSaving(true);
     const isCanada = installerCountry === 'Canada';
     const radiusMeters = isCanada ? 35000 : 25 * 1609.34;
     
@@ -382,7 +385,7 @@ const PublicTerritoryEditor: React.FC = () => {
 
         if (!data.data || data.data.length === 0) {
           toast.info("No Canadian postal codes found within the 35km radius.", { id: loadingToastId });
-          setLoading(false);
+          setIsSaving(false);
           return;
         }
 
@@ -439,8 +442,7 @@ const PublicTerritoryEditor: React.FC = () => {
       } else {
         toast.error(`Auto-approve failed: ${err.message}`);
       }
-    } finally {
-      setLoading(false);
+      setIsSaving(false);
     }
   };
 
@@ -469,16 +471,16 @@ const PublicTerritoryEditor: React.FC = () => {
             <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
             <div className="flex flex-wrap justify-between gap-2 mb-4">
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={handleAutoApprove} disabled={loading}>
+                <Button variant="outline" onClick={handleAutoApprove} disabled={isSaving}>
                   <Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}
                 </Button>
-                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white hover:bg-green-700" : "border-green-600 text-green-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('approve')} disabled={isSaving}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'approve' ? "Exit Bulk Free Mileage" : "Bulk Free Mileage"}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white hover:bg-orange-700" : "border-orange-600 text-orange-600 hover:bg-green-100")} onClick={() => handleToggleBulkSelect('needs_approval')} disabled={isSaving}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'needs_approval' ? "Exit Bulk Paid Mileage" : "Bulk Paid Mileage"}</Button>
                 {installerCountry === 'Canada' && (
-                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white hover:bg-red-700" : "border-red-600 text-red-600 hover:bg-red-100")} onClick={() => handleToggleBulkSelect('deselect')} disabled={loading}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'deselect' ? "Exit Bulk Deselect" : "Bulk Deselect"}</Button>
+                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white hover:bg-red-700" : "border-red-600 text-red-600 hover:bg-red-100")} onClick={() => handleToggleBulkSelect('deselect')} disabled={isSaving}><MousePointerClick className="mr-2 h-4 w-4" /> {bulkActionType === 'deselect' ? "Exit Bulk Deselect" : "Bulk Deselect"}</Button>
                 )}
                 {installerCountry !== 'Canada' && (
-                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={loading || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
+                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={isSaving || selectedMapZipCodes.length === 0}><Eraser className="mr-2 h-4 w-4" /> Clear All Assigned</Button>
                 )}
               </div>
             </div>
@@ -496,6 +498,7 @@ const PublicTerritoryEditor: React.FC = () => {
                 highlightedZipCodes={highlightedZipCodes}
                 isBulkSelecting={bulkActionType !== null}
                 onBulkSelectionComplete={handleBulkSelectionComplete}
+                refreshKey={mapRefreshKey}
               />
             </div>
             <p className="text-sm text-gray-500 mt-2">Click on ZIP code areas to assign/unassign them. In bulk select mode, click and drag to select multiple ZIP codes.</p>
@@ -513,11 +516,11 @@ const PublicTerritoryEditor: React.FC = () => {
       {isDirty && (
         <div className="sticky bottom-0 left-0 w-full z-[1000] bg-background/80 backdrop-blur-sm border-t border-border">
           <div className="container mx-auto p-4 flex justify-end gap-2">
-            <Button variant="outline" onClick={loadAllData} disabled={loading}>
+            <Button variant="outline" onClick={() => loadAllData()} disabled={isSaving}>
               <XCircle className="mr-2 h-4 w-4" /> Discard Changes
             </Button>
-            <Button onClick={() => handleSubmit()} disabled={loading} className="bg-green-600 hover:bg-green-700">
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Territory Changes
+            <Button onClick={() => handleSubmit()} disabled={isSaving} className="bg-green-600 hover:bg-green-700">
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Territory Changes
             </Button>
           </div>
         </div>

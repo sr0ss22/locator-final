@@ -35,6 +35,7 @@ interface TerritoryMapProps {
   onBulkSelectionComplete?: (selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void;
   onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
   country?: 'USA' | 'Canada';
+  refreshKey?: number; // New prop to force a complete layer refresh
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
@@ -258,6 +259,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onBulkSelectionComplete,
   onBulkZipCodeUpdate,
   country = 'USA',
+  refreshKey = 0,
 }) => {
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -371,6 +373,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         }
       } else {
         // USA logic
+        if (allGeoJsonData) {
+          setLoadingStage('complete');
+          return;
+        }
+        
         setLoadingStage('fetching');
         try {
           const geoJsonModule = await import('@/data/us-zip-codes.json');
@@ -527,8 +534,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const geoJsonStyleKey = useMemo(() => {
     const selectedZipsString = selectedZipCodes.map(z => `${z.zipCode}:${z.assignedStatus}`).join(',');
     const highlightedZipsString = Array.from(highlightedZipCodes.entries()).map(([k, v]) => `${k}:${v}`).join(',');
-    return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}`;
-  }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting]);
+    const statusMapSize = territoryStatuses.size;
+    return `${selectedZipsString}-${highlightedZipsString}-${currentDisplayRadius}-${isBulkSelecting}-${statusMapSize}-${refreshKey}`;
+  }, [selectedZipCodes, highlightedZipCodes, currentDisplayRadius, isBulkSelecting, territoryStatuses, refreshKey]);
 
   const usRadii = [
     { radius: 25, color: '#22c55e' },
