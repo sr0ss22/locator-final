@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut, Copy, Star, ChevronsUpDown } from "lucide-react";
-import { Installer, InstallerBrand, InstallerSkill } from "@/types/installer";
+import { Installer, InstallerBrand, InstallerSkill, InstallerCertification } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import TerritoryMap from "@/components/TerritoryMap";
@@ -147,6 +147,19 @@ const EditInstallerPage: React.FC = () => {
 
   const requiredFields = ["name", "email", "primary_phone", "address1", "city", "state", "postalcode"];
 
+  const standardizeCertificationName = (cert: string | null | undefined): InstallerCertification | null => {
+    if (!cert) return null;
+    const normalizedCert = cert.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (normalizedCert.includes("motorization pro") || normalizedCert === 'pv pro' || normalizedCert === 'powerview pro certified') {
+        return "Motorization Pro";
+    }
+    const validCertificationsMap: { [key: string]: InstallerCertification } = {
+      "certified installer": "Certified Installer", "master installer": "Master Installer",
+      "master shutter": "Shutter Pro", "drapery pro": "Drapery Pro", "pip certified": "PIP Certified",
+    };
+    return validCertificationsMap[normalizedCert] || null;
+  };
+
   const fetchTerritoryStatuses = useCallback(async () => {
     const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status');
     if (error) {
@@ -256,11 +269,41 @@ const EditInstallerPage: React.FC = () => {
 
     await fetchTerritoryStatuses();
 
+    // Map skills, brands, and certifications for the installer display
+    const skills: InstallerSkill[] = [];
+    if (toBoolean(installerData.blinds_and_shades)) skills.push("Blinds & Shades");
+    if (toBoolean(installerData.power_view)) skills.push("Automation");
+    if (toBoolean(installerData.shutters)) skills.push("Shutters");
+    if (toBoolean(installerData.draperies)) skills.push("Drapery");
+    if (toBoolean(installerData.service_call)) skills.push("Service Call");
+    if (toBoolean(installerData.tall_window)) skills.push("Tall Window");
+    if (toBoolean(installerData.fixture_displays)) skills.push("Fixture Displays");
+    if (toBoolean(installerData.outdoor)) skills.push("Outdoor");
+    if (toBoolean(installerData.high_voltage_hardwired)) skills.push("High Voltage Hardwired");
+
+    const brands: InstallerBrand[] = [];
+    if (toBoolean(installerData.hunter_douglas)) brands.push("Hunter Douglas");
+    if (toBoolean(installerData.alta)) brands.push("Alta");
+    if (toBoolean(installerData.carole)) brands.push("Carole");
+    if (toBoolean(installerData.architectural)) brands.push("Architectural");
+    if (toBoolean(installerData.levolor)) brands.push("Levolor");
+    if (toBoolean(installerData.three_day_blinds)) brands.push("Three Day Blinds");
+
+    const certifications: InstallerCertification[] = [];
+    const pvCert = standardizeCertificationName(installerData.powerview_certification);
+    if (pvCert) certifications.push(pvCert);
+    const shutterCert = standardizeCertificationName(installerData.shutter_certification_level);
+    if (shutterCert) certifications.push(shutterCert);
+    const draperyCert = standardizeCertificationName(installerData.draperies_certification_level);
+    if (draperyCert) certifications.push(draperyCert);
+    const pipCert = standardizeCertificationName(installerData.pip_certification_level);
+    if (pipCert) certifications.push(pipCert);
+
     const mappedInstaller: Installer = {
       id: installerData.id, name: installerData.name,
       address: `${installerData.address1 || ''} ${installerData.add2 || ''}, ${installerData.city || ''}, ${installerData.state || ''} ${installerData.postalcode || ''}`.trim(),
       zipCode: installerData.postalcode, phone: installerData.primary_phone, email: installerData.email,
-      skills: [], brands, certifications: [],
+      skills, brands, certifications,
       latitude: installerData.latitude, longitude: installerData.longitude,
       installerVendorId: installerData.installer_vendor_id?.toString(),
       acceptsShipments: toBoolean(installerData.shipment),
@@ -461,12 +504,12 @@ const EditInstallerPage: React.FC = () => {
             }
           }
           if (addressChanged) {
-            toast.loading("Address changed, updating coordinates...", { id: loadingToastId });
+            toast.info("Address changed, updating coordinates...", { id: loadingToastId });
             const fullAddress = `${formattedData.address1 || ''}, ${formattedData.city || ''}, ${formattedData.state || ''} ${formattedData.postalcode || ''}, ${formattedData.country || ''}`.trim();
             const coords = await getCoordinates({ searchText: fullAddress });
             if (coords.lat != null && coords.lng != null) {
               formattedData.latitude = coords.lat; formattedData.longitude = coords.lng;
-              toast.loading("Coordinates updated successfully!", { id: loadingToastId });
+              toast.success("Coordinates updated successfully!", { id: loadingToastId });
             } else {
               formattedData.latitude = null; formattedData.longitude = null;
               toast.warning("Could not find coordinates for the new address. Latitude and longitude cleared.", { id: loadingToastId });
@@ -500,16 +543,15 @@ const EditInstallerPage: React.FC = () => {
           }
         });
 
-        // REVERTED: Send as simple strings for maximum SQL compatibility
-        const removedZipsPayload = initialSelectedMapZipCodes
+        const removedZipCodes = initialSelectedMapZipCodes
           .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
           .map(initialZip => initialZip.zipCode);
   
-        if (addedZips.length > 0 || updatedZips.length > 0 || removedZipsPayload.length > 0) {
-          const totalChanges = addedZips.length + updatedZips.length + removedZipsPayload.length;
+        if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
+          const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
           toast.loading(`Updating ${totalChanges} territory changes, large changes can take a few minutes.`, { id: loadingToastId });
           
-          const CHUNK_SIZE = 500; // Increased chunk size for better throughput
+          const CHUNK_SIZE = 500; 
           
           const processChunks = async (type: string, items: any[]) => {
             for (let i = 0; i < items.length; i += CHUNK_SIZE) {
@@ -522,26 +564,22 @@ const EditInstallerPage: React.FC = () => {
               if (type === 'updated') payload.updatedZips = chunk;
               if (type === 'removed') payload.removedZips = chunk;
 
-              const response = await fetch(`${(window as any).location.origin.replace('8080', '54321')}/functions/v1/save-public-territory-data`, {
-                method: 'POST',
+              const { data, error } = await supabase.functions.invoke('save-public-territory-data', {
                 headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session.access_token}`
+                  Authorization: `Bearer ${session.access_token}`
                 },
-                body: JSON.stringify(payload)
+                body: payload,
               });
 
-              if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || errorData.message || `Server returned ${response.status}`);
-              }
+              if (error) throw new Error(`Failed to save ${type} chunk: ${error.message}`);
+              if (data?.error) throw new Error(`Failed to save ${type} chunk: ${data.error} ${data.details || ''}`);
               
               const progress = Math.round(((i + chunk.length) / items.length) * 100);
               toast.loading(`Progress (${type}): ${progress}%...`, { id: loadingToastId });
             }
           };
 
-          if (removedZipsPayload.length > 0) await processChunks('removed', removedZipsPayload);
+          if (removedZipCodes.length > 0) await processChunks('removed', removedZipCodes);
           if (updatedZips.length > 0) await processChunks('updated', updatedZips);
           if (addedZips.length > 0) await processChunks('added', addedZips);
         }
@@ -834,7 +872,7 @@ const EditInstallerPage: React.FC = () => {
         }));
       } else { // USA
         loadingToastId = toast.loading(`Finding territories within 25 miles...`);
-        toast.loading("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
+        toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
         const radiusKm = 25 * 1.60934;
         const options = { steps: 64, units: 'kilometers' as const };
