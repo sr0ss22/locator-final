@@ -12,7 +12,10 @@ serve(async (req) => {
   }
 
   try {
-    const { installerId, token, addedZips, updatedZips, removedZips } = await req.json()
+    const body = await req.json();
+    const { installerId, token, addedZips, updatedZips, removedZips } = body;
+
+    console.log(`[save-public-territory-data] Processing changes for installer ${installerId}`);
 
     if (!installerId) {
       return new Response(JSON.stringify({ error: 'Installer ID is required.' }), {
@@ -77,16 +80,20 @@ serve(async (req) => {
     }
     // --- End Authorization Logic ---
 
-    // Call the single RPC function that handles its own chunking
+    // Map removed zips to a flat array of strings for the RPC
+    const removedZipCodes = (removedZips || []).map((z: any) => z.zip_code || z.zipCode);
+
+    // Call the single RPC function
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
-      p_removed_zips: (removedZips || []).map(z => z.zipCode),
+      p_removed_zips: removedZipCodes,
       p_updated_zips: updatedZips || [],
       p_added_zips: addedZips || [],
     });
 
     if (rpcError) {
-      throw new Error(`RPC Error: ${rpcError.message}`);
+      console.error(`[save-public-territory-data] RPC Error:`, rpcError);
+      throw new Error(`Database Error: ${rpcError.message}`);
     }
 
     return new Response(JSON.stringify({ message: 'Territory changes saved successfully.' }), {
@@ -94,15 +101,8 @@ serve(async (req) => {
       status: 200,
     })
   } catch (error) {
-    console.error('Edge function error:', error);
-    const errorResponse = {
-      message: error.message,
-      stack: error.stack,
-      details: (error as any).details,
-      code: (error as any).code,
-      hint: (error as any).hint,
-    };
-    return new Response(JSON.stringify({ error: 'Edge function failed.', details: errorResponse }), {
+    console.error('[save-public-territory-data] Edge function error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     });

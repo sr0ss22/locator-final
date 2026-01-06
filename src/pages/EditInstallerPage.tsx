@@ -62,16 +62,6 @@ const certificationCheckboxes = [
 const otherFields = ["installer_vendor_id", "star_rating", "shipment"];
 const textAreaFields = ["comments", "specialnote"];
 
-const defaultFormState = {
-  name: "", email: "", primary_phone: "", secondary_phone: "", address1: "", add2: "", city: "", state: "", postalcode: "", country: "USA",
-  hunter_douglas: false, alta: false, carole: false, architectural: false, levolor: false, three_day_blinds: false,
-  blinds_and_shades: false, power_view: false, service_call: false, shutters: false, draperies: false,
-  tall_window: false, fixture_displays: false, outdoor: false, high_voltage_hardwired: false,
-  pip_certification_level: "", shutter_certification_level: "", powerview_certification: "", draperies_certification_level: "",
-  installer_vendor_id: "", shipment: false, star_rating: "", specialnote: "", comments: "",
-  is_active: true,
-};
-
 const EditInstallerPage: React.FC = () => {
   const { installerId } = useParams<{ installerId: string }>();
   const navigate = useNavigate();
@@ -502,18 +492,17 @@ const EditInstallerPage: React.FC = () => {
 
         const removedZipCodes = initialSelectedMapZipCodes
             .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-            .map(initialZip => initialZip.zipCode);
+            .map(initialZip => ({ zip_code: initialZip.zipCode }));
   
         if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
           toast.info(`Syncing territory changes...`, { id: loadingToastId });
   
-          // Send EVERYTHING in one request. The server now handles chunking internally.
           const { error: territoryError } = await supabase.functions.invoke('save-public-territory-data', {
             body: { 
               installerId: currentInstaller.id, 
               addedZips, 
               updatedZips, 
-              removedZips: removedZipCodes.map(zipCode => ({ zipCode })) // Standardize to expected object structure for Edge Function
+              removedZips: removedZipCodes
             },
           });
 
