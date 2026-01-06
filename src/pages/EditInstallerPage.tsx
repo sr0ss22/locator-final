@@ -500,30 +500,30 @@ const EditInstallerPage: React.FC = () => {
   
         if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
           const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
-          toast.info(`Syncing ${totalChanges} territory changes in chunks...`, { id: loadingToastId });
+          toast.info(`Syncing ${totalChanges} territory changes in robust chunks...`, { id: loadingToastId });
           
-          const CHUNK_SIZE = 500;
+          // Use a smaller chunk size of 200 for extreme reliability on large Canadian sets
+          const CHUNK_SIZE = 200;
           
-          // Helper to process a specific set of changes in chunks
           const processChunks = async (type: string, items: any[]) => {
             for (let i = 0; i < items.length; i += CHUNK_SIZE) {
               const chunk = items.slice(i, i + CHUNK_SIZE);
               const payload: any = { installerId: currentInstaller.id };
               if (type === 'added') payload.addedZips = chunk;
               if (type === 'updated') payload.updatedZips = chunk;
-              if (type === 'removed') payload.removedZips = chunk.map(zc => ({ zipCode: zc }));
+              if (type === 'removed') payload.removedZips = chunk; // Just pass array for ultra-fast delete
 
               const { error } = await supabase.functions.invoke('save-public-territory-data', {
                 body: payload,
               });
+              
               if (error) throw new Error(`Failed to save ${type} chunk starting at ${i}: ${error.message}`);
               
               const progress = Math.round(((i + chunk.length) / items.length) * 100);
-              toast.info(`Saving ${type} territories: ${progress}%...`, { id: loadingToastId });
+              toast.info(`Progress (${type}): ${progress}%...`, { id: loadingToastId });
             }
           };
 
-          // Run syncs sequentially to prevent overlap
           if (removedZipCodes.length > 0) await processChunks('removed', removedZipCodes);
           if (updatedZips.length > 0) await processChunks('updated', updatedZips);
           if (addedZips.length > 0) await processChunks('added', addedZips);
