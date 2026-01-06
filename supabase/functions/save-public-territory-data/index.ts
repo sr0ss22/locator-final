@@ -13,7 +13,7 @@ serve(async (req) => {
 
   try {
     const payload = await req.json();
-    const { installerId, token, addedZips, updatedZips, removedZips } = payload;
+    const { installerId, token, addedZips = [], updatedZips = [], removedZips = [] } = payload;
 
     if (!installerId) {
       return new Response(JSON.stringify({ error: 'Installer ID is required.' }), {
@@ -27,10 +27,9 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Authorization: Validate via Auth Header (Internal) or Share Token (Public)
+    // Authorization
     const authHeader = req.headers.get('Authorization');
     let authorized = false;
-    
     if (authHeader) {
       const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
       if (user) authorized = true;
@@ -40,25 +39,48 @@ serve(async (req) => {
     }
 
     if (!authorized) {
-      return new Response(JSON.stringify({ error: 'Unauthorized Access.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 401,
-      });
+      return new Response(JSON.stringify({ error: 'Unauthorized.' }), { headers: corsHeaders, status: 401 });
     }
 
-    console.log(`[save-public-territory-data] Syncing ${installerId}. Removals: ${removedZips?.length || 0}`);
+    console.log(`[save-public-territory-data] Bulk sync for ${installerId}. Add: ${addedZips.length}, Update: ${updatedZips.length}, Remove: ${removedZips.length}`);
 
-    // Call the hyper-optimized database command
-    const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
-      p_installer_id: installerId,
-      p_removed_zips: removedZips || [],
-      p_updated_zips: updatedZips || [],
-      p_added_zips: addedZips || [],
-    });
+    // CHUNKING LOGIC: Break the work into small, safe batches of 100
+    const CHUNK_SIZE = 100;
+    
+    // Process removals in chunks
+    for (let i = 0; i < removedZips.length; i += CHUNK_SIZE) {
+      const chunk = removedZips.slice(i, i + CHUNK_SIZE);
+      const { error } = await supabaseAdmin.rpc('batch_process_territory_changes', {
+        p_installer_id: installerId,
+        p_removed_zips: chunk,
+        p_updated_zips: [],
+        p_added_zips: [],
+      });
+      if (error) throw new Error(`Removal Chunk ${i}: ${error.message}`);
+    }
 
-    if (rpcError) {
-      console.error(`[save-public-territory-data] RPC Error: ${rpcError.message}`);
-      throw rpcError;
+    // Process updates in chunks
+    for (let i = 0; i < updatedZips.length; i += CHUNK_SIZE) {
+      const chunk = updatedZips.slice(i, i + CHUNK_SIZE);
+      const { error } = await supabaseAdmin.rpc('batch_process_territory_changes', {
+        p_installer_id: installerId,
+        p_removed_zips: [],
+        p_updated_zips: chunk,
+        p_added_zips: [],
+      });
+      if (error) throw new Error(`Update Chunk ${i}: ${error.message}`);
+    }
+
+    // Process additions in chunks
+    for (let i = 0; i < addedZips.length; i += CHUNK_SIZE) {
+      const chunk = addedZips.slice(i, i + CHUNK_SIZE);
+      const { error } = await supabaseAdmin.rpc('batch_process_territory_changes', {
+        p_installer_id: installerId,
+        p_removed_zips: [],
+        p_updated_zips: [],
+        p_added_zips: chunk,
+      });
+      if (error) throw new Error(`Addition Chunk ${i}: ${error.message}`);
     }
 
     return new Response(JSON.stringify({ status: 'success' }), {
@@ -66,7 +88,7 @@ serve(async (req) => {
       status: 200,
     })
   } catch (error) {
-    console.error('[save-public-territory-data] Fatal Exception:', error);
+    console.error('[save-public-territory-data] Error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
