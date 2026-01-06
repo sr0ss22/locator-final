@@ -500,7 +500,7 @@ const EditInstallerPage: React.FC = () => {
   
         if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
           const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
-          toast.info(`Syncing ${totalChanges} territory changes in robust chunks...`, { id: loadingToastId });
+          toast.info(`Updating ${totalChanges} territory changes, large changes can take a few minutes.`, { id: loadingToastId });
           
           // Use a smaller chunk size of 200 for extreme reliability on large Canadian sets
           const CHUNK_SIZE = 200;

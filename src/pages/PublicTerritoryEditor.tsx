@@ -285,7 +285,7 @@ const PublicTerritoryEditor: React.FC = () => {
 
       if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
         const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
-        toast.info(`Saving ${totalChanges} territory changes in chunks...`, { id: loadingToastId });
+        toast.info(`Updating ${totalChanges} territory changes, large changes can take a few minutes.`, { id: loadingToastId });
 
         const CHUNK_SIZE = 500;
 
