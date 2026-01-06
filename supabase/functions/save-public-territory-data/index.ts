@@ -15,6 +15,9 @@ serve(async (req) => {
     const payload = await req.json();
     const { installerId, token, addedZips = [], updatedZips = [], removedZips = [] } = payload;
 
+    console.log(`[save-public-territory-data] Processing batch for installer: ${installerId}`);
+    console.log(`[save-public-territory-data] Payload stats - Added: ${addedZips.length}, Updated: ${updatedZips.length}, Removed: ${removedZips.length}`);
+
     if (!installerId) {
       return new Response(JSON.stringify({ error: 'Installer ID is required.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -39,26 +42,41 @@ serve(async (req) => {
     }
 
     if (!authorized) {
+      console.warn(`[save-public-territory-data] Unauthorized attempt for installer: ${installerId}`);
       return new Response(JSON.stringify({ error: 'Unauthorized.' }), { headers: corsHeaders, status: 401 });
     }
 
-    // The RPC function expects an array of strings for removed zips.
-    // The payload `removedZips` is already in the correct format (string[]), so we pass it directly.
+    // Robustly handle removedZips. It can be a simple array of strings OR an array of objects.
+    // The database RPC 'batch_process_territory_changes' expects a JSONB array.
+    // We will normalize it to the most robust format the SQL expects.
+    const normalizedRemoved = Array.isArray(removedZips) ? removedZips.map(item => {
+      if (typeof item === 'string') return { zip_code: item };
+      if (typeof item === 'object' && item !== null) {
+        return { zip_code: item.zip_code || item.zipCode || item.zip };
+      }
+      return null;
+    }).filter(Boolean) : [];
+
+    // Process the provided batch immediately via the high-performance RPC
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
-      p_removed_zips: removedZips, // Pass the original array of strings
+      p_removed_zips: normalizedRemoved, 
       p_updated_zips: updatedZips,
       p_added_zips: addedZips,
     });
 
-    if (rpcError) throw rpcError;
+    if (rpcError) {
+        console.error(`[save-public-territory-data] RPC Error:`, rpcError);
+        throw rpcError;
+    }
 
+    console.log(`[save-public-territory-data] Success for installer: ${installerId}`);
     return new Response(JSON.stringify({ status: 'success' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
   } catch (error) {
-    console.error('[save-public-territory-data] Batch Error:', error.message);
+    console.error('[save-public-territory-data] Internal Error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

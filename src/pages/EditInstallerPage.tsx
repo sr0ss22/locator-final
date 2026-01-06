@@ -500,12 +500,13 @@ const EditInstallerPage: React.FC = () => {
           }
         });
 
-        const removedZipCodes = initialSelectedMapZipCodes
+        // Map removed zip codes to objects to match API expectation and improve reliability
+        const removedZipsPayload = initialSelectedMapZipCodes
           .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-          .map(initialZip => initialZip.zipCode);
+          .map(initialZip => ({ zipCode: initialZip.zipCode }));
   
-        if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
-          const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
+        if (addedZips.length > 0 || updatedZips.length > 0 || removedZipsPayload.length > 0) {
+          const totalChanges = addedZips.length + updatedZips.length + removedZipsPayload.length;
           toast.loading(`Updating ${totalChanges} territory changes, large changes can take a few minutes.`, { id: loadingToastId });
           
           const CHUNK_SIZE = 200;
@@ -537,7 +538,7 @@ const EditInstallerPage: React.FC = () => {
             }
           };
 
-          if (removedZipCodes.length > 0) await processChunks('removed', removedZipCodes);
+          if (removedZipsPayload.length > 0) await processChunks('removed', removedZipsPayload);
           if (updatedZips.length > 0) await processChunks('updated', updatedZips);
           if (addedZips.length > 0) await processChunks('added', addedZips);
         }
