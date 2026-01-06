@@ -474,25 +474,26 @@ const EditInstallerPage: React.FC = () => {
         const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
         const currentZipMap = new Map(territoriesToProcess.map(z => [z.zipCode, z]));
   
-        // We'll map these to match the snake_case keys expected by the database function
-        const addedZips = Array.from(currentZipMap.values())
-            .filter(z => !initialZipMap.has(z.zipCode))
-            .map(z => ({
-                zip_code: z.zipCode,
-                state_province: z.stateProvince,
-                assigned_status: z.assignedStatus
-            }));
-            
-        const updatedZips = Array.from(currentZipMap.values())
-            .filter(z => initialZipMap.has(z.zipCode) && initialZipMap.get(z.zipCode)!.assignedStatus !== z.assignedStatus)
-            .map(z => ({
-                zip_code: z.zipCode,
-                assigned_status: z.assignedStatus
-            }));
-
+        const addedZips: any[] = [];
+        const updatedZips: any[] = [];
+        currentZipMap.forEach((currentZip, zipCode) => {
+          const initialZip = initialZipMap.get(zipCode);
+          if (!initialZip) {
+            addedZips.push({
+              zip_code: currentZip.zipCode,
+              state_province: currentZip.stateProvince,
+              assigned_status: currentZip.assignedStatus
+            });
+          } else if (initialZip.assignedStatus !== currentZip.assignedStatus) {
+            updatedZips.push({
+              zip_code: currentZip.zipCode,
+              assigned_status: currentZip.assignedStatus
+            });
+          }
+        });
         const removedZipCodes = initialSelectedMapZipCodes
-            .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
-            .map(initialZip => ({ zip_code: initialZip.zipCode }));
+          .filter(initialZip => !currentZipMap.has(initialZip.zipCode))
+          .map(initialZip => initialZip.zipCode);
   
         if (addedZips.length > 0 || updatedZips.length > 0 || removedZipCodes.length > 0) {
           toast.info(`Syncing territory changes...`, { id: loadingToastId });
@@ -502,7 +503,7 @@ const EditInstallerPage: React.FC = () => {
               installerId: currentInstaller.id, 
               addedZips, 
               updatedZips, 
-              removedZips: removedZipCodes
+              removedZips: removedZipCodes // Send simple array of strings
             },
           });
 
@@ -795,7 +796,7 @@ const EditInstallerPage: React.FC = () => {
         loadingToastId = toast.loading(`Finding territories within 25 miles...`);
         toast.info("Performing intersection check for all US ZIP codes. This may take a moment...", { id: loadingToastId });
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
-        const radiusKm = 25 * 1.60934; // 25 miles in km
+        const radiusKm = 25 * 1.60934;
         const options = { steps: 64, units: 'kilometers' as const };
         const radiusCircle = turf.circle(center, radiusKm, options);
 
@@ -1031,7 +1032,7 @@ const EditInstallerPage: React.FC = () => {
             <div className="mt-6 p-4 border rounded-lg shadow-sm bg-card">
               <h4 className="font-semibold text-lg mb-3">Filter Assigned ZIPs by Radius (from Installer)</h4>
               <RadioGroup value={listDisplayRadius} onValueChange={(value) => setListDisplayRadius(value)} className="flex flex-wrap gap-4">
-                {['0-25', '25-50', '50-75', '75-100', '100-125', '150+'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
+                {['0-25', '25-50', '50-75', '75-100', '100-125', '125-150'].map(range => (<div key={range} className="flex items-center space-x-2"><RadioGroupItem value={range} id={`list-radius-${range}`} /><Label htmlFor={`list-radius-${range}`}>{range} miles</Label></div>))}
                 <div className="flex items-center space-x-2"><RadioGroupItem value="all" id="list-radius-all" /><Label htmlFor={`list-radius-all`}>All</Label></div>
               </RadioGroup>
             </div>
