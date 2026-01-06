@@ -305,15 +305,10 @@ const EditInstallerPage: React.FC = () => {
         for (const key in formData) {
           if (Object.prototype.hasOwnProperty.call(formData, key)) {
             const val = formData[key];
-            if (typeof val === 'boolean') {
-              formattedData[key] = fromBooleanToSupabase(key, val);
-            } else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) {
-              formattedData[key] = Array.isArray(val) ? val.join(', ') : val;
-            } else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof val === 'string' && val !== '') {
-              formattedData[key] = parseFloat(val);
-            } else {
-              formattedData[key] = val === "" ? null : val;
-            }
+            if (typeof val === 'boolean') formattedData[key] = fromBooleanToSupabase(key, val);
+            else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) formattedData[key] = Array.isArray(val) ? val.join(', ') : val;
+            else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof val === 'string' && val !== '') formattedData[key] = parseFloat(val);
+            else formattedData[key] = val === "" ? null : val;
           }
         }
         const { error: updateError } = await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
@@ -330,7 +325,7 @@ const EditInstallerPage: React.FC = () => {
 
       if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
         const { data: { session } } = await supabase.auth.getSession();
-        const CHUNK_SIZE = 500;
+        const CHUNK_SIZE = 200;
 
         const processChanges = async (type: 'added' | 'updated' | 'removed', items: any[]) => {
           if (items.length === 0) return;
@@ -338,17 +333,16 @@ const EditInstallerPage: React.FC = () => {
           for (let i = 0; i < items.length; i += CHUNK_SIZE) {
             const chunk = items.slice(i, i + CHUNK_SIZE);
             
-            if (installerCountry === 'Canada') {
-              const processedCount = Math.min(i + CHUNK_SIZE, items.length);
-              const percentage = Math.round((processedCount / items.length) * 100);
-              let action = type.charAt(0).toUpperCase() + type.slice(1);
-              if (action === 'Added') action = 'Adding';
-              if (action === 'Updated') action = 'Updating';
-              if (action === 'Removed') action = 'Removing';
-              toast.loading(`${action} ${processedCount} of ${items.length} territories... (${percentage}%)`, { id: loadingToastId });
-            }
+            const processedCount = Math.min(i + CHUNK_SIZE, items.length);
+            const percentage = Math.round((processedCount / items.length) * 100);
+            let action = type.charAt(0).toUpperCase() + type.slice(1);
+            if (action === 'Added') action = 'Adding';
+            if (action === 'Updated') action = 'Updating';
+            if (action === 'Removed') action = 'Removing';
+            
+            toast.loading(`${action} ${processedCount} of ${items.length} territories... (${percentage}%)`, { id: loadingToastId });
 
-            const body = {
+            const body: any = { 
               installerId: currentInstaller.id,
               addedZips: type === 'added' ? chunk : [],
               updatedZips: type === 'updated' ? chunk : [],
