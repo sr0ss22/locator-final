@@ -12,7 +12,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import TerritoryMap from "@/components/TerritoryMap";
 import { supabase } from "@/integrations/supabase/client";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/group";
 import InstallerTerritoryList from "@/components/InstallerTerritoryList";
 import { InstallerZipAssignment, TerritoryStatus } from "@/types/territory";
 import { run as getCoordinates } from "@/functions/getCoordinates";
@@ -29,6 +28,7 @@ import { calculateDistance } from "@/utils/distance";
 import LoadingSayings from "@/components/LoadingSayings";
 import DebugPostalCodeChecker from "@/components/DebugPostalCodeChecker";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");

@@ -10,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import TerritoryMap from "@/components/TerritoryMap";
 import { supabase } from "@/integrations/supabase/client";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/group";
 import { RadioGroup as ShadcnRadioGroup, RadioGroupItem as ShadcnRadioGroupItem } from "@/components/ui/radio-group";
 import InstallerTerritoryList from "@/components/InstallerTerritoryList";
 import { TerritoryStatus } from "@/types/territory";
