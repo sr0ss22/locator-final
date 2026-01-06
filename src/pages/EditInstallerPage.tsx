@@ -524,14 +524,15 @@ const EditInstallerPage: React.FC = () => {
               if (type === 'updated') payload.updatedZips = chunk;
               if (type === 'removed') payload.removedZips = chunk;
 
-              const { error } = await supabase.functions.invoke('save-public-territory-data', {
+              const { data, error } = await supabase.functions.invoke('save-public-territory-data', {
                 headers: {
                   Authorization: `Bearer ${session.access_token}`
                 },
                 body: payload,
               });
               
-              if (error) throw new Error(`Failed to save ${type} chunk starting at ${i}: ${error.message}`);
+              if (error) throw new Error(`Failed to save ${type} chunk: ${error.message}`);
+              if (data?.error) throw new Error(`Failed to save ${type} chunk: ${data.error} ${data.details || ''}`);
               
               const progress = Math.round(((i + chunk.length) / items.length) * 100);
               toast.loading(`Progress (${type}): ${progress}%...`, { id: loadingToastId });

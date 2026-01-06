@@ -15,9 +15,6 @@ serve(async (req) => {
     const payload = await req.json();
     const { installerId, token, addedZips = [], updatedZips = [], removedZips = [] } = payload;
 
-    console.log(`[save-public-territory-data] Processing batch for installer: ${installerId}`);
-    console.log(`[save-public-territory-data] Payload stats - Added: ${addedZips.length}, Updated: ${updatedZips.length}, Removed: ${removedZips.length}`);
-
     if (!installerId) {
       return new Response(JSON.stringify({ error: 'Installer ID is required.' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -30,7 +27,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Authorization
+    // Authorization logic
     const authHeader = req.headers.get('Authorization');
     let authorized = false;
     if (authHeader) {
@@ -42,41 +39,31 @@ serve(async (req) => {
     }
 
     if (!authorized) {
-      console.warn(`[save-public-territory-data] Unauthorized attempt for installer: ${installerId}`);
       return new Response(JSON.stringify({ error: 'Unauthorized.' }), { headers: corsHeaders, status: 401 });
     }
 
-    // Robustly handle removedZips. It can be a simple array of strings OR an array of objects.
-    // The database RPC 'batch_process_territory_changes' expects a JSONB array.
-    // We will normalize it to the most robust format the SQL expects.
-    const normalizedRemoved = Array.isArray(removedZips) ? removedZips.map(item => {
-      if (typeof item === 'string') return { zip_code: item };
-      if (typeof item === 'object' && item !== null) {
-        return { zip_code: item.zip_code || item.zipCode || item.zip };
-      }
-      return null;
-    }).filter(Boolean) : [];
-
-    // Process the provided batch immediately via the high-performance RPC
+    // Call the high-performance RPC
+    // We pass the arrays directly; the SQL function is designed to handle them.
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
-      p_removed_zips: normalizedRemoved, 
+      p_removed_zips: removedZips, 
       p_updated_zips: updatedZips,
       p_added_zips: addedZips,
     });
 
     if (rpcError) {
-        console.error(`[save-public-territory-data] RPC Error:`, rpcError);
-        throw rpcError;
+      // Return the specific database error to the browser
+      return new Response(JSON.stringify({ error: rpcError.message, details: rpcError.details }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400, // Change to 400 so we can see it as a "known" error
+      });
     }
 
-    console.log(`[save-public-territory-data] Success for installer: ${installerId}`);
     return new Response(JSON.stringify({ status: 'success' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
   } catch (error) {
-    console.error('[save-public-territory-data] Internal Error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
