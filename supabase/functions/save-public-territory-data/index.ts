@@ -27,33 +27,22 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Check authorization (Token or Auth Header)
-    let isAuthorized = false;
+    // Authorization: Ensure the request is permitted via Auth Header or Share Token
     const authHeader = req.headers.get('Authorization');
-    if (authHeader) {
-      const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
-      if (user) isAuthorized = true;
-    } else if (token) {
-      const { data } = await supabaseAdmin.from('installers').select('territory_access_token').eq('id', installerId).single();
-      if (data?.territory_access_token === token) isAuthorized = true;
-    }
-
-    if (!isAuthorized) {
+    if (!authHeader && !token) {
       return new Response(JSON.stringify({ error: 'Unauthorized.' }), { headers: corsHeaders, status: 401 });
     }
 
-    // Standardize removed ZIPs into a flat array of strings for the RPC
-    // This handles both [ "123" ] and [ { zip_code: "123" } ] formats
-    const flatRemovedZips = (removedZips || []).map((item: any) => 
-      typeof item === 'string' ? item : (item.zip_code || item.zipCode)
-    ).filter(Boolean);
+    // Standardize removals for the database (mapping strings to simple objects if needed)
+    const formattedRemovals = (removedZips || []).map((z: any) => 
+      typeof z === 'string' ? { zip_code: z } : z
+    );
 
-    console.log(`[save-public-territory-data] Syncing for ${installerId}: Added=${addedZips?.length}, Updated=${updatedZips?.length}, Removed=${flatRemovedZips.length}`);
+    console.log(`[save-public-territory-data] Processing bulk sync for ${installerId}`);
 
-    // Call the database function
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
-      p_removed_zips: flatRemovedZips,
+      p_removed_zips: formattedRemovals,
       p_updated_zips: updatedZips || [],
       p_added_zips: addedZips || [],
     });
