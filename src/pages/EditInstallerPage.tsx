@@ -81,7 +81,7 @@ const EditInstallerPage: React.FC = () => {
   const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | 'deselect' | null>(null);
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
-  const { profile, loading: sessionLoading } = useSession();
+  const { profile, user, loading: sessionLoading } = useSession();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -156,6 +156,19 @@ const EditInstallerPage: React.FC = () => {
   }), [installerCountry]);
 
   const requiredFields = ["name", "email", "primary_phone", "address1", "city", "state", "postalcode"];
+
+  const standardizeCertificationName = (cert: string | null | undefined): InstallerCertification | null => {
+    if (!cert) return null;
+    const normalizedCert = cert.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (normalizedCert.includes("motorization pro") || normalizedCert === 'pv pro' || normalizedCert === 'powerview pro certified') {
+        return "Motorization Pro";
+    }
+    const validCertificationsMap: { [key: string]: InstallerCertification } = {
+      "certified installer": "Certified Installer", "master installer": "Master Installer",
+      "master shutter": "Shutter Pro", "drapery pro": "Drapery Pro", "pip certified": "PIP Certified",
+    };
+    return validCertificationsMap[normalizedCert] || null;
+  };
 
   const fetchTerritoryStatuses = useCallback(async () => {
     const { data } = await supabase.from('installer_zip_codes').select('zip_code, status');
@@ -325,8 +338,10 @@ const EditInstallerPage: React.FC = () => {
       }
   
       toast.success("Changes saved successfully!", { id: loadingToastId });
+      const savedTerritories = JSON.parse(JSON.stringify(territoriesToProcess));
       setInitialFormData(JSON.parse(JSON.stringify(formData)));
-      setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(territoriesToProcess)));
+      setInitialSelectedMapZipCodes(savedTerritories);
+      setSelectedMapZipCodes(savedTerritories);
       setIsDirty(false);
       setMapRefreshKey(p => p + 1);
     } catch (err: any) {

@@ -161,7 +161,9 @@ const PublicTerritoryEditor: React.FC = () => {
       }
 
       toast.success("Changes saved successfully!", { id: loadingToastId });
-      setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(finalZips)));
+      const savedTerritories = JSON.parse(JSON.stringify(finalZips));
+      setInitialSelectedMapZipCodes(savedTerritories);
+      setSelectedMapZipCodes(savedTerritories);
       setIsDirty(false);
       setMapRefreshKey(p => p + 1);
     } catch (err: any) {
