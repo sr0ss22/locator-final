@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import TerritoryMap from "@/components/TerritoryMap";
 import { supabase } from "@/integrations/supabase/client";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/group";
 import InstallerTerritoryList from "@/components/InstallerTerritoryList";
 import { InstallerZipAssignment, TerritoryStatus } from "@/types/territory";
 import { run as getCoordinates } from "@/functions/getCoordinates";
@@ -502,18 +502,25 @@ const EditInstallerPage: React.FC = () => {
           const totalChanges = addedZips.length + updatedZips.length + removedZipCodes.length;
           toast.loading(`Updating ${totalChanges} territory changes, large changes can take a few minutes.`, { id: loadingToastId });
           
-          // Use a smaller chunk size of 200 for extreme reliability on large Canadian sets
           const CHUNK_SIZE = 200;
           
           const processChunks = async (type: string, items: any[]) => {
             for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+              const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+              if (sessionError || !session) {
+                throw new Error("Authentication session error. Please log in again.");
+              }
+
               const chunk = items.slice(i, i + CHUNK_SIZE);
               const payload: any = { installerId: currentInstaller.id };
               if (type === 'added') payload.addedZips = chunk;
               if (type === 'updated') payload.updatedZips = chunk;
-              if (type === 'removed') payload.removedZips = chunk; // Just pass array for ultra-fast delete
+              if (type === 'removed') payload.removedZips = chunk;
 
               const { error } = await supabase.functions.invoke('save-public-territory-data', {
+                headers: {
+                  Authorization: `Bearer ${session.access_token}`
+                },
                 body: payload,
               });
               
