@@ -238,7 +238,15 @@ const PublicTerritoryEditor: React.FC = () => {
               <Button variant="outline" onClick={handleAutoApprove} disabled={isSaving}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
               <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={isSaving}>Bulk Free Mileage</Button>
               <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={isSaving}>Bulk Paid Mileage</Button>
-              <Button variant="outline" onClick={() => { setSelectedMapZipCodes([]); setMapRefreshKey(p => p + 1); }} disabled={isSaving}><Eraser className="mr-2 h-4 w-4" /> Clear All</Button>
+              {installerCountry === 'Canada' ? (
+                <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white" : "text-red-600")} onClick={() => setBulkActionType('deselect')} disabled={isSaving}>
+                  <Eraser className="mr-2 h-4 w-4" /> Bulk Deselect
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={() => { setSelectedMapZipCodes([]); setMapRefreshKey(p => p + 1); }} disabled={isSaving}>
+                  <Eraser className="mr-2 h-4 w-4" /> Clear All
+                </Button>
+              )}
             </div>
             <div className="h-[800px] w-full border rounded-lg overflow-hidden">
               <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} />

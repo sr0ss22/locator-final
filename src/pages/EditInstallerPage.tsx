@@ -521,7 +521,15 @@ const EditInstallerPage: React.FC = () => {
                 <Button variant="outline" onClick={handleAutoApprove} disabled={isSaving || !canEdit}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
                 <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={isSaving || !canEdit}>Bulk Free Mileage</Button>
                 <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={isSaving || !canEdit}>Bulk Paid Mileage</Button>
-                <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={isSaving || !canEdit}><Eraser className="mr-2 h-4 w-4" /> Clear All</Button>
+                {installerCountry === 'Canada' ? (
+                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white" : "text-red-600")} onClick={() => setBulkActionType('deselect')} disabled={isSaving || !canEdit}>
+                    <Eraser className="mr-2 h-4 w-4" /> Bulk Deselect
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={isSaving || !canEdit}>
+                    <Eraser className="mr-2 h-4 w-4" /> Clear All
+                  </Button>
+                )}
               </div>
             </div>
             <div className="h-[800px] w-full border rounded-lg overflow-hidden">
