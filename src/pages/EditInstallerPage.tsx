@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut, Copy, Star, ChevronsUpDown } from "lucide-react";
+import { Loader2, Save, XCircle, ArrowLeft, MousePointerClick, Eraser, Upload, Download, Home, LogOut, Copy, Star, ChevronsUpDown, Share2 } from "lucide-react";
 import { Installer, InstallerBrand, InstallerSkill, InstallerCertification } from "@/types/installer";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -86,6 +86,24 @@ const EditInstallerPage: React.FC = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate('/login');
+  };
+
+  const handleShare = () => {
+    if (currentInstaller?.id && formData.territory_access_token) {
+      const shareUrl = `${window.location.origin}/territory-editor/${currentInstaller.id}/${formData.territory_access_token}`;
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        toast.success("Sharable territory editor link copied to clipboard!");
+      }).catch(err => {
+        console.error('Failed to copy: ', err);
+        toast.error("Failed to copy link.");
+      });
+    } else {
+      toast.error("Could not generate share link. Token missing.");
+    }
+  };
+
+  const handleClone = () => {
+    toast.info("Clone functionality is not yet implemented.");
   };
 
   const installerCountry = useMemo(() => {
@@ -407,7 +425,18 @@ const EditInstallerPage: React.FC = () => {
             {profile?.role === 'admin' && <Button variant="outline" size="sm" onClick={() => navigate("/installers")} className="mr-2"><ArrowLeft className="h-4 w-4" /></Button>}
             <div><h1 className="text-2xl font-bold text-gray-700">{currentInstaller.name}</h1></div>
           </div>
-          <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" /> Log Out</Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => navigate("/locator")}>
+              <Home className="mr-2 h-4 w-4" /> Locator
+            </Button>
+            <Button variant="outline" onClick={handleClone}>
+              <Copy className="mr-2 h-4 w-4" /> Clone
+            </Button>
+            <Button variant="outline" onClick={handleShare}>
+              <Share2 className="mr-2 h-4 w-4" /> Share
+            </Button>
+            <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" /> Log Out</Button>
+          </div>
         </div>
 
         <Collapsible defaultOpen={false} className="mb-8">
