@@ -13,10 +13,7 @@ serve(async (req) => {
 
   try {
     const payload = await req.json();
-    const { installerId, addedZips, updatedZips, removedZips } = payload;
-
-    console.log(`[save-public-territory-data] Syncing changes for installer: ${installerId}`);
-    console.log(`[save-public-territory-data] Added: ${addedZips?.length}, Updated: ${updatedZips?.length}, Removed: ${removedZips?.length}`);
+    const { installerId, token, addedZips, updatedZips, removedZips } = payload;
 
     if (!installerId) {
       return new Response(JSON.stringify({ error: 'Installer ID is required.' }), {
@@ -30,31 +27,45 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Authorization: Verify the request is coming from an authenticated user or has a valid token
+    // Check authorization (Token or Auth Header)
+    let isAuthorized = false;
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader && !payload.token) {
+    if (authHeader) {
+      const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
+      if (user) isAuthorized = true;
+    } else if (token) {
+      const { data } = await supabaseAdmin.from('installers').select('territory_access_token').eq('id', installerId).single();
+      if (data?.territory_access_token === token) isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
       return new Response(JSON.stringify({ error: 'Unauthorized.' }), { headers: corsHeaders, status: 401 });
     }
+
+    // Standardize removed ZIPs into a flat array of strings for the RPC
+    // This handles both [ "123" ] and [ { zip_code: "123" } ] formats
+    const flatRemovedZips = (removedZips || []).map((item: any) => 
+      typeof item === 'string' ? item : (item.zip_code || item.zipCode)
+    ).filter(Boolean);
+
+    console.log(`[save-public-territory-data] Syncing for ${installerId}: Added=${addedZips?.length}, Updated=${updatedZips?.length}, Removed=${flatRemovedZips.length}`);
 
     // Call the database function
     const { error: rpcError } = await supabaseAdmin.rpc('batch_process_territory_changes', {
       p_installer_id: installerId,
-      p_removed_zips: removedZips || [],
+      p_removed_zips: flatRemovedZips,
       p_updated_zips: updatedZips || [],
       p_added_zips: addedZips || [],
     });
 
-    if (rpcError) {
-      console.error(`[save-public-territory-data] Database Error:`, rpcError);
-      throw new Error(`Database Error: ${rpcError.message}`);
-    }
+    if (rpcError) throw rpcError;
 
-    return new Response(JSON.stringify({ message: 'Sync complete' }), {
+    return new Response(JSON.stringify({ message: 'Success' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
   } catch (error) {
-    console.error('[save-public-territory-data] Fatal Error:', error);
+    console.error('[save-public-territory-data] error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
