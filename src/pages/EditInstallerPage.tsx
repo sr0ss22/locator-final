@@ -107,10 +107,9 @@ const EditInstallerPage: React.FC = () => {
   };
 
   const installerCountry = useMemo(() => {
-    const country = currentInstaller?.rawSupabaseData?.country?.toUpperCase();
-    if (country === 'CANADA' || country === 'CA' || country === 'CAN') return 'Canada';
-    return 'USA';
-  }, [currentInstaller?.rawSupabaseData?.country]);
+    const c = formData?.country?.toUpperCase();
+    return (c === 'CANADA' || c === 'CA') ? 'Canada' : 'USA';
+  }, [formData?.country]);
 
   const zipCodeCentroids = useMemo(() => {
     const map = new Map<string, { lat: number, lng: number, state: string }>();
@@ -438,6 +437,90 @@ const EditInstallerPage: React.FC = () => {
     setBulkActionType(null);
   }, [bulkActionType, zipCodeCentroids]);
 
+  const handleImportTerritories = async (file: File, mode: "overwrite" | "append") => {
+    setIsSaving(true);
+    const loadingToastId = toast.loading(`Importing territories from ${file.name}...`);
+
+    try {
+      const results = await new Promise<any[]>((resolve, reject) => {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (res) => resolve(res.data),
+          error: (err) => reject(err),
+        });
+      });
+
+      const newTerritories = results.map(row => {
+        const zipCode = row.ZipCode || row.zipCode || row.zip_code;
+        const status = row.Status || row.status;
+        const stateProvince = row.StateProvince || row.stateProvince || row.state_province;
+
+        if (!zipCode || !status || !stateProvince) {
+          console.warn("Skipping invalid row:", row);
+          return null;
+        }
+        
+        const centroid = zipCodeCentroids.get(zipCode);
+
+        return {
+          zipCode: String(zipCode),
+          assignedStatus: status as TerritoryStatus,
+          stateProvince: String(stateProvince),
+          centroid_latitude: centroid?.lat || null,
+          centroid_longitude: centroid?.lng || null,
+        };
+      }).filter(Boolean) as Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>;
+
+      if (mode === 'overwrite') {
+        setSelectedMapZipCodes(newTerritories);
+        toast.success(`Prepared ${newTerritories.length} territories for import. Click Save to confirm.`, { id: loadingToastId });
+      } else { // append
+        setSelectedMapZipCodes(prev => {
+          const existingZips = new Map(prev.map(z => [z.zipCode, z]));
+          newTerritories.forEach(newZip => {
+            existingZips.set(newZip.zipCode, newZip);
+          });
+          return Array.from(existingZips.values());
+        });
+        toast.success(`Prepared ${newTerritories.length} new/updated territories for import. Click Save to confirm.`, { id: loadingToastId });
+      }
+      
+      setMapRefreshKey(p => p + 1); // Refresh map view
+      setIsImportTerritoriesModalOpen(false);
+
+    } catch (err: any) {
+      console.error("Error importing territories:", err);
+      toast.error(`Import failed: ${err.message}`, { id: loadingToastId });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleExportTerritories = () => {
+    if (selectedMapZipCodes.length === 0) {
+      toast.info("No territories assigned to this installer to export.");
+      return;
+    }
+
+    const dataToExport = selectedMapZipCodes.map(({ zipCode, assignedStatus, stateProvince }) => ({
+      ZipCode: zipCode,
+      Status: assignedStatus,
+      StateProvince: stateProvince,
+    }));
+
+    const csv = Papa.unparse(dataToExport);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute("download", `${currentInstaller?.name}_territories.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast.success("Territories exported successfully!");
+  };
+
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><LoadingSayings /></div>;
   if (!currentInstaller) return null;
 
@@ -586,6 +669,14 @@ const EditInstallerPage: React.FC = () => {
                   </Button>
                 )}
               </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={isSaving || !canEdit}>
+                  <Upload className="mr-2 h-4 w-4" /> Import
+                </Button>
+                <Button variant="outline" onClick={handleExportTerritories} disabled={isSaving}>
+                  <Download className="mr-2 h-4 w-4" /> Export
+                </Button>
+              </div>
             </div>
             <div className="h-[800px] w-full border rounded-lg overflow-hidden">
               <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} />
@@ -602,6 +693,12 @@ const EditInstallerPage: React.FC = () => {
           </Button>
         </div>
       )}
+      <ImportInstallerTerritoriesModal
+        isOpen={isImportTerritoriesModalOpen}
+        onClose={() => setIsImportTerritoriesModalOpen(false)}
+        onImport={handleImportTerritories}
+        loading={isSaving}
+      />
     </>
   );
 };
