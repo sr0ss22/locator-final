@@ -452,12 +452,22 @@ const EditInstallerPage: React.FC = () => {
       });
 
       const newTerritories = results.map(row => {
-        const zipCode = row.ZipCode || row.zipCode || row.zip_code;
-        const status = row.Status || row.status;
-        const stateProvince = row.StateProvince || row.stateProvince || row.state_province;
+        const zipCode = row['ZIP Code'];
+        const statusRaw = row['Status'];
+        const stateProvince = row['State/Province'];
 
-        if (!zipCode || !status || !stateProvince) {
-          console.warn("Skipping invalid row:", row);
+        if (!zipCode || !statusRaw || !stateProvince) {
+          console.warn("Skipping invalid row (missing required fields):", row);
+          return null;
+        }
+
+        let assignedStatus: TerritoryStatus;
+        if (statusRaw.toLowerCase() === 'free_mileage') {
+          assignedStatus = 'Approved';
+        } else if (statusRaw.toLowerCase() === 'paid_mileage') {
+          assignedStatus = 'Needs Approval';
+        } else {
+          console.warn(`Skipping row with invalid status "${statusRaw}":`, row);
           return null;
         }
         
@@ -465,7 +475,7 @@ const EditInstallerPage: React.FC = () => {
 
         return {
           zipCode: String(zipCode),
-          assignedStatus: status as TerritoryStatus,
+          assignedStatus: assignedStatus,
           stateProvince: String(stateProvince),
           centroid_latitude: centroid?.lat || null,
           centroid_longitude: centroid?.lng || null,
@@ -504,12 +514,14 @@ const EditInstallerPage: React.FC = () => {
     }
 
     const dataToExport = selectedMapZipCodes.map(({ zipCode, assignedStatus, stateProvince }) => ({
-      ZipCode: zipCode,
-      Status: assignedStatus,
-      StateProvince: stateProvince,
+      'State/Province': stateProvince,
+      'ZIP Code': zipCode,
+      'Status': assignedStatus === 'Approved' ? 'Free_Mileage' : 'Paid_Mileage',
     }));
 
-    const csv = Papa.unparse(dataToExport);
+    const csv = Papa.unparse(dataToExport, {
+      fields: ['State/Province', 'ZIP Code', 'Status']
+    });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);

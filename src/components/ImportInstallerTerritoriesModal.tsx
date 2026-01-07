@@ -63,11 +63,13 @@ const ImportInstallerTerritoriesModal: React.FC<ImportInstallerTerritoriesModalP
             <br />
             <br />
             <span className="font-semibold">Expected CSV Headers:</span>{" "}
-            <code className="bg-gray-100 p-1 rounded">ZipCode</code>,{" "}
-            <code className="bg-gray-100 p-1 rounded">Status</code> (Approved/Needs Approval),{" "}
-            <code className="bg-gray-100 p-1 rounded">StateProvince</code>
+            <code className="bg-gray-100 p-1 rounded">State/Province</code>,{" "}
+            <code className="bg-gray-100 p-1 rounded">ZIP Code</code>,{" "}
+            <code className="bg-gray-100 p-1 rounded">Status</code>
             <br />
-            <span className="text-sm text-gray-500">Example: 90210,Approved,CA</span>
+            <span className="text-sm text-gray-500">The status column must contain either 'Free_Mileage' or 'Paid_Mileage'.</span>
+            <br />
+            <span className="text-sm text-gray-500">Example: CA,90210,Free_Mileage</span>
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
