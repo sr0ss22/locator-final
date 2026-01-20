@@ -160,12 +160,8 @@ const PublicTerritoryEditor: React.FC = () => {
         if (added.length) await process('added', added);
       }
 
-      toast.success("Changes saved successfully!", { id: loadingToastId });
-      const savedTerritories = JSON.parse(JSON.stringify(finalZips));
-      setInitialSelectedMapZipCodes(savedTerritories);
-      setSelectedMapZipCodes(savedTerritories);
-      setIsDirty(false);
-      setMapRefreshKey(p => p + 1);
+      toast.success("Changes saved! Refreshing data to reflect updates...", { id: loadingToastId });
+      await loadAllData(true); // Re-fetch all data silently
     } catch (err: any) {
       toast.error(`Save failed: ${err.message}`, { id: loadingToastId });
     } finally {

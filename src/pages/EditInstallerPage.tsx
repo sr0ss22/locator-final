@@ -364,12 +364,8 @@ const EditInstallerPage: React.FC = () => {
         await processChanges('added', addedZips);
       }
   
-      toast.success("Changes saved successfully!", { id: loadingToastId });
-      const savedTerritories = JSON.parse(JSON.stringify(territoriesToProcess));
-      setInitialFormData(JSON.parse(JSON.stringify(formData)));
-      setInitialSelectedMapZipCodes(savedTerritories);
-      setIsDirty(false);
-      setMapRefreshKey(p => p + 1);
+      toast.success("Changes saved! Refreshing data to reflect updates...", { id: loadingToastId });
+      await loadAllData(true); // Re-fetch all data silently
     } catch (err: any) {
       console.error("Save failed:", err);
       toast.error(`Save failed: ${err.message}`, { id: loadingToastId });
