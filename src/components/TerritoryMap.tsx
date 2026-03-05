@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, Tooltip, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import * as turf from '@turf/turf';
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
+import usGeoJsonData from '@/data/us-zip-codes.json' with { type: 'json' };
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -361,8 +362,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         
         setLoadingStage('fetching');
         try {
-          const geoJsonModule = await import('@/data/us-zip-codes.json');
-          const geoJson = geoJsonModule.default;
+          const geoJson = usGeoJsonData;
           if (!geoJson || !geoJson.features) throw new Error("US GeoJSON is missing or invalid.");
           
           const processedFeatures = geoJson.features.map((feature: any) => {
@@ -556,4 +556,4 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   );
 };
 
-export default TerritoryMap;
+export default memo(TerritoryMap);
