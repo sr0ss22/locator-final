@@ -29,6 +29,7 @@ import { calculateDistance } from "@/utils/distance";
 import LoadingSayings from "@/components/LoadingSayings";
 import DebugPostalCodeChecker from "@/components/DebugPostalCodeChecker";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useInstaller, useInstallerZipCodes, useSaveInstaller } from "@/hooks/useInstallerData";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -37,10 +38,6 @@ proj4.defs("EPSG:3347", "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=63.390675 +lon_0=-
 const toBoolean = (value: any): boolean => {
   if (typeof value === 'string') return value.toLowerCase() === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
   return value === 1 || value === true;
-};
-
-const fromBooleanToSupabase = (key: string, value: boolean): number => {
-  return value ? 1 : 0;
 };
 
 const contactAddressFields = ["name", "email", "primary_phone", "secondary_phone", "address1", "add2", "city", "state", "postalcode", "country"];
@@ -67,13 +64,16 @@ const textAreaFields = ["comments", "specialnote"];
 const EditInstallerPage: React.FC = () => {
   const { installerId } = useParams<{ installerId: string }>();
   const navigate = useNavigate();
+  
+  const { data: installerData, isLoading: isLoadingInstaller, error: installerError } = useInstaller(installerId!);
+  const { data: zipCodeData, isLoading: isLoadingZips, error: zipsError } = useInstallerZipCodes(installerId!);
+  const saveMutation = useSaveInstaller();
+
   const [formData, setFormData] = useState<any>({});
   const [initialFormData, setInitialFormData] = useState<any>(null);
   const [initialSelectedMapZipCodes, setInitialSelectedMapZipCodes] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState<boolean>(true);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
   const [mapRefreshKey, setMapRefreshKey] = useState<number>(0); 
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
@@ -82,6 +82,9 @@ const EditInstallerPage: React.FC = () => {
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
   const { profile, user, loading: sessionLoading } = useSession();
+
+  const loading = isLoadingInstaller || isLoadingZips;
+  const error = installerError || zipsError;
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -191,58 +194,37 @@ const EditInstallerPage: React.FC = () => {
     return statusMap;
   }, []);
 
-  const loadAllData = useCallback(async (silent = false) => {
-    if (!installerId) return;
-    if (!silent) setLoading(true);
-    
-    const { data: installerData } = await supabase.from('installers').select('*').eq('id', installerId).single();
-    if (!installerData) {
-      navigate("/installers");
-      return;
-    }
-
-    const currentCountry = (installerData.country?.toUpperCase() === 'CANADA' || installerData.country?.toUpperCase() === 'CA') ? 'Canada' : 'USA';
-    
-    let allZipData: any[] = [];
-    let page = 0;
-    let hasMore = true;
-    while(hasMore) {
-      const { data: zipData } = await supabase.from('installer_zip_codes').select('zip_code, status, state_province').eq('installer_id', installerId).range(page * 1000, (page + 1) * 1000 - 1);
-      if (zipData) allZipData = allZipData.concat(zipData);
-      if (!zipData || zipData.length < 1000) hasMore = false;
-      else page++;
-    }
-
-    const enrichedZips = allZipData.map(item => {
-      const centroid = zipCodeCentroids.get(item.zip_code);
-      return {
-        zipCode: item.zip_code, assignedStatus: item.status as TerritoryStatus, stateProvince: item.state_province,
-        centroid_latitude: centroid?.lat || null, centroid_longitude: centroid?.lng || null,
-      };
-    });
-
-    await fetchTerritoryStatuses();
-    
-    setFormData(installerData);
-    setInitialFormData(JSON.parse(JSON.stringify(installerData)));
-    setCurrentInstaller({
-      ...installerData,
-      id: installerData.id,
-      name: installerData.name,
-      skills: [], brands: [], certifications: [],
-      rawSupabaseData: installerData
-    });
-    setSelectedMapZipCodes(enrichedZips);
-    setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
-    setIsDirty(false);
-    setMapRefreshKey(p => p + 1);
-    if (!silent) setLoading(false);
-  }, [installerId, navigate, fetchTerritoryStatuses, zipCodeCentroids]);
-
   useEffect(() => {
-    if (!sessionLoading && installerId) loadAllData();
-    else if (!installerId) setLoading(false);
-  }, [installerId, sessionLoading, loadAllData]);
+    if (installerData && zipCodeData) {
+      const enrichedZips = zipCodeData.map(item => {
+        const centroid = zipCodeCentroids.get(item.zip_code);
+        return {
+          zipCode: item.zip_code,
+          assignedStatus: item.status as TerritoryStatus,
+          stateProvince: item.state_province,
+          centroid_latitude: centroid?.lat || null,
+          centroid_longitude: centroid?.lng || null,
+        };
+      });
+
+      setFormData(installerData);
+      setInitialFormData(JSON.parse(JSON.stringify(installerData)));
+      
+      setSelectedMapZipCodes(enrichedZips);
+      setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
+
+      setCurrentInstaller({
+        ...installerData,
+        id: installerData.id,
+        name: installerData.name,
+        skills: [], brands: [], certifications: [],
+        rawSupabaseData: installerData
+      });
+      
+      setIsDirty(false);
+      fetchTerritoryStatuses();
+    }
+  }, [installerData, zipCodeData, zipCodeCentroids, fetchTerritoryStatuses]);
 
   useEffect(() => {
     if (loading || sessionLoading || !initialFormData) return;
@@ -254,14 +236,14 @@ const EditInstallerPage: React.FC = () => {
   const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
     setSelectedMapZipCodes(prev => {
       const idx = prev.findIndex(item => item.zipCode === zipCode);
-      const centroid = zipCodeCentroids.get(zipCode);
+      const c = zipCodeCentroids.get(zipCode);
       if (idx !== -1) {
         if (prev[idx].assignedStatus === 'Approved') {
           return [...prev.slice(0, idx), { ...prev[idx], assignedStatus: 'Needs Approval' }, ...prev.slice(idx + 1)];
         }
         return prev.filter(item => item.zipCode !== zipCode);
       }
-      return [...prev, { zipCode, assignedStatus: 'Approved', stateProvince, centroid_latitude: centroid?.lat || null, centroid_longitude: centroid?.lng || null }];
+      return [...prev, { zipCode, assignedStatus: 'Approved', stateProvince, centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null }];
     });
     setMapRefreshKey(p => p + 1);
   }, [zipCodeCentroids]);
@@ -295,88 +277,29 @@ const EditInstallerPage: React.FC = () => {
 
   const handleSubmit = async (territoriesOverride?: any[]) => {
     if (!validateForm() || !currentInstaller?.id) return;
-    setIsSaving(true);
+    
     const loadingToastId = toast.loading("Saving changes...");
-  
-    try {
-      if (JSON.stringify(formData) !== JSON.stringify(initialFormData)) {
-        const formattedData: any = {};
-        for (const key in formData) {
-          if (Object.prototype.hasOwnProperty.call(formData, key)) {
-            const val = formData[key];
-            if (typeof val === 'boolean') formattedData[key] = fromBooleanToSupabase(key, val);
-            else if (['powerview_certification', 'shutter_certification_level', 'draperies_certification_level', 'pip_certification_level'].includes(key)) formattedData[key] = Array.isArray(val) ? val.join(', ') : val;
-            else if (['installer_vendor_id', 'star_rating'].includes(key) && typeof val === 'string' && val !== '') formattedData[key] = parseFloat(val);
-            else formattedData[key] = val === "" ? null : val;
-          }
+    const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
+
+    saveMutation.mutate({
+        installerId: currentInstaller.id,
+        formData,
+        initialFormData,
+        selectedMapZipCodes: territoriesToProcess,
+        initialSelectedMapZipCodes,
+    }, {
+        onSuccess: () => {
+            toast.success("Changes saved successfully! Data is refreshing.", { id: loadingToastId });
+        },
+        onError: (err: any) => {
+            toast.error(`Save failed: ${err.message}`, { id: loadingToastId });
         }
-        const { error: updateError } = await supabase.from("installers").update(formattedData).eq("id", currentInstaller.id);
-        if (updateError) throw updateError;
-      }
-  
-      const territoriesToProcess = territoriesOverride || selectedMapZipCodes;
-      const initialZipMap = new Map(initialSelectedMapZipCodes.map(z => [z.zipCode, z]));
-      const currentZipMap = new Map(territoriesToProcess.map(z => [z.zipCode, z]));
-  
-      const addedZips = territoriesToProcess.filter(z => !initialZipMap.has(z.zipCode)).map(z => ({ zip_code: z.zipCode, state_province: z.stateProvince, assigned_status: z.assignedStatus }));
-      const updatedZips = territoriesToProcess.filter(z => initialZipMap.has(z.zipCode) && initialZipMap.get(z.zipCode)!.assignedStatus !== z.assignedStatus).map(z => ({ zip_code: z.zipCode, assigned_status: z.assignedStatus }));
-      const removedZips = initialSelectedMapZipCodes.filter(z => !currentZipMap.has(z.zipCode)).map(z => ({ zipCode: z.zipCode }));
-
-      if (addedZips.length > 0 || updatedZips.length > 0 || removedZips.length > 0) {
-        const { data: { session } } = await supabase.auth.getSession();
-        const CHUNK_SIZE = 200;
-
-        const processChanges = async (type: 'added' | 'updated' | 'removed', items: any[]) => {
-          if (items.length === 0) return;
-
-          for (let i = 0; i < items.length; i += CHUNK_SIZE) {
-            const chunk = items.slice(i, i + CHUNK_SIZE);
-            
-            const processedCount = Math.min(i + CHUNK_SIZE, items.length);
-            const percentage = Math.round((processedCount / items.length) * 100);
-            let action = type.charAt(0).toUpperCase() + type.slice(1);
-            if (action === 'Added') action = 'Adding';
-            if (action === 'Updated') action = 'Updating';
-            if (action === 'Removed') action = 'Removing';
-            
-            toast.loading(`${action} ${processedCount} of ${items.length} territories... (${percentage}%)`, { id: loadingToastId });
-
-            const body: any = { 
-              installerId: currentInstaller.id,
-              addedZips: type === 'added' ? chunk : [],
-              updatedZips: type === 'updated' ? chunk : [],
-              removedZips: type === 'removed' ? chunk : [],
-            };
-
-            const { error } = await supabase.functions.invoke('save-public-territory-data', {
-              headers: { Authorization: `Bearer ${session?.access_token}` },
-              body,
-            });
-
-            if (error) {
-              throw new Error(`Failed during ${type} step: ${error.message}`);
-            }
-          }
-        };
-
-        await processChanges('removed', removedZips);
-        await processChanges('updated', updatedZips);
-        await processChanges('added', addedZips);
-      }
-  
-      toast.success("Changes saved! Refreshing data to reflect updates...", { id: loadingToastId });
-      await loadAllData(true); // Re-fetch all data silently
-    } catch (err: any) {
-      console.error("Save failed:", err);
-      toast.error(`Save failed: ${err.message}`, { id: loadingToastId });
-    } finally {
-      setIsSaving(false);
-    }
+    });
   };
 
   const handleAutoApprove = async () => {
     if (!currentInstaller?.latitude || !currentInstaller?.longitude) return;
-    setIsSaving(true);
+    
     let loadingToastId: string | number | undefined;
     if (installerCountry === 'Canada') {
       loadingToastId = toast.loading("Finding territories...");
@@ -400,15 +323,12 @@ const EditInstallerPage: React.FC = () => {
       const newMap = new Map(selectedMapZipCodes.map(item => [item.zipCode, item]));
       zips.forEach(z => newMap.set(z.zipCode, { ...z, assignedStatus: 'Approved' }));
       const final = Array.from(newMap.values());
-      setSelectedMapZipCodes(final);
-      setMapRefreshKey(p => p + 1);
-      if (loadingToastId) {
-        toast.dismiss(loadingToastId);
-      }
+      
+      if (loadingToastId) toast.dismiss(loadingToastId);
+      
       await handleSubmit(final);
     } catch (err: any) {
       toast.error(`Auto-approve failed: ${err.message}`, { id: loadingToastId });
-      setIsSaving(false);
     }
   };
 
@@ -434,7 +354,6 @@ const EditInstallerPage: React.FC = () => {
   }, [bulkActionType, zipCodeCentroids]);
 
   const handleImportTerritories = async (file: File, mode: "overwrite" | "append") => {
-    setIsSaving(true);
     const loadingToastId = toast.loading(`Importing territories from ${file.name}...`);
 
     try {
@@ -498,8 +417,6 @@ const EditInstallerPage: React.FC = () => {
     } catch (err: any) {
       console.error("Error importing territories:", err);
       toast.error(`Import failed: ${err.message}`, { id: loadingToastId });
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -529,7 +446,8 @@ const EditInstallerPage: React.FC = () => {
     toast.success("Territories exported successfully!");
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><LoadingSayings /></div>;
+  if (loading || sessionLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><LoadingSayings /></div>;
+  if (error) return <div className="min-h-screen flex items-center justify-center text-red-500">Error: {error.message}</div>;
   if (!currentInstaller) return null;
 
   const canEdit = profile?.role === 'admin' || (profile?.role === 'installer' && currentInstaller.rawSupabaseData?.account_id === user?.id);
@@ -664,24 +582,24 @@ const EditInstallerPage: React.FC = () => {
             <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
             <div className="flex flex-wrap justify-between gap-2 mb-4">
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={handleAutoApprove} disabled={isSaving || !canEdit}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={isSaving || !canEdit}>Bulk Free Mileage</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={isSaving || !canEdit}>Bulk Paid Mileage</Button>
+                <Button variant="outline" onClick={handleAutoApprove} disabled={saveMutation.isPending || !canEdit}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={saveMutation.isPending || !canEdit}>Bulk Free Mileage</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={saveMutation.isPending || !canEdit}>Bulk Paid Mileage</Button>
                 {installerCountry === 'Canada' ? (
-                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white" : "text-red-600")} onClick={() => setBulkActionType('deselect')} disabled={isSaving || !canEdit}>
+                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white" : "text-red-600")} onClick={() => setBulkActionType('deselect')} disabled={saveMutation.isPending || !canEdit}>
                     <Eraser className="mr-2 h-4 w-4" /> Bulk Deselect
                   </Button>
                 ) : (
-                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={isSaving || !canEdit}>
+                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={saveMutation.isPending || !canEdit}>
                     <Eraser className="mr-2 h-4 w-4" /> Clear All
                   </Button>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={isSaving || !canEdit}>
+                <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={saveMutation.isPending || !canEdit}>
                   <Upload className="mr-2 h-4 w-4" /> Import
                 </Button>
-                <Button variant="outline" onClick={handleExportTerritories} disabled={isSaving}>
+                <Button variant="outline" onClick={handleExportTerritories} disabled={saveMutation.isPending}>
                   <Download className="mr-2 h-4 w-4" /> Export
                 </Button>
               </div>
@@ -695,9 +613,9 @@ const EditInstallerPage: React.FC = () => {
       </div>
       {isDirty && (
         <div className="fixed bottom-0 left-0 w-full z-[1000] bg-white border-t p-4 flex justify-end gap-2">
-          <Button variant="outline" onClick={() => loadAllData()} disabled={isSaving}>Discard</Button>
-          <Button onClick={() => handleSubmit()} disabled={isSaving} className="bg-green-600">
-            {isSaving ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />} Save
+          <Button variant="outline" onClick={() => loadAllData()} disabled={saveMutation.isPending}>Discard</Button>
+          <Button onClick={() => handleSubmit()} disabled={saveMutation.isPending} className="bg-green-600">
+            {saveMutation.isPending ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />} Save
           </Button>
         </div>
       )}
@@ -705,7 +623,7 @@ const EditInstallerPage: React.FC = () => {
         isOpen={isImportTerritoriesModalOpen}
         onClose={() => setIsImportTerritoriesModalOpen(false)}
         onImport={handleImportTerritories}
-        loading={isSaving}
+        loading={saveMutation.isPending}
       />
     </>
   );
