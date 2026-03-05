@@ -22,7 +22,8 @@ export const useInstaller = (installerId: string) => {
     queryKey: ['installer', installerId],
     queryFn: () => fetchInstaller(installerId),
     enabled: !!installerId,
-    refetchOnWindowFocus: false, // Prevent refetching on window focus
+    refetchOnWindowFocus: false,
+    staleTime: Infinity, // Cache data indefinitely
   });
 };
 
@@ -49,7 +50,8 @@ export const useInstallerZipCodes = (installerId: string) => {
     queryKey: ['installerZipCodes', installerId],
     queryFn: () => fetchInstallerZipCodes(installerId),
     enabled: !!installerId,
-    refetchOnWindowFocus: false, // Prevent refetching on window focus
+    refetchOnWindowFocus: false,
+    staleTime: Infinity, // Cache data indefinitely
   });
 };
 
