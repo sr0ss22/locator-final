@@ -157,13 +157,13 @@ const Locator: React.FC = () => {
       }
       setSelectedInstallerId(null);
     };
-    if (!showAdditionalFilters || selectedStatesProvinces.length === 0) {
+    if (!showAdditionalFilters || filterStates.length === 0) {
       fetchUserLocation();
     } else {
       setUserLocation(null);
       setInstallerDistancesMap(new Map());
     }
-  }, [searchedZipCode, showAdditionalFilters, selectedStatesProvinces]);
+  }, [searchedZipCode, showAdditionalFilters, filterStates]);
 
   useEffect(() => {
     const fetchDrivingDistances = async () => {
@@ -221,7 +221,7 @@ const Locator: React.FC = () => {
       }
     };
 
-    if (!showAdditionalFilters || selectedStatesProvinces.length === 0) {
+    if (!showAdditionalFilters || filterStates.length === 0) {
       if (searchedZipCode && userLocation?.lat !== null && userLocation?.lng !== null && installers.length > 0) {
         fetchDrivingDistances();
       } else {
@@ -230,17 +230,17 @@ const Locator: React.FC = () => {
     } else {
       setInstallerDistancesMap(new Map());
     }
-  }, [userLocation, installers, searchedZipCode, showAdditionalFilters, selectedStatesProvinces]);
+  }, [userLocation, installers, searchedZipCode, showAdditionalFilters, filterStates]);
 
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
-    if (selectedBrands.length > 0) currentInstallers = currentInstallers.filter(i => selectedBrands.every(b => (i.brands ?? []).includes(b)));
-    if (selectedProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => selectedProductSkills.every(s => (i.skills ?? []).includes(s)));
-    if (selectedCertifications.length > 0) currentInstallers = currentInstallers.filter(i => selectedCertifications.every(c => (i.certifications ?? []).includes(c)));
+    if (filterBrands.length > 0) currentInstallers = currentInstallers.filter(i => filterBrands.every(b => (i.brands ?? []).includes(b)));
+    if (filterProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => filterProductSkills.every(s => (i.skills ?? []).includes(s)));
+    if (filterCertifications.length > 0) currentInstallers = currentInstallers.filter(i => filterCertifications.every(c => (i.certifications ?? []).includes(c)));
     
     if (showAdditionalFilters) {
-      if (selectedStatesProvinces.length > 0) {
-        currentInstallers = currentInstallers.filter(i => i.rawSupabaseData?.state && selectedStatesProvinces.includes(i.rawSupabaseData.state));
+      if (filterStates.length > 0) {
+        currentInstallers = currentInstallers.filter(i => i.rawSupabaseData?.state && filterStates.includes(i.rawSupabaseData.state));
       }
       if (filterAcceptsShipments === 'yes') {
         currentInstallers = currentInstallers.filter(i => i.acceptsShipments);
@@ -249,18 +249,18 @@ const Locator: React.FC = () => {
       }
     }
 
-    if (showAdditionalFilters && selectedStatesProvinces.length > 0) {
+    if (showAdditionalFilters && filterStates.length > 0) {
       return currentInstallers;
     }
 
     let installersWithDistance = currentInstallers.map(i => ({ ...i, distance: installerDistancesMap.get(i.id) ?? Infinity }));
     installersWithDistance.sort((a, b) => a.distance - b.distance);
     return installersWithDistance.filter(i => i.distance <= searchRadius);
-  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications, installerDistancesMap, searchRadius, showAdditionalFilters, selectedStatesProvinces, filterAcceptsShipments]);
+  }, [installers, filterBrands, filterProductSkills, filterCertifications, installerDistancesMap, searchRadius, showAdditionalFilters, filterStates, filterAcceptsShipments]);
 
-  const handleBrandChange = (brand: InstallerBrand, checked: boolean) => setSelectedBrands(p => checked ? [...p, brand] : p.filter(b => b !== brand));
-  const handleProductSkillChange = (skill: InstallerSkill, checked: boolean) => setSelectedProductSkills(p => checked ? [...p, skill] : p.filter(s => s !== skill));
-  const handleCertificationChange = (certification: InstallerCertification, checked: boolean) => setSelectedCertifications(p => checked ? [...p, certification] : p.filter(c => c !== certification));
+  const handleBrandChange = (brand: InstallerBrand, checked: boolean) => setFilterBrands(p => checked ? [...p, brand] : p.filter(b => b !== brand));
+  const handleProductSkillChange = (skill: InstallerSkill, checked: boolean) => setFilterProductSkills(p => checked ? [...p, skill] : p.filter(s => s !== skill));
+  const handleCertificationChange = (certification: InstallerCertification, checked: boolean) => setFilterCertifications(p => checked ? [...p, certification] : p.filter(c => c !== certification));
   
   const handleInstallerCardClick = useCallback((installerId: string) => {
     setSelectedInstallerId(installerId);
@@ -286,9 +286,9 @@ const Locator: React.FC = () => {
                 <Separator />
               </>)}
               <BrandSkillFilter
-                selectedBrands={selectedBrands}
-                selectedProductSkills={selectedProductSkills}
-                selectedCertifications={selectedCertifications}
+                selectedBrands={filterBrands}
+                selectedProductSkills={filterProductSkills}
+                selectedCertifications={filterCertifications}
                 onBrandChange={handleBrandChange}
                 onProductSkillChange={handleProductSkillChange}
                 onCertificationChange={handleCertificationChange}
@@ -346,7 +346,7 @@ const Locator: React.FC = () => {
                   distanceUnit={distanceUnit}
                 />
               )}
-              {searchedZipCode && (!userLocation || userLocation.lat === null) && !loadingUserLocation && (!showAdditionalFilters || selectedStatesProvinces.length === 0) && (
+              {searchedZipCode && (!userLocation || userLocation.lat === null) && !loadingUserLocation && (!showAdditionalFilters || filterStates.length === 0) && (
                 <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
               )}
             </div>
