@@ -36,7 +36,6 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
 
         if (profileError) {
           console.error("Error fetching user profile:", profileError);
-          // Let ProtectedRoute handle user experience for profile loading issues
           setProfile(null);
         } else {
           setProfile(profileData as UserProfile);
@@ -52,7 +51,7 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user || null);
-      setLoading(true); // Set loading true while profile is being fetched
+      // Do not set loading to true here, as this is for background updates.
 
       if (session?.user) {
         // Fetch profile on sign-in or user update
@@ -64,23 +63,18 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
           .then(({ data: profileData, error: profileError }) => {
             if (profileError) {
               console.error("Error fetching user profile on auth state change:", profileError);
-              // Let ProtectedRoute handle user experience for profile loading issues
               setProfile(null);
             } else {
               setProfile(profileData as UserProfile);
             }
-            setLoading(false);
           });
       } else {
         setProfile(null);
-        setLoading(false);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
-
-  // Removed the useEffect for redirects. ProtectedRoute will handle this.
 
   const value = { session, user, profile, loading, supabase };
 
