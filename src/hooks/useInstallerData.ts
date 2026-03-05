@@ -22,6 +22,7 @@ export const useInstaller = (installerId: string) => {
     queryKey: ['installer', installerId],
     queryFn: () => fetchInstaller(installerId),
     enabled: !!installerId,
+    refetchOnWindowFocus: false, // Prevent refetching on window focus
   });
 };
 
@@ -48,6 +49,7 @@ export const useInstallerZipCodes = (installerId: string) => {
     queryKey: ['installerZipCodes', installerId],
     queryFn: () => fetchInstallerZipCodes(installerId),
     enabled: !!installerId,
+    refetchOnWindowFocus: false, // Prevent refetching on window focus
   });
 };
 
@@ -150,6 +152,7 @@ export const useAllInstallers = () => {
       return data;
     },
     staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    refetchOnWindowFocus: false, // Prevent refetching on window focus
   });
 };
 
@@ -168,6 +171,7 @@ export const usePublicInstallers = (location: { lat: number | null, lng: number 
     },
     enabled: !!location.lat && !!location.lng,
     staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    refetchOnWindowFocus: false, // Prevent refetching on window focus
   });
 };
 
@@ -219,5 +223,6 @@ export const useDrivingDistances = (userLocation: { lat: number | null, lng: num
         },
         enabled: !!userLocation.lat && !!userLocation.lng && installers.length > 0,
         staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+        refetchOnWindowFocus: false, // Prevent refetching on window focus
     });
 };
