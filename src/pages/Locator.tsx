@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import InstallerSearch from "@/components/InstallerSearch";
 import BrandSkillFilter from "@/components/BrandSkillFilter";
 import InstallerList from "@/components/InstallerList";
@@ -21,10 +22,18 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import LoadingSayings from "@/components/LoadingSayings";
 
 const Locator: React.FC = () => {
-  const [searchedZipCode, setSearchedZipCode] = useState<string>("");
-  const [selectedBrands, setSelectedBrands] = useState<InstallerBrand[]>([]);
-  const [selectedProductSkills, setSelectedProductSkills] = useState<InstallerSkill[]>([]);
-  const [selectedCertifications, setSelectedCertifications] = useState<InstallerCertification[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [inputValue, setInputValue] = useState<string>(searchParams.get('q') || "");
+  const [searchedZipCode, setSearchedZipCode] = useState<string>(searchParams.get('q') || "");
+  const [searchRadius, setSearchRadius] = useState<number>(Number(searchParams.get('radius')) || 50);
+  const [showAdditionalFilters, setShowAdditionalFilters] = useState<boolean>(searchParams.get('showAdditionalFilters') === 'true');
+  const [filterBrands, setFilterBrands] = useState<InstallerBrand[]>(() => (searchParams.get('brands')?.split(',') as InstallerBrand[] || []).filter(Boolean));
+  const [filterProductSkills, setFilterProductSkills] = useState<InstallerSkill[]>(() => (searchParams.get('skills')?.split(',') as InstallerSkill[] || []).filter(Boolean));
+  const [filterCertifications, setFilterCertifications] = useState<InstallerCertification[]>(() => (searchParams.get('certs')?.split(',') as InstallerCertification[] || []).filter(Boolean));
+  const [filterStates, setFilterStates] = useState<string[]>(() => (searchParams.get('states')?.split(',') || []).filter(Boolean));
+  const [filterAcceptsShipments, setFilterAcceptsShipments] = useState<'any' | 'yes' | 'no'>(() => (searchParams.get('shipments') as 'any' | 'yes' | 'no') || 'any');
+
   const [userLocation, setUserLocation] = useState<{ lat: number | null; lng: number | null } | null>(null);
   const [installers, setInstallers] = useState<Installer[]>([]);
   const [loadingInstallers, setLoadingInstallers] = useState<boolean>(true);
@@ -32,13 +41,26 @@ const Locator: React.FC = () => {
   const [installerDistancesMap, setInstallerDistancesMap] = useState<Map<string, number>>(new Map());
   const [loadingOrs, setLoadingOrs] = useState<boolean>(false);
   const [selectedInstallerId, setSelectedInstallerId] = useState<string | null>(null);
-  const [searchRadius, setSearchRadius] = useState<number>(50);
-  const [showAdditionalFilters, setShowAdditionalFilters] = useState(false);
-  const [selectedStatesProvinces, setSelectedStatesProvinces] = useState<string[]>([]);
   const [allStatesProvinces, setAllStatesProvinces] = useState<string[]>([]);
   const navigate = useNavigate();
   const { isCanada, distanceUnit, toggleCountry } = useCountrySettings();
-  const [filterAcceptsShipments, setFilterAcceptsShipments] = useState<'any' | 'yes' | 'no'>('any');
+
+  const handleSearch = () => {
+    setSearchedZipCode(inputValue);
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchedZipCode) params.set('q', searchedZipCode);
+    if (searchRadius !== 50) params.set('radius', String(searchRadius));
+    if (showAdditionalFilters) params.set('showAdditionalFilters', 'true');
+    if (filterBrands.length > 0) params.set('brands', filterBrands.join(','));
+    if (filterProductSkills.length > 0) params.set('skills', filterProductSkills.join(','));
+    if (filterCertifications.length > 0) params.set('certs', filterCertifications.join(','));
+    if (filterStates.length > 0) params.set('states', filterStates.join(','));
+    if (filterAcceptsShipments !== 'any') params.set('shipments', filterAcceptsShipments);
+    setSearchParams(params, { replace: true });
+  }, [searchedZipCode, searchRadius, showAdditionalFilters, filterBrands, filterProductSkills, filterCertifications, filterStates, filterAcceptsShipments, setSearchParams]);
 
   const toBoolean = (value: any): boolean => {
     if (typeof value === 'string') return value.toLowerCase() === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
@@ -259,7 +281,7 @@ const Locator: React.FC = () => {
             <div className="p-4 border rounded-lg shadow-sm bg-card space-y-6">
               <h2 className="text-2xl font-semibold mb-4">Find Installers</h2>
               {!showAdditionalFilters && (<>
-                <InstallerSearch onSearch={setSearchedZipCode} />
+                <InstallerSearch value={inputValue} onChange={setInputValue} onSearch={handleSearch} />
                 <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
                 <Separator />
               </>)}
@@ -282,7 +304,7 @@ const Locator: React.FC = () => {
                   <div className="space-y-4 mt-2">
                     <div>
                       <Label htmlFor="state-province-select">State / Province</Label>
-                      <MultiSelect options={allStatesProvinces} selectedValues={selectedStatesProvinces} onValueChange={setSelectedStatesProvinces} placeholder="Select States/Provinces" />
+                      <MultiSelect options={allStatesProvinces} selectedValues={filterStates} onValueChange={setFilterStates} placeholder="Select States/Provinces" />
                     </div>
                     <div>
                       <Label className="mb-2 block">Accepts Shipments</Label>
@@ -339,7 +361,7 @@ const Locator: React.FC = () => {
               <Button onClick={() => navigate("/installers")}>Installer Management</Button>
             </div>
             {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
-              <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userLocation} showAdditionalFilters={showAdditionalFilters} selectedStatesProvinces={selectedStatesProvinces} searchRadius={searchRadius} />
+              <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userLocation} showAdditionalFilters={showAdditionalFilters} selectedStatesProvinces={filterStates} searchRadius={searchRadius} />
             )}
           </div>
         </div>

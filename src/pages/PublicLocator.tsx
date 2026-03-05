@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import InstallerSearch from "@/components/InstallerSearch";
 import BrandSkillFilter from "@/components/BrandSkillFilter";
 import InstallerList from "@/components/InstallerList";
@@ -12,27 +13,45 @@ import DistanceFilter from "@/components/DistanceFilter";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 import InstallerSummary from "@/components/InstallerSummary";
 import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
-import { useNavigate } from "react-router-dom"; // Import useNavigate
-import { useSession } from "@/components/SessionContextProvider"; // Import useSession
-import { Button } from "@/components/ui/button"; // Ensure Button is imported
+import { useNavigate } from "react-router-dom";
+import { useSession } from "@/components/SessionContextProvider";
+import { Button } from "@/components/ui/button";
 import { calculateDistance } from "@/utils/distance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import LoadingSayings from "@/components/LoadingSayings";
 
 const PublicLocator: React.FC = () => {
-  const [searchText, setSearchText] = useState<string>("");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const [inputValue, setInputValue] = useState<string>(searchParams.get('q') || "");
+  const [searchText, setSearchText] = useState<string>(searchParams.get('q') || "");
+  const [searchRadius, setSearchRadius] = useState<number>(Number(searchParams.get('radius')) || 50);
+  const [selectedBrands, setSelectedBrands] = useState<InstallerBrand[]>(() => (searchParams.get('brands')?.split(',') as InstallerBrand[] || []).filter(Boolean));
+  const [selectedProductSkills, setSelectedProductSkills] = useState<InstallerSkill[]>(() => (searchParams.get('skills')?.split(',') as InstallerSkill[] || []).filter(Boolean));
+  const [selectedCertifications, setSelectedCertifications] = useState<InstallerCertification[]>(() => (searchParams.get('certs')?.split(',') as InstallerCertification[] || []).filter(Boolean));
+
   const [searchedZipCode, setSearchedZipCode] = useState<string>("");
-  const [selectedBrands, setSelectedBrands] = useState<InstallerBrand[]>([]);
-  const [selectedProductSkills, setSelectedProductSkills] = useState<InstallerSkill[]>([]);
-  const [selectedCertifications, setSelectedCertifications] = useState<InstallerCertification[]>([]);
   const [userSearchLocation, setUserSearchLocation] = useState<{ lat: number | null; lng: number | null } | null>(null);
   const [loadingLocation, setLoadingLocation] = useState<boolean>(false);
   const [installers, setInstallers] = useState<Installer[]>([]);
   const [loadingInstallers, setLoadingInstallers] = useState<boolean>(false);
-  const [searchRadius, setSearchRadius] = useState<number>(50);
-  const { isCanada, distanceUnit, toggleCountry } = useCountrySettings(); // Destructure toggleCountry
-  const navigate = useNavigate(); // Initialize useNavigate
-  const { user, loading: sessionLoading } = useSession(); // Get user and session loading state
+  const { isCanada, distanceUnit, toggleCountry } = useCountrySettings();
+  const navigate = useNavigate();
+  const { user, loading: sessionLoading } = useSession();
+
+  const handleSearch = () => {
+    setSearchText(inputValue);
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchText) params.set('q', searchText);
+    if (searchRadius !== 50) params.set('radius', String(searchRadius));
+    if (selectedBrands.length > 0) params.set('brands', selectedBrands.join(','));
+    if (selectedProductSkills.length > 0) params.set('skills', selectedProductSkills.join(','));
+    if (selectedCertifications.length > 0) params.set('certs', selectedCertifications.join(','));
+    setSearchParams(params, { replace: true });
+  }, [searchText, searchRadius, selectedBrands, selectedProductSkills, selectedCertifications, setSearchParams]);
 
   const toBoolean = (value: any): boolean => {
     if (typeof value === 'string') return value.toLowerCase() === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
@@ -189,7 +208,7 @@ const PublicLocator: React.FC = () => {
                   <CardTitle className="text-2xl font-semibold">Find Installers</CardTitle>
                 </CardHeader>
                 <CardContent className="flex-grow overflow-y-auto space-y-6 pt-6">
-                  <InstallerSearch onSearch={setSearchText} />
+                  <InstallerSearch value={inputValue} onChange={setInputValue} onSearch={handleSearch} />
                   <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
                   <Separator />
                   <BrandSkillFilter

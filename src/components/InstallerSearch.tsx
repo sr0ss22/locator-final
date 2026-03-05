@@ -1,19 +1,20 @@
-import React, { useState } from "react";
+import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 
 interface InstallerSearchProps {
-  onSearch: (searchText: string) => void;
+  onSearch: () => void;
+  value: string;
+  onChange: (value: string) => void;
 }
 
-const InstallerSearch: React.FC<InstallerSearchProps> = ({ onSearch }) => {
-  const [searchText, setSearchText] = useState("");
+const InstallerSearch: React.FC<InstallerSearchProps> = ({ onSearch, value, onChange }) => {
   const { postalCodeLabel } = useCountrySettings();
 
   const handleSearch = () => {
-    onSearch(searchText);
+    onSearch();
   };
 
   return (
@@ -21,8 +22,8 @@ const InstallerSearch: React.FC<InstallerSearchProps> = ({ onSearch }) => {
       <Input
         type="text"
         placeholder={`Enter City, State, or ${postalCodeLabel}`}
-        value={searchText}
-        onChange={(e) => setSearchText(e.target.value)}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         onKeyPress={(e) => {
           if (e.key === "Enter") {
             handleSearch();
