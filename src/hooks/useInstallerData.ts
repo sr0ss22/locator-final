@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { run as getCoordinates } from "@/functions/getCoordinates";
+import { toast } from "sonner";
+import { calculateDistance } from "@/utils/distance";
+import { Installer } from "@/types/installer";
 
 // --- Queries ---
 
@@ -133,4 +137,87 @@ export const useSaveInstaller = () => {
       queryClient.invalidateQueries({ queryKey: ['installerZipCodes', variables.installerId] });
     },
   });
+};
+
+// --- NEW QUERIES FOR LOCATOR PAGES ---
+
+export const useAllInstallers = () => {
+  return useQuery({
+    queryKey: ['allInstallers'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('installers').select('*');
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+  });
+};
+
+export const usePublicInstallers = (location: { lat: number | null, lng: number | null }, zip: string, radius: number) => {
+  return useQuery({
+    queryKey: ['publicInstallers', location.lat, location.lng, zip, radius],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('find_installers_for_public_locator', {
+        search_lat: location.lat!,
+        search_lng: location.lng!,
+        search_zip: zip,
+        radius_miles: radius
+      });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!location.lat && !!location.lng,
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+  });
+};
+
+export const useDrivingDistances = (userLocation: { lat: number | null, lng: number | null }, installers: any[]) => {
+    return useQuery({
+        queryKey: ['drivingDistances', userLocation.lat, userLocation.lng, installers.map(i => i.id).join(',')],
+        queryFn: async () => {
+            try {
+                const validInstallers = installers.filter(i => i.latitude != null && i.longitude != null && i.id != null);
+                if (validInstallers.length === 0) {
+                    return new Map<string, number>();
+                }
+                const locations = [[userLocation.lng!, userLocation.lat!], ...validInstallers.map(i => [i.longitude!, i.latitude!])];
+                
+                const { data, error } = await supabase.functions.invoke('openrouteservice-proxy', {
+                    body: { locations },
+                });
+
+                if (error) throw error;
+                if (data.error) throw new Error(data.error);
+
+                const distances = data.distances ? data.distances[0] : [];
+                const newMap = new Map<string, number>();
+                validInstallers.forEach((installer, index) => {
+                    const distanceInMeters = distances[index];
+                    if (distanceInMeters != null && distanceInMeters !== Infinity) {
+                        newMap.set(installer.id, distanceInMeters / 1609.34); // Convert meters to miles
+                    }
+                });
+                toast.info("Driving distances calculated.");
+                return newMap;
+            } catch (error) {
+                console.error("Error fetching driving distances, falling back to straight-line distance:", error);
+                toast.warning("Could not calculate driving distances. Showing straight-line distances instead.");
+                const newMap = new Map<string, number>();
+                installers.forEach(installer => {
+                    if (installer.latitude && installer.longitude && userLocation.lat && userLocation.lng) {
+                        const distance = calculateDistance(
+                            userLocation.lat,
+                            userLocation.lng,
+                            installer.latitude,
+                            installer.longitude
+                        );
+                        newMap.set(installer.id, distance);
+                    }
+                });
+                return newMap;
+            }
+        },
+        enabled: !!userLocation.lat && !!userLocation.lng && installers.length > 0,
+        staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    });
 };

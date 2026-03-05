@@ -16,9 +16,10 @@ import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } fro
 import { useNavigate } from "react-router-dom";
 import { useSession } from "@/components/SessionContextProvider";
 import { Button } from "@/components/ui/button";
-import { calculateDistance } from "@/utils/distance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import LoadingSayings from "@/components/LoadingSayings";
+import { useQuery } from "@tanstack/react-query";
+import { usePublicInstallers } from "@/hooks/useInstallerData";
 
 const PublicLocator: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -30,11 +31,6 @@ const PublicLocator: React.FC = () => {
   const [selectedProductSkills, setSelectedProductSkills] = useState<InstallerSkill[]>(() => (searchParams.get('skills')?.split(',') as InstallerSkill[] || []).filter(Boolean));
   const [selectedCertifications, setSelectedCertifications] = useState<InstallerCertification[]>(() => (searchParams.get('certs')?.split(',') as InstallerCertification[] || []).filter(Boolean));
 
-  const [searchedZipCode, setSearchedZipCode] = useState<string>("");
-  const [userSearchLocation, setUserSearchLocation] = useState<{ lat: number | null; lng: number | null } | null>(null);
-  const [loadingLocation, setLoadingLocation] = useState<boolean>(false);
-  const [installers, setInstallers] = useState<Installer[]>([]);
-  const [loadingInstallers, setLoadingInstallers] = useState<boolean>(false);
   const { isCanada, distanceUnit, toggleCountry } = useCountrySettings();
   const navigate = useNavigate();
   const { user, loading: sessionLoading } = useSession();
@@ -52,6 +48,51 @@ const PublicLocator: React.FC = () => {
     if (selectedCertifications.length > 0) params.set('certs', selectedCertifications.join(','));
     setSearchParams(params, { replace: true });
   }, [searchText, searchRadius, selectedBrands, selectedProductSkills, selectedCertifications, setSearchParams]);
+
+  const { data: locationData, isLoading: loadingLocation } = useQuery({
+    queryKey: ['location', searchText],
+    queryFn: async () => {
+      if (searchText) {
+        const coords = await getCoordinates({ searchText });
+        if (coords.lat === null || coords.lng === null) {
+          toast.error("Could not find a location for your search. Please try again.");
+        }
+        return { ...coords, zipCode: coords.zipCode || "" };
+      } else {
+        let coords: { lat: number | null, lng: number | null } = { lat: null, lng: null };
+        if (navigator.geolocation) {
+          try {
+            const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 }));
+            coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+            toast.info("Your location detected via browser.");
+          } catch (error: any) {
+            toast.info("Could not get location from browser. Trying IP-based location...");
+          }
+        }
+        if (coords.lat === null || coords.lng === null) {
+          coords = await getIpLocation();
+          if (coords.lat !== null && coords.lng !== null) toast.info("Your location detected via IP address.");
+          else toast.info("Could not determine your location. Please enter a location.");
+        }
+        return { ...coords, zipCode: "" };
+      }
+    },
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
+  const userSearchLocation = useMemo(() => ({
+    lat: locationData?.lat || null,
+    lng: locationData?.lng || null,
+  }), [locationData]);
+
+  const searchedZipCode = useMemo(() => locationData?.zipCode || "", [locationData]);
+
+  const { data: rawInstallers, isLoading: loadingInstallers } = usePublicInstallers(
+    userSearchLocation,
+    searchedZipCode,
+    searchRadius
+  );
 
   const toBoolean = (value: any): boolean => {
     if (typeof value === 'string') return value.toLowerCase() === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
@@ -71,109 +112,52 @@ const PublicLocator: React.FC = () => {
     return validCertificationsMap[normalizedCert] || null;
   };
 
-  useEffect(() => {
-    const determineAndSetLocation = async () => {
-      setLoadingLocation(true);
-      let coords = { lat: null, lng: null, zipCode: null };
-      if (searchText) {
-        coords = await getCoordinates({ searchText });
-        if (coords.lat === null || coords.lng === null) {
-          toast.error("Could not find a location for your search. Please try again.");
-        }
-        setSearchedZipCode(coords.zipCode || "");
-      } else {
-        if (navigator.geolocation) {
-          try {
-            const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 }));
-            coords = { lat: position.coords.latitude, lng: position.coords.longitude, zipCode: null };
-            toast.info("Your location detected via browser.");
-          } catch (error: any) {
-            toast.info("Could not get location from browser. Trying IP-based location...");
-          }
-        }
-        if (coords.lat === null || coords.lng === null) {
-          coords = { ...(await getIpLocation()), zipCode: null };
-          if (coords.lat !== null && coords.lng !== null) toast.info("Your location detected via IP address.");
-          else toast.info("Could not determine your location. Please enter a location.");
-        }
-      }
-      setUserSearchLocation({ lat: coords.lat, lng: coords.lng });
-      setLoadingLocation(false);
-    };
-    determineAndSetLocation();
-  }, [searchText]);
+  const installers = useMemo(() => {
+    if (!rawInstallers) return [];
+    return (rawInstallers as any[]).map((rawInstaller: any) => {
+      const skills: InstallerSkill[] = [];
+      if (toBoolean(rawInstaller.blinds_and_shades)) skills.push("Blinds & Shades");
+      if (toBoolean(rawInstaller.power_view)) skills.push("Automation");
+      if (toBoolean(rawInstaller.shutters)) skills.push("Shutters");
+      if (toBoolean(rawInstaller.draperies)) skills.push("Drapery");
+      if (toBoolean(rawInstaller.service_call)) skills.push("Service Call");
+      if (toBoolean(rawInstaller.tall_window)) skills.push("Tall Window");
+      if (toBoolean(rawInstaller.fixture_displays)) skills.push("Fixture Displays");
+      if (toBoolean(rawInstaller.outdoor)) skills.push("Outdoor");
+      if (toBoolean(rawInstaller.high_voltage_hardwired)) skills.push("High Voltage Hardwired");
 
-  useEffect(() => {
-    const fetchInstallersForLocation = async () => {
-      if (!userSearchLocation?.lat || !userSearchLocation?.lng) {
-        setInstallers([]);
-        return;
-      }
+      const brands: InstallerBrand[] = [];
+      if (toBoolean(rawInstaller.hunter_douglas)) brands.push("Hunter Douglas");
+      if (toBoolean(rawInstaller.alta)) brands.push("Alta");
+      if (toBoolean(rawInstaller.carole)) brands.push("Carole");
+      if (toBoolean(rawInstaller.architectural)) brands.push("Architectural");
+      if (toBoolean(rawInstaller.levolor)) brands.push("Levolor");
+      if (toBoolean(rawInstaller.three_day_blinds)) brands.push("Three Day Blinds");
 
-      setLoadingInstallers(true);
-      
-      const { data, error } = await supabase.rpc('find_installers_for_public_locator', {
-        search_lat: userSearchLocation.lat,
-        search_lng: userSearchLocation.lng,
-        search_zip: searchedZipCode,
-        radius_miles: searchRadius
-      });
+      const certifications: InstallerCertification[] = [];
+      const pvCert = standardizeCertificationName(rawInstaller.powerview_certification);
+      if (pvCert) certifications.push(pvCert);
+      const shutterCert = standardizeCertificationName(rawInstaller.shutter_certification_level);
+      if (shutterCert) certifications.push(shutterCert);
+      const draperyCert = standardizeCertificationName(rawInstaller.draperies_certification_level);
+      if (draperyCert) certifications.push(draperyCert);
+      const pipCert = standardizeCertificationName(rawInstaller.pip_certification_level);
+      if (pipCert) certifications.push(pipCert);
 
-      if (error) {
-        console.error("Error fetching installers via RPC:", error);
-        toast.error("Failed to find installers. Please try again.");
-        setInstallers([]);
-      } else {
-        const mappedInstallers: Installer[] = (data || []).map((rawInstaller: any) => {
-          const skills: InstallerSkill[] = [];
-          if (toBoolean(rawInstaller.blinds_and_shades)) skills.push("Blinds & Shades");
-          if (toBoolean(rawInstaller.power_view)) skills.push("Automation");
-          if (toBoolean(rawInstaller.shutters)) skills.push("Shutters");
-          if (toBoolean(rawInstaller.draperies)) skills.push("Drapery");
-          if (toBoolean(rawInstaller.service_call)) skills.push("Service Call");
-          if (toBoolean(rawInstaller.tall_window)) skills.push("Tall Window");
-          if (toBoolean(rawInstaller.fixture_displays)) skills.push("Fixture Displays");
-          if (toBoolean(rawInstaller.outdoor)) skills.push("Outdoor");
-          if (toBoolean(rawInstaller.high_voltage_hardwired)) skills.push("High Voltage Hardwired");
-
-          const brands: InstallerBrand[] = [];
-          if (toBoolean(rawInstaller.hunter_douglas)) brands.push("Hunter Douglas");
-          if (toBoolean(rawInstaller.alta)) brands.push("Alta");
-          if (toBoolean(rawInstaller.carole)) brands.push("Carole");
-          if (toBoolean(rawInstaller.architectural)) brands.push("Architectural");
-          if (toBoolean(rawInstaller.levolor)) brands.push("Levolor");
-          if (toBoolean(rawInstaller.three_day_blinds)) brands.push("Three Day Blinds");
-
-          const certifications: InstallerCertification[] = [];
-          const pvCert = standardizeCertificationName(rawInstaller.powerview_certification);
-          if (pvCert) certifications.push(pvCert);
-          const shutterCert = standardizeCertificationName(rawInstaller.shutter_certification_level);
-          if (shutterCert) certifications.push(shutterCert);
-          const draperyCert = standardizeCertificationName(rawInstaller.draperies_certification_level);
-          if (draperyCert) certifications.push(draperyCert);
-          const pipCert = standardizeCertificationName(rawInstaller.pip_certification_level);
-          if (pipCert) certifications.push(pipCert);
-
-          return {
-            id: rawInstaller.id, name: rawInstaller.name,
-            address: `${rawInstaller.address1 || ''} ${rawInstaller.add2 || ''}, ${rawInstaller.city || ''}, ${rawInstaller.state || ''} ${rawInstaller.postalcode || ''}`.trim(),
-            phone: rawInstaller.primary_phone, skills, brands, certifications,
-            latitude: rawInstaller.latitude, longitude: rawInstaller.longitude,
-            zipCode: rawInstaller.postalcode,
-            installerVendorId: rawInstaller.installer_vendor_id?.toString(),
-            acceptsShipments: toBoolean(rawInstaller.shipment),
-            is_local_service_area: rawInstaller.is_local_service_area,
-            distance: rawInstaller.distance_miles,
-            rawSupabaseData: rawInstaller,
-          };
-        });
-        setInstallers(mappedInstallers);
-      }
-      setLoadingInstallers(false);
-    };
-
-    fetchInstallersForLocation();
-  }, [userSearchLocation, searchedZipCode, searchRadius]);
+      return {
+        id: rawInstaller.id, name: rawInstaller.name,
+        address: `${rawInstaller.address1 || ''} ${rawInstaller.add2 || ''}, ${rawInstaller.city || ''}, ${rawInstaller.state || ''} ${rawInstaller.postalcode || ''}`.trim(),
+        phone: rawInstaller.primary_phone, skills, brands, certifications,
+        latitude: rawInstaller.latitude, longitude: rawInstaller.longitude,
+        zipCode: rawInstaller.postalcode,
+        installerVendorId: rawInstaller.installer_vendor_id?.toString(),
+        acceptsShipments: toBoolean(rawInstaller.shipment),
+        is_local_service_area: rawInstaller.is_local_service_area,
+        distance: rawInstaller.distance_miles,
+        rawSupabaseData: rawInstaller,
+      };
+    });
+  }, [rawInstallers]);
 
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
