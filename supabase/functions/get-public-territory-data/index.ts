@@ -50,10 +50,18 @@ serve(async (req) => {
       throw zipError
     }
     
+    // Explicitly map the status to a mileage tier so external apps don't have to guess
+    const enrichedZipCodes = zipCodes.map((zip) => ({
+      zip_code: zip.zip_code,
+      status: zip.status,
+      state_province: zip.state_province,
+      mileage_tier: zip.status === 'Approved' ? 'Free_Mileage' : 'Paid_Mileage'
+    }))
+
     // Don't send the token back to the client
     delete installer.territory_access_token;
 
-    return new Response(JSON.stringify({ installer, zipCodes }), {
+    return new Response(JSON.stringify({ installer, zipCodes: enrichedZipCodes }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
