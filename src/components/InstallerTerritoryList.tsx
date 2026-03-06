@@ -12,6 +12,7 @@ interface InstallerTerritoryListProps {
   // This now represents the selected assignments for the current installer
   assignedZipCodes: Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>;
   onZipCodeClick: (zipCode: string, stateProvince: string) => void; // To unselect from the list, now requires stateProvince
+  onAddZipCode?: (zipCode: string, status: TerritoryStatus) => void; // New prop for adding a zip code
   mapClickStates: Map<string, 'green' | 'orange'>; // New prop for map highlight states
   installerLocation: { lat: number | null; lng: number | null } | null; // New: Installer's location for distance calculation
   listDisplayRadius: string | 'all'; // New: Radius to filter list items, now a string for ranges
@@ -20,6 +21,7 @@ interface InstallerTerritoryListProps {
 const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
   assignedZipCodes,
   onZipCodeClick,
+  onAddZipCode,
   mapClickStates,
   installerLocation,
   listDisplayRadius,
@@ -79,6 +81,27 @@ const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
   const approvedZips = filteredAndSortedAssignedZips.filter(item => item.assignedStatus === 'Approved');
   const needsApprovalZips = filteredAndSortedAssignedZips.filter(item => item.assignedStatus === 'Needs Approval');
 
+  const isValidZipOrPostal = useMemo(() => {
+    const usRegex = /^\d{5}$/;
+    const caRegex = /^[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i;
+    const cleanTerm = searchTerm.replace(/\s/g, '');
+    return usRegex.test(cleanTerm) || caRegex.test(cleanTerm);
+  }, [searchTerm]);
+
+  const isAlreadyAssigned = useMemo(() => {
+    const term = searchTerm.replace(/\s/g, '').toUpperCase();
+    return assignedZipCodes.some(z => z.zipCode.replace(/\s/g, '').toUpperCase() === term);
+  }, [searchTerm, assignedZipCodes]);
+
+  const handleAdd = (status: TerritoryStatus) => {
+    if (onAddZipCode && searchTerm) {
+      let formattedTerm = searchTerm.trim().toUpperCase();
+      // For Canada, if it's 6 characters, ensure standard format (could add space if desired, but 6 chars is fine)
+      onAddZipCode(formattedTerm, status);
+      setSearchTerm("");
+    }
+  };
+
   return (
     <div className="mt-6">
       <div className="relative mb-4">
@@ -91,6 +114,32 @@ const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
           className="pl-9 pr-3 py-2 w-full"
         />
       </div>
+
+      {searchTerm && isValidZipOrPostal && !isAlreadyAssigned && onAddZipCode && (
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2">
+          <div>
+            <p className="text-sm font-medium text-blue-900">
+              <span className="font-bold">{searchTerm.toUpperCase()}</span> is not currently assigned.
+            </p>
+            <p className="text-xs text-blue-700">Would you like to add it to this installer's territory?</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleAdd('Approved')}
+              className="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded hover:bg-green-700 transition-colors flex items-center gap-1"
+            >
+              Add as Free
+            </button>
+            <button
+              onClick={() => handleAdd('Needs Approval')}
+              className="px-3 py-1.5 bg-orange-600 text-white text-xs font-semibold rounded hover:bg-orange-700 transition-colors flex items-center gap-1"
+            >
+              Add as Paid
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Collapsible open={isApprovedOpen} onOpenChange={setIsApprovedOpen}>
           <Card className="border-green-500 shadow-md">

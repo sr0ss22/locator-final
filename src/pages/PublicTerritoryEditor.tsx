@@ -132,6 +132,28 @@ const PublicTerritoryEditor: React.FC = () => {
     setMapRefreshKey(p => p + 1);
   }, [zipCodeCentroids]);
 
+  const handleAddZipCode = useCallback((zipCode: string, status: TerritoryStatus) => {
+    const isCanada = installerCountry === 'Canada';
+    const lookupCode = isCanada ? zipCode.substring(0, 3).toUpperCase() : zipCode;
+    const centroid = zipCodeCentroids.get(lookupCode);
+    
+    setSelectedMapZipCodes(prev => {
+      if (prev.some(z => z.zipCode === zipCode)) {
+        toast.info(`${zipCode} is already assigned.`);
+        return prev;
+      }
+      
+      return [...prev, {
+        zipCode: zipCode.toUpperCase(),
+        assignedStatus: status,
+        stateProvince: centroid?.state || 'Unknown',
+        centroid_latitude: centroid?.lat || null,
+        centroid_longitude: centroid?.lng || null,
+      }];
+    });
+    setMapRefreshKey(p => p + 1);
+  }, [installerCountry, zipCodeCentroids]);
+
   const handleSubmit = async (territoriesOverride?: any[]) => {
     if (!installerId || !token) return;
     setIsSaving(true);
@@ -247,7 +269,14 @@ const PublicTerritoryEditor: React.FC = () => {
             <div className="h-[800px] w-full border rounded-lg overflow-hidden">
               <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} />
             </div>
-            <InstallerTerritoryList assignedZipCodes={selectedMapZipCodes} onZipCodeClick={handleMapZipCodeClick} mapClickStates={highlightedZipCodes} installerLocation={memoizedCenterLocation} listDisplayRadius="all" />
+            <InstallerTerritoryList
+              assignedZipCodes={selectedMapZipCodes}
+              onZipCodeClick={handleMapZipCodeClick}
+              onAddZipCode={handleAddZipCode}
+              mapClickStates={highlightedZipCodes}
+              installerLocation={memoizedCenterLocation}
+              listDisplayRadius="all"
+            />
           </div>
         </div>
       </div>

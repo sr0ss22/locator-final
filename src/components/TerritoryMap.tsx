@@ -7,9 +7,11 @@ import { calculateDistance } from '@/utils/distance';
 import { TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
 import * as turf from '@turf/turf';
+import proj4 from 'proj4';
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
 import usGeoJsonData from '@/data/us-zip-codes.json' with { type: 'json' };
+import canadaGeoJsonData from '@/data/canada-postal-codes.json' with { type: 'json' };
 
 // Fix for default Leaflet icons
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -21,9 +23,13 @@ L.Icon.Default.mergeOptions({
   iconRetinaUrl,
   iconUrl,
   shadowUrl,
-});
-
-interface TerritoryMapProps {
+  });
+  
+  proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
+  proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
+  proj4.defs("EPSG:3347", "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=63.390675 +lon_0=-91.86666666666666 +x_0=6200000 +y_0=3000000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+  
+  interface TerritoryMapProps {
   onZipCodeClick: (zipCode: string, stateProvince: string) => void;
   centerLocation?: { lat: number | null; lng: number | null };
   isOpen?: boolean;
@@ -262,6 +268,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   refreshKey = 0,
 }) => {
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
+  const [allCanadaGeoJsonData, setAllCanadaGeoJsonData] = useState<any>(null);
   const [dataError, setDataError] = useState<string | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   
@@ -348,6 +355,32 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           setAllCanadaPoints(fetchedPoints);
           setLoadingStage('rendering');
 
+          // Also process Canada GeoJSON if not done yet
+          if (!allCanadaGeoJsonData && canadaGeoJsonData) {
+            const processed = (canadaGeoJsonData as any).features.map((feature: any) => {
+              const newFeature = JSON.parse(JSON.stringify(feature));
+              try {
+                const transformedGeometry = turf.clone(feature.geometry);
+                turf.coordEach(transformedGeometry, (currentCoord) => {
+                  const [lon, lat] = proj4('EPSG:3347', 'EPSG:4326').forward(currentCoord);
+                  currentCoord[0] = lon; currentCoord[1] = lat;
+                });
+                const centroid = turf.centroid(transformedGeometry);
+                if (centroid?.geometry?.coordinates) {
+                  newFeature.properties.calculated_centroid = {
+                    lat: centroid.geometry.coordinates[1],
+                    lng: centroid.geometry.coordinates[0]
+                  };
+                }
+                newFeature.geometry = transformedGeometry; // Use transformed geometry for rendering
+              } catch (e) {
+                console.error("Error transforming Canada GeoJSON feature", e);
+              }
+              return newFeature;
+            });
+            setAllCanadaGeoJsonData({ type: 'FeatureCollection', features: processed });
+          }
+
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
           toast.error(`Failed to load Canadian postal codes: ${err.message}`);
@@ -381,7 +414,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     };
     loadAndRenderData();
-  }, [isCanada, centerLocation, currentDisplayRadius]);
+  }, [isCanada, centerLocation, currentDisplayRadius, allCanadaGeoJsonData, allGeoJsonData]);
 
   useEffect(() => {
     if (loadingStage !== 'rendering' || !isCanada || allCanadaPoints.length === 0) return;
@@ -408,25 +441,57 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }, [loadingStage, allCanadaPoints, isCanada]);
 
   const filteredGeoJsonData = useMemo(() => {
-    if (isCanada || !allGeoJsonData || !centerLocation?.lat || !centerLocation.lng || currentDisplayRadius === 'all') {
-      return allGeoJsonData;
+    const geoJsonToUse = isCanada ? allCanadaGeoJsonData : allGeoJsonData;
+    
+    if (!geoJsonToUse || !centerLocation?.lat || !centerLocation.lng || currentDisplayRadius === 'all') {
+      return geoJsonToUse;
     }
+    
     const radius = typeof currentDisplayRadius === 'number' ? currentDisplayRadius : DEFAULT_DISPLAY_RADIUS_MILES;
-    const filteredFeatures = allGeoJsonData.features.filter((feature: any) => {
-      const centroid = getCentroid(feature);
+    const filteredFeatures = geoJsonToUse.features.filter((feature: any) => {
+      let centroid = getCentroid(feature);
+      
       if (centroid.lat && centroid.lng) {
         const distance = calculateDistance(centerLocation.lat!, centerLocation.lng!, centroid.lat, centroid.lng);
-        return distance <= radius;
+        // Use 150 miles as a generous buffer for GeoJSON filtering if it's the management page
+        const bufferRadius = isTerritoryManagementPage ? 250 : radius;
+        return distance <= bufferRadius;
       }
       return false;
     });
-    return { ...allGeoJsonData, features: filteredFeatures };
-  }, [allGeoJsonData, centerLocation, currentDisplayRadius, isCanada]);
+    return { ...geoJsonToUse, features: filteredFeatures };
+  }, [allGeoJsonData, allCanadaGeoJsonData, isCanada, centerLocation, currentDisplayRadius, isTerritoryManagementPage]);
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
-    const isHighlighted = highlightedZipCodes.get(zipCode);
-    const isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
-    const status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
+    let isHighlighted: 'green' | 'orange' | undefined = highlightedZipCodes.get(zipCode);
+    let isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
+    let status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
+
+    // For Canada, zipCode is the FSA (3 chars). We need to check if any 6-char code matches this FSA.
+    if (isCanada) {
+      // Find if any highlighted zip code starts with this FSA
+      for (const [key, value] of highlightedZipCodes.entries()) {
+        if (key.startsWith(zipCode)) {
+          isHighlighted = value;
+          break;
+        }
+      }
+      
+      const selectedMatch = selectedZipCodes.find(z => z.zipCode.startsWith(zipCode));
+      if (selectedMatch) {
+        isSelected = true;
+        status = selectedMatch.assignedStatus;
+      }
+      
+      if (!status) {
+        for (const [key, value] of territoryStatuses.entries()) {
+          if (key.startsWith(zipCode)) {
+            status = value as TerritoryStatus;
+            break;
+          }
+        }
+      }
+    }
 
     let fillColor = '#F0F0F0';
     let color = '#94a3b8';
@@ -529,7 +594,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           );
         })
       )}
-      {!isCanada && filteredGeoJsonData && (
+      {filteredGeoJsonData && (
         <GeoJSON key={geoJsonStyleKey} ref={geoJsonLayerRef} data={filteredGeoJsonData as any} style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))} onEachFeature={onEachFeature} pane="polygons" />
       )}
       {centerLocation?.lat != null && centerLocation?.lng != null && (
