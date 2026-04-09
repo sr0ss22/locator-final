@@ -27,6 +27,8 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
 
   if (installers.length === 0) return null;
 
+  const displayRadius = distanceUnit === 'km' ? Math.round(searchRadius * 1.60934) : searchRadius;
+
   const processSummaryData = (installerList: Installer[]) => {
     const brandData = [
       { name: 'Hunter Douglas', value: installerList.filter(i => i.brands.includes("Hunter Douglas")).length },
@@ -64,10 +66,11 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
           <CardTitle className="text-xl font-semibold">Installer Summary</CardTitle>
           {!showAdditionalFilters && (
             <p className="text-sm text-gray-600 mt-1">
-              Showing {installers.length} installers within {searchRadius} {distanceUnit} of {searchedZipCode || "your search location"}.
+              Showing {installers.length} installers within {displayRadius} {distanceUnit} of {searchedZipCode || "your search location"}.
             </p>
           )}
         </div>
+
         {!showAdditionalFilters && (
           <div className="text-right">
             <p className="text-sm font-medium text-gray-600">Total Installers</p>

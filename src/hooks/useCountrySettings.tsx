@@ -4,7 +4,7 @@ interface CountrySettings {
   isCanada: boolean;
   distanceUnit: 'miles' | 'km';
   postalCodeLabel: 'Zip Code' | 'Postal Code';
-  // toggleCountry is removed as it's not needed for the public view
+  toggleCountry: () => void;
 }
 
 const CountrySettingsContext = createContext<CountrySettings | undefined>(undefined);
@@ -24,14 +24,18 @@ export const CountrySettingsProvider: React.FC<{ children: ReactNode }> = ({ chi
     }
   }, []); // Run once on mount
 
-  const distanceUnit = isCanada ? 'km' : 'miles';
-  const postalCodeLabel = isCanada ? 'Postal Code' : 'Zip Code';
+  const toggleCountry = () => {
+    setIsCanada((prev) => !prev);
+  };
 
-  const value = {
+  const distanceUnit: 'miles' | 'km' = isCanada ? 'km' : 'miles';
+  const postalCodeLabel: 'Zip Code' | 'Postal Code' = isCanada ? 'Postal Code' : 'Zip Code';
+
+  const value: CountrySettings = {
     isCanada,
     distanceUnit,
     postalCodeLabel,
-    // toggleCountry is no longer part of the context value
+    toggleCountry,
   };
 
   return (

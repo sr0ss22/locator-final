@@ -27,7 +27,7 @@ interface InstallerMapProps {
 const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, installers, selectedInstallerId, isPublicView = false }) => {
   const mapRef = useRef<L.Map | null>(null);
   const [mounted, setMounted] = useState(false);
-  const { distanceUnit } = useCountrySettings();
+  const { distanceUnit, isCanada } = useCountrySettings();
 
   useEffect(() => {
     setMounted(true);
@@ -78,9 +78,10 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
       } else if (userLocation?.lat && userLocation?.lng) {
         map.setView([userLocation.lat, userLocation.lng], 10); // Zoom to user if no installers
       } else {
-        map.setView([39.8283, -98.5795], 4); // Default to center of US
+        const center: [number, number] = isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795];
+        map.setView(center, 4);
       }
-    }, [map, userLocation, installers]);
+    }, [map, userLocation, installers, isCanada]);
 
     // Effect to pan to selected installer
     useEffect(() => {
@@ -103,9 +104,10 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
 
   return (
     <MapContainer
-      center={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : [39.8283, -98.5795]}
+      center={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : (isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795])}
       zoom={userLocation?.lat && userLocation?.lng ? 10 : 4}
       scrollWheelZoom={true}
+
       className="h-full w-full"
       ref={mapRef}
     >

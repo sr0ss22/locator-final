@@ -13,13 +13,16 @@ interface InstallerListProps {
 }
 
 const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCode, selectedInstallerId, onInstallerCardClick, isPublicView = false, searchRadius, distanceUnit }) => {
+  const displayRadius = distanceUnit === 'km' ? Math.round(searchRadius * 1.60934) : searchRadius;
+
   if (installers.length === 0 && searchedZipCode) {
     return (
       <p className="text-center text-gray-500 mt-8">
-        No installers found within {searchRadius} {distanceUnit}. Try expanding the search radius or changing filters.
+        No installers found within {displayRadius} {distanceUnit}. Try expanding the search radius or changing filters.
       </p>
     );
   } else if (installers.length === 0) {
+
     return (
       <p className="text-center text-gray-500 mt-8">
         Enter a zip code and select filters to find installers.
