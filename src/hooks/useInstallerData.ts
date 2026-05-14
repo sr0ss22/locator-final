@@ -158,6 +158,38 @@ export const useAllInstallers = () => {
   });
 };
 
+// Returns the set of installer IDs whose territory has the given zip approved.
+// Used by the admin Locator to surface the "Mileage Covered" badge on cards
+// when the admin searches by zip (mirrors the public locator behavior).
+export const useInstallersInLocalArea = (zip: string | null | undefined) => {
+  return useQuery({
+    queryKey: ['installersInLocalArea', zip],
+    queryFn: async () => {
+      if (!zip) return new Set<string>();
+      let allRows: { installer_id: string }[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('installer_zip_codes')
+          .select('installer_id')
+          .eq('zip_code', zip)
+          .eq('status', 'Approved')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allRows = allRows.concat(data);
+        if (data.length < pageSize) break;
+        page++;
+      }
+      return new Set(allRows.map((r) => r.installer_id));
+    },
+    enabled: !!zip,
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+  });
+};
+
 export const usePublicInstallers = (location: { lat: number | null, lng: number | null }, zip: string, radius: number) => {
   return useQuery({
     queryKey: ['publicInstallers', location.lat, location.lng, zip, radius],

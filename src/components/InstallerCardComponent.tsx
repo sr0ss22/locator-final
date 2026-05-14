@@ -41,7 +41,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
     }
   };
 
-  const showMileageBadge = isPublicView && searchedZipCode && installer.is_local_service_area !== undefined;
+  const showMileageBadge = !!searchedZipCode && installer.is_local_service_area !== undefined;
   const hasBrands = installer.brands && installer.brands.length > 0;
   const hasSkills = installer.skills && installer.skills.length > 0;
 
