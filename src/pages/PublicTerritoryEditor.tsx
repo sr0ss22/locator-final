@@ -201,7 +201,7 @@ const PublicTerritoryEditor: React.FC = () => {
     try {
       let zips: any[] = [];
       if (installerCountry === 'Canada') {
-        const { data } = await supabase.functions.invoke('get-territories-in-radius', { body: { country: 'Canada', center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude }, radius: 35000 } });
+        const { data } = await supabase.functions.invoke('get-territories-in-radius', { body: { country: 'Canada', center: { lat: currentInstaller.latitude, lng: currentInstaller.longitude }, radius: 35000, installerId, token } });
         zips = (data.data || []).map((p: any) => ({ zipCode: p.POSTAL_CODE, stateProvince: p.PROVINCE_ABBR, centroid_latitude: p.LATITUDE, centroid_longitude: p.LONGITUDE }));
       } else {
         const center = turf.point([currentInstaller.longitude, currentInstaller.latitude]);
@@ -267,7 +267,7 @@ const PublicTerritoryEditor: React.FC = () => {
               )}
             </div>
             <div className="h-[800px] w-full border rounded-lg overflow-hidden">
-              <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} />
+              <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} publicAuth={installerId && token ? { installerId, token } : undefined} />
             </div>
             <InstallerTerritoryList
               assignedZipCodes={selectedMapZipCodes}

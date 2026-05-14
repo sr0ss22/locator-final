@@ -1,36 +1,31 @@
-export async function run({ searchText }: { searchText: string }) {
-  const apiKey = '99f974472cc74da88a91fd4041672f4d'; // Your OpenCage Geocoding API key
-  
-  let query = searchText;
-  // If the searchText is purely numeric (likely a zip code), append ", USA" for better accuracy
-  if (/^\d+$/.test(searchText)) {
-    query = `${searchText}, USA`;
-  }
+import { supabase } from "@/integrations/supabase/client";
 
-  // Added components=US to restrict results to the United States
-  const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(query)}&key=${apiKey}&countrycode=us,ca`;
-
+// Geocodes a search string (zip code or freeform address) by invoking the
+// `geocode-address` Supabase edge function. The OpenCage API key lives only
+// in Supabase secrets and is never sent to the browser.
+export async function run({ searchText }: { searchText: string }): Promise<{
+  lat: number | null;
+  lng: number | null;
+  zipCode: string | null;
+}> {
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    console.log("OpenCage API response for", searchText, ":", data); // Added log
+    const { data, error } = await supabase.functions.invoke('geocode-address', {
+      body: { searchText },
+    });
 
-    if (!data.results || data.results.length === 0) {
-      console.warn("No results found for the given search text:", searchText);
+    if (error) {
+      console.error("Error invoking geocode-address:", error);
       return { lat: null, lng: null, zipCode: null };
     }
 
-    const result = data.results[0];
-    const location = result.geometry;
-    const zipCode = result.components.postcode || null;
+    if (!data || data.lat === null || data.lat === undefined) {
+      return { lat: null, lng: null, zipCode: null };
+    }
 
     return {
-      lat: location.lat,
-      lng: location.lng,
-      zipCode: zipCode
+      lat: data.lat,
+      lng: data.lng,
+      zipCode: data.zipCode ?? null,
     };
   } catch (error) {
     console.error("Error fetching coordinates:", error);

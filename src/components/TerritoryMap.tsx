@@ -42,7 +42,11 @@ L.Icon.Default.mergeOptions({
   onBulkSelectionComplete?: (selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void;
   onBulkZipCodeUpdate?: (updates: Array<{ zipCode: string, stateProvince: string, newStatus: TerritoryStatus | null }>) => void;
   country?: 'USA' | 'Canada';
-  refreshKey?: number; 
+  refreshKey?: number;
+  // When the map is rendered inside the public sharable territory editor, the
+  // installer is not signed in. Pass the URL's installerId+token so child
+  // edge function calls can authenticate as the public installer.
+  publicAuth?: { installerId: string; token: string };
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
@@ -116,11 +120,13 @@ function MapInteractionHandler({
   geoJsonData,
   onBulkSelectionComplete,
   isCanada,
+  publicAuth,
 }: {
   isBulkSelecting: boolean;
   geoJsonData: any;
   onBulkSelectionComplete: ((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void) | undefined;
   isCanada: boolean;
+  publicAuth?: { installerId: string; token: string };
 }) {
   const map = useMap();
   const isDrawingRef = useRef(false);
@@ -173,6 +179,7 @@ function MapInteractionHandler({
                 center_lat: finalCenter.lat,
                 center_lng: finalCenter.lng,
                 radius_meters: finalRadiusMeters,
+                ...(publicAuth ?? {}),
               }
             });
     
@@ -266,6 +273,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onBulkZipCodeUpdate,
   country = 'USA',
   refreshKey = 0,
+  publicAuth,
 }) => {
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [allCanadaGeoJsonData, setAllCanadaGeoJsonData] = useState<any>(null);
@@ -616,7 +624,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         })
       )}
       <MapUpdater centerLocation={centerLocation} isOpen={isOpen} country={country} />
-      <MapInteractionHandler isBulkSelecting={isBulkSelecting} geoJsonData={allGeoJsonData} onBulkSelectionComplete={onBulkSelectionComplete} isCanada={isCanada} />
+      <MapInteractionHandler isBulkSelecting={isBulkSelecting} geoJsonData={allGeoJsonData} onBulkSelectionComplete={onBulkSelectionComplete} isCanada={isCanada} publicAuth={publicAuth} />
     </MapContainer>
   );
 };
