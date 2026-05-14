@@ -1,6 +1,6 @@
 import React, { memo } from "react";
 import { Card } from "@/components/ui/card";
-import { Phone, MapPin, BadgeCheck } from "lucide-react";
+import { Phone, MapPin, BadgeCheck, Truck } from "lucide-react";
 import { Installer } from "@/types/installer";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -65,7 +65,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
               </span>
             )}
           </div>
-          {cityStateZip && (
+          {cityStateZip && isPublicView && (
             <span className="inline-flex items-center text-gray-600 whitespace-nowrap">
               <MapPin className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" aria-hidden="true" />
               {cityStateZip}
@@ -98,29 +98,48 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
           </div>
         )}
 
-        {/* Admin-only details: full address, phone, vendor id, accepts shipments */}
+        {/* Admin-only details: address (Google Maps), phone (tel:), accepts-shipments truck, vendor id */}
         {!isPublicView && (
           <div className="space-y-1 text-gray-600">
-            {installer.address && (
-              <div className="flex items-start">
-                <MapPin className="h-4 w-4 mr-2 mt-0.5 text-gray-500 flex-shrink-0" />
-                <span className="break-words">{installer.address}</span>
-              </div>
-            )}
-            {installer.phone && (
-              <div className="flex items-center">
-                <Phone className="h-4 w-4 mr-2 text-gray-500 flex-shrink-0" />
-                <span>{installer.phone}</span>
+            {(installer.address || installer.phone || installer.acceptsShipments) && (
+              <div className="flex flex-wrap items-start gap-x-4 gap-y-1">
+                {installer.address && (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(installer.address)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-start min-w-0 hover:text-sky-600 hover:underline"
+                  >
+                    <MapPin className="h-4 w-4 mr-1 mt-0.5 text-gray-500 flex-shrink-0" />
+                    <span className="break-words">{installer.address}</span>
+                  </a>
+                )}
+                {installer.phone && (
+                  <a
+                    href={`tel:${installer.phone.replace(/[^0-9+]/g, "")}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center hover:text-sky-600 hover:underline whitespace-nowrap"
+                  >
+                    <Phone className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" />
+                    <span>{installer.phone}</span>
+                  </a>
+                )}
+                {installer.acceptsShipments && (
+                  <span
+                    className="inline-flex items-center whitespace-nowrap"
+                    title="Accepts Shipments"
+                    aria-label="Accepts Shipments"
+                  >
+                    <Truck className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" />
+                    <span>Accepts Shipments</span>
+                  </span>
+                )}
               </div>
             )}
             {installer.installerVendorId && (
               <div className="text-gray-700">
                 <span className="font-medium">Installer Vendor Id:</span> {installer.installerVendorId}
-              </div>
-            )}
-            {installer.acceptsShipments !== undefined && (
-              <div className="text-gray-700">
-                <span className="font-medium">Accepts Shipments:</span> {installer.acceptsShipments ? "Yes" : "No"}
               </div>
             )}
           </div>
