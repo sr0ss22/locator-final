@@ -111,7 +111,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
                     onClick={(e) => e.stopPropagation()}
                     className="inline-flex items-start min-w-0 hover:text-sky-600 hover:underline"
                   >
-                    <MapPin className="h-4 w-4 mr-1 mt-0.5 text-gray-500 flex-shrink-0" />
+                    <MapPin className="h-4 w-4 mr-1 mt-0.5 text-black flex-shrink-0" />
                     <span className="break-words">{installer.address}</span>
                   </a>
                 )}
@@ -121,7 +121,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
                     onClick={(e) => e.stopPropagation()}
                     className="inline-flex items-center hover:text-sky-600 hover:underline whitespace-nowrap"
                   >
-                    <Phone className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" />
+                    <Phone className="h-4 w-4 mr-1 text-black flex-shrink-0" />
                     <span>{installer.phone}</span>
                   </a>
                 )}
@@ -131,7 +131,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
                     title="Accepts Shipments"
                     aria-label="Accepts Shipments"
                   >
-                    <Truck className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" />
+                    <Truck className="h-4 w-4 mr-1 text-black flex-shrink-0" />
                     <span>Accepts Shipments</span>
                   </span>
                 )}

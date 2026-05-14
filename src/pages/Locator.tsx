@@ -273,9 +273,13 @@ const Locator: React.FC = () => {
             )}
           </div>
 
-          {/* 3. Map — mobile #3, desktop col 2-3 row 1 */}
-          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-1">
-            <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
+          {/* 3. Map — mobile #3, desktop col 2-3 row 1.
+              On lg screens the map stretches to match the height of the
+              "Find Installers" filter card (the tallest item in row 1).
+              On mobile it falls back to a fixed height since the layout
+              is stacked. */}
+          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-1 lg:h-full">
+            <div className="h-[500px] lg:h-full w-full rounded-lg overflow-hidden shadow-sm">
               <InstallerMapComponent userLocation={userLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
             </div>
           </div>
