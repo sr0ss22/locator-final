@@ -147,24 +147,25 @@ const TerritoryManagement: React.FC = () => {
   }, []);
 
   const fetchTerritoryStatuses = useCallback(async () => {
-    const { data, error } = await supabase.from('installer_zip_codes').select('zip_code, status');
+    // Uses the SECURITY DEFINER RPC which returns one deduplicated row per
+    // zip code (Approved > Needs Approval > else). Replaces the previous
+    // global SELECT that pulled hundreds of thousands of rows on every load.
+    const { data, error } = await supabase.rpc('get_global_territory_statuses');
     if (error) {
       console.error("Error fetching all territory statuses:", error);
       toast.error("Failed to load map territory statuses.");
       return new Map();
-    } else {
-      const statusMap = new Map<string, TerritoryStatus>();
-      for (const item of data) {
+    }
+    const statusMap = new Map<string, TerritoryStatus>();
+    if (data) {
+      for (const item of data as Array<{ zip_code: string; status: string }>) {
         if (item.zip_code) {
-          const existingStatus = statusMap.get(item.zip_code);
-          if (item.status === 'Approved' || !existingStatus) {
-            statusMap.set(item.zip_code, item.status as TerritoryStatus);
-          }
+          statusMap.set(item.zip_code, item.status as TerritoryStatus);
         }
       }
-      setTerritoryStatuses(statusMap);
-      return statusMap;
     }
+    setTerritoryStatuses(statusMap);
+    return statusMap;
   }, []);
 
   const fetchInstallerZipAssignments = useCallback(async () => {
