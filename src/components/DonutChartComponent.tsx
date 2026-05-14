@@ -1,5 +1,5 @@
 import React from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface ChartData {
@@ -24,30 +24,23 @@ const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, 
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
     return (
-      <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" className="font-bold text-lg">
+      <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" className="font-bold text-sm">
         {value}
       </text>
     );
   };
 
-  // Create a payload for the legend, filtering out items with a value of 0.
-  const legendPayload = data
-    .map((entry, index) => ({
-      value: entry.name,
-      type: 'square',
-      id: entry.name,
-      color: colors[index % colors.length],
-      payload: entry, // Keep original entry for filtering
-    }))
-    .filter(item => item.payload.value > 0);
+  const legendItems = data
+    .map((entry, index) => ({ name: entry.name, value: entry.value, color: colors[index % colors.length] }))
+    .filter((item) => item.value > 0);
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-center text-lg font-medium">{title}</CardTitle>
+      <CardHeader className="pt-3 pb-1 px-3">
+        <CardTitle className="text-center text-sm font-medium">{title}</CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="w-full h-64 relative">
+      <CardContent className="pt-0 pb-3 px-3">
+        <div className="w-full h-32 relative">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Tooltip
@@ -63,28 +56,33 @@ const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, 
                 cy="50%"
                 labelLine={false}
                 label={renderCustomizedLabel}
-                innerRadius={60}
-                outerRadius={90}
+                innerRadius={36}
+                outerRadius={58}
                 fill="#8884d8"
-                paddingAngle={5}
+                paddingAngle={4}
                 dataKey="value"
               >
                 {data.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
                 ))}
               </Pie>
-              {totalValue > 0 && (
-                <Legend
-                  payload={legendPayload} // Use the filtered payload
-                  iconSize={10}
-                  layout="horizontal"
-                  verticalAlign="bottom"
-                  align="center"
-                />
-              )}
             </PieChart>
           </ResponsiveContainer>
         </div>
+        {totalValue > 0 && legendItems.length > 0 && (
+          <ul className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px] leading-tight text-gray-700">
+            {legendItems.map((item) => (
+              <li key={item.name} className="inline-flex items-center gap-1">
+                <span
+                  className="inline-block h-2 w-2 rounded-sm flex-shrink-0"
+                  style={{ backgroundColor: item.color }}
+                  aria-hidden="true"
+                />
+                <span className="whitespace-nowrap">{item.name}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );

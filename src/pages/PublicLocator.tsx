@@ -17,6 +17,8 @@ import { useNavigate } from "react-router-dom";
 import { useSession } from "@/components/SessionContextProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import LoadingSayings from "@/components/LoadingSayings";
 import { useQuery } from "@tanstack/react-query";
 import { usePublicInstallers } from "@/hooks/useInstallerData";
@@ -30,6 +32,8 @@ const PublicLocator: React.FC = () => {
   const [selectedBrands, setSelectedBrands] = useState<InstallerBrand[]>(() => (searchParams.get('brands')?.split(',') as InstallerBrand[] || []).filter(Boolean));
   const [selectedProductSkills, setSelectedProductSkills] = useState<InstallerSkill[]>(() => (searchParams.get('skills')?.split(',') as InstallerSkill[] || []).filter(Boolean));
   const [selectedCertifications, setSelectedCertifications] = useState<InstallerCertification[]>(() => (searchParams.get('certs')?.split(',') as InstallerCertification[] || []).filter(Boolean));
+  const [filterAcceptsShipments, setFilterAcceptsShipments] = useState<boolean>(() => searchParams.get('shipments') === 'yes');
+  const [filterMileageCovered, setFilterMileageCovered] = useState<boolean>(() => searchParams.get('mileage') === 'yes');
 
   const { isCanada, distanceUnit, toggleCountry } = useCountrySettings();
   const navigate = useNavigate();
@@ -46,8 +50,10 @@ const PublicLocator: React.FC = () => {
     if (selectedBrands.length > 0) params.set('brands', selectedBrands.join(','));
     if (selectedProductSkills.length > 0) params.set('skills', selectedProductSkills.join(','));
     if (selectedCertifications.length > 0) params.set('certs', selectedCertifications.join(','));
+    if (filterAcceptsShipments) params.set('shipments', 'yes');
+    if (filterMileageCovered) params.set('mileage', 'yes');
     setSearchParams(params, { replace: true });
-  }, [searchText, searchRadius, selectedBrands, selectedProductSkills, selectedCertifications, setSearchParams]);
+  }, [searchText, searchRadius, selectedBrands, selectedProductSkills, selectedCertifications, filterAcceptsShipments, filterMileageCovered, setSearchParams]);
 
   const { data: locationData, isLoading: loadingLocation } = useQuery({
     queryKey: ['location', searchText],
@@ -164,8 +170,10 @@ const PublicLocator: React.FC = () => {
     if (selectedBrands.length > 0) currentInstallers = currentInstallers.filter(i => selectedBrands.every(b => (i.brands ?? []).includes(b)));
     if (selectedProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => selectedProductSkills.every(s => (i.skills ?? []).includes(s)));
     if (selectedCertifications.length > 0) currentInstallers = currentInstallers.filter(i => selectedCertifications.every(c => (i.certifications ?? []).includes(c)));
+    if (filterAcceptsShipments) currentInstallers = currentInstallers.filter(i => i.acceptsShipments === true);
+    if (filterMileageCovered) currentInstallers = currentInstallers.filter(i => i.is_local_service_area === true);
     return currentInstallers;
-  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications]);
+  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications, filterAcceptsShipments, filterMileageCovered]);
 
   const handleBrandChange = (brand: InstallerBrand, checked: boolean) => setSelectedBrands(p => checked ? [...p, brand] : p.filter(b => b !== brand));
   const handleProductSkillChange = (skill: InstallerSkill, checked: boolean) => setSelectedProductSkills(p => checked ? [...p, skill] : p.filter(s => s !== skill));
@@ -182,16 +190,22 @@ const PublicLocator: React.FC = () => {
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow">
         <div className="flex flex-col sm:flex-row items-center justify-center mb-8 text-center sm:text-left">
           <img src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg" alt="Hunter Douglas Logo" className="h-12 mb-4 sm:mb-0 sm:mr-4" />
-          <h1 className="text-3xl font-bold text-gray-700">Installer Locator</h1>
+          <h1
+            className="text-3xl font-bold text-[#5b676f]"
+            style={{ fontFamily: 'Lato, system-ui, sans-serif' }}
+          >
+            Installer Locator
+          </h1>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1 space-y-8">
-            <div className="h-[600px]">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-6 lg:auto-rows-min">
+          {/* 1. Filters card — mobile #1, desktop col 1 row 1 */}
+          <div className="lg:col-start-1 lg:col-span-1 lg:row-start-1">
+            <div className="lg:h-[600px]">
               <Card className="h-full flex flex-col">
-                <CardHeader>
-                  <CardTitle className="text-2xl font-semibold">Find Installers</CardTitle>
+                <CardHeader className="pb-2 pt-4">
+                  <CardTitle className="text-xl font-semibold">Find Installers</CardTitle>
                 </CardHeader>
-                <CardContent className="flex-grow overflow-y-auto space-y-6 pt-6">
+                <CardContent className="flex-grow space-y-3 pt-2 pb-4">
                   <InstallerSearch value={inputValue} onChange={setInputValue} onSearch={handleSearch} />
                   <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
                   <Separator />
@@ -204,51 +218,81 @@ const PublicLocator: React.FC = () => {
                     onCertificationChange={handleCertificationChange}
                     brandsToShow={["Hunter Douglas", "Alta"]}
                   />
+                  <Separator />
+                  <div>
+                    <h3 className="font-semibold text-lg mb-2">Other</h3>
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="filter-accepts-shipments-public"
+                          checked={filterAcceptsShipments}
+                          onCheckedChange={(checked) => setFilterAcceptsShipments(checked === true)}
+                        />
+                        <Label htmlFor="filter-accepts-shipments-public">Accepts Shipments</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="filter-mileage-covered-public"
+                          checked={filterMileageCovered}
+                          onCheckedChange={(checked) => setFilterMileageCovered(checked === true)}
+                        />
+                        <Label htmlFor="filter-mileage-covered-public">Mileage Covered</Label>
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
-            <div className="space-y-4">
-              {isLoadingData ? (
-                <div className="text-center text-gray-500 mt-8">
-                  <LoadingSayings />
-                </div>
-              ) : (
-                <InstallerList 
-                  installers={filteredAndSortedInstallers} 
-                  searchedZipCode={searchedZipCode} 
-                  selectedInstallerId={null} 
-                  onInstallerCardClick={handleInstallerCardClick} 
-                  isPublicView={true}
-                  searchRadius={searchRadius}
-                  distanceUnit={distanceUnit}
-                />
-              )}
-              {searchText && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
-                <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for your search. Please try another location.</p>
-              )}
-            </div>
           </div>
-          <div className="lg:col-span-2 space-y-8">
+
+          {/* 2. Installer list — mobile #2, desktop col 2-3 row 2 (under map) */}
+          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-2">
+            {isLoadingData ? (
+              <div className="text-center text-gray-500 mt-8">
+                <LoadingSayings />
+              </div>
+            ) : (
+              <InstallerList
+                installers={filteredAndSortedInstallers}
+                searchedZipCode={searchedZipCode}
+                selectedInstallerId={null}
+                onInstallerCardClick={handleInstallerCardClick}
+                isPublicView={true}
+                searchRadius={searchRadius}
+                distanceUnit={distanceUnit}
+              />
+            )}
+            {searchText && (!userSearchLocation || userSearchLocation.lat === null) && !loadingLocation && (
+              <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for your search. Please try another location.</p>
+            )}
+          </div>
+
+          {/* 3. Map — mobile #3, desktop col 2-3 row 1 */}
+          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-1">
             <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
-              <InstallerMapComponent 
-                userLocation={userSearchLocation} 
-                installers={filteredAndSortedInstallers} 
+              <InstallerMapComponent
+                userLocation={userSearchLocation}
+                installers={filteredAndSortedInstallers}
                 selectedInstallerId={null}
                 isPublicView={true}
               />
             </div>
-            {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
-              <InstallerSummary 
-                installers={filteredAndSortedInstallers} 
-                searchedZipCode={searchedZipCode} 
-                userLocation={userSearchLocation} 
-                showAdditionalFilters={false} 
-                selectedStatesProvinces={[]} 
+          </div>
+
+          {/* 4. Installer summary — mobile #4, desktop col 1 row 2 (under filters) */}
+          {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
+            <div className="lg:col-start-1 lg:col-span-1 lg:row-start-2">
+              <InstallerSummary
+                installers={filteredAndSortedInstallers}
+                searchedZipCode={searchedZipCode}
+                userLocation={userSearchLocation}
+                showAdditionalFilters={false}
+                selectedStatesProvinces={[]}
                 searchRadius={searchRadius}
                 isPublicView={true}
               />
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

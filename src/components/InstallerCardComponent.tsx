@@ -1,6 +1,6 @@
 import React, { memo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Phone, MapPin } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Phone, MapPin, BadgeCheck } from "lucide-react";
 import { Installer } from "@/types/installer";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,15 @@ interface InstallerCardComponentProps {
   searchedZipCode?: string;
 }
 
-const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ installer, distance, pinNumber, isSelected, onInstallerCardClick, isPublicView = false, searchedZipCode }) => {
+const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
+  installer,
+  distance,
+  pinNumber: _pinNumber,
+  isSelected,
+  onInstallerCardClick,
+  isPublicView = false,
+  searchedZipCode,
+}) => {
   const { distanceUnit } = useCountrySettings();
 
   const displayDistance = distance !== undefined && distance !== null && distance !== Infinity
@@ -25,9 +33,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
 
   const formattedDistance = displayDistance ? `${displayDistance} ${distanceUnit}` : undefined;
 
-  const addressToDisplay = isPublicView
-    ? `${installer.rawSupabaseData?.city || ''}, ${installer.rawSupabaseData?.state || ''} ${installer.zipCode || ''}`.trim()
-    : installer.address;
+  const cityStateZip = `${installer.rawSupabaseData?.city || ''}, ${installer.rawSupabaseData?.state || ''} ${installer.zipCode || ''}`.trim().replace(/^,\s*/, '');
 
   const handleClick = () => {
     if (!isPublicView) {
@@ -35,89 +41,121 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({ install
     }
   };
 
+  const showMileageBadge = isPublicView && searchedZipCode && installer.is_local_service_area !== undefined;
+  const hasBrands = installer.brands && installer.brands.length > 0;
+  const hasSkills = installer.skills && installer.skills.length > 0;
+
   return (
-    <Card 
+    <Card
       className={cn(
-        "w-full max-w-md relative transition-all duration-200",
+        "w-full relative transition-all duration-200 p-4",
         isSelected && !isPublicView ? "border-sky-500 ring-2 ring-sky-500 shadow-lg" : "border-gray-200",
         isPublicView ? "cursor-default" : "cursor-pointer hover:border-gray-300"
       )}
       onClick={handleClick}
     >
-      <CardHeader>
-        <CardTitle className="flex flex-col items-start">
-          <span className="mb-2">{installer.name}</span>
-          <div className="flex flex-wrap gap-2">
+      <div className="space-y-3 text-sm">
+        {/* Top row: name, distance, city/state/zip, mileage badge */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="flex items-baseline gap-2 min-w-0">
+            <h3 className="font-semibold text-lg leading-tight truncate">{installer.name}</h3>
+            {formattedDistance && (
+              <span className="text-gray-600 whitespace-nowrap">
+                {formattedDistance}
+              </span>
+            )}
+          </div>
+          {cityStateZip && (
+            <span className="inline-flex items-center text-gray-600 whitespace-nowrap">
+              <MapPin className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" aria-hidden="true" />
+              {cityStateZip}
+            </span>
+          )}
+          {showMileageBadge && (
+            <Badge
+              variant="default"
+              className={cn(
+                "ml-auto border-transparent",
+                installer.is_local_service_area
+                  ? "bg-green-100 text-green-800 hover:bg-green-200"
+                  : "bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
+              )}
+            >
+              {installer.is_local_service_area ? "Mileage Covered" : "Mileage Charged"}
+            </Badge>
+          )}
+        </div>
+
+        {/* Certifications: badge-check icon + name, plain text */}
+        {installer.certifications.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-700">
             {installer.certifications.map((cert) => (
-              <Badge key={cert} variant="outline" className="bg-blue-100 text-blue-800 border-blue-300">
+              <span key={cert} className="inline-flex items-center gap-1">
+                <BadgeCheck className="h-3.5 w-3.5 text-sky-600 flex-shrink-0" aria-hidden="true" />
                 {cert}
-              </Badge>
+              </span>
             ))}
           </div>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm">
-        <div className="flex items-start justify-between text-gray-600">
-          <div className="flex items-center">
-            <MapPin className="h-4 w-4 mr-2 text-gray-500 flex-shrink-0" />
-            <span>{addressToDisplay}</span>
-          </div>
-          {formattedDistance && (
-            <div className="font-medium text-blue-600 ml-4 whitespace-nowrap">
-              {formattedDistance}
-            </div>
-          )}
-        </div>
+        )}
+
+        {/* Admin-only details: full address, phone, vendor id, accepts shipments */}
         {!isPublicView && (
-          <div className="flex items-center text-gray-600">
-            <Phone className="h-4 w-4 mr-2 text-gray-500" />
-            <span>{installer.phone}</span>
+          <div className="space-y-1 text-gray-600">
+            {installer.address && (
+              <div className="flex items-start">
+                <MapPin className="h-4 w-4 mr-2 mt-0.5 text-gray-500 flex-shrink-0" />
+                <span className="break-words">{installer.address}</span>
+              </div>
+            )}
+            {installer.phone && (
+              <div className="flex items-center">
+                <Phone className="h-4 w-4 mr-2 text-gray-500 flex-shrink-0" />
+                <span>{installer.phone}</span>
+              </div>
+            )}
+            {installer.installerVendorId && (
+              <div className="text-gray-700">
+                <span className="font-medium">Installer Vendor Id:</span> {installer.installerVendorId}
+              </div>
+            )}
+            {installer.acceptsShipments !== undefined && (
+              <div className="text-gray-700">
+                <span className="font-medium">Accepts Shipments:</span> {installer.acceptsShipments ? "Yes" : "No"}
+              </div>
+            )}
           </div>
         )}
-        {!isPublicView && installer.installerVendorId && (
-          <div className="text-gray-700">
-            <span className="font-medium">Installer Vendor Id:</span> {installer.installerVendorId}
+
+        {/* Brands and Product Skills, side by side */}
+        {(hasBrands || hasSkills) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            {hasBrands && (
+              <div>
+                <h4 className="font-semibold text-sm mb-1.5">Brands</h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {installer.brands.map((brand) => (
+                    <Badge key={brand} variant="secondary" className="bg-indigo-100 text-indigo-700 border-transparent hover:bg-indigo-200">
+                      {brand}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {hasSkills && (
+              <div>
+                <h4 className="font-semibold text-sm mb-1.5">Product Skills</h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {installer.skills.map((skill) => (
+                    <Badge key={skill} variant="secondary">
+                      {skill}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
-        {installer.brands && installer.brands.length > 0 && (
-          <div>
-            <h4 className="font-semibold text-base mb-2">Brands:</h4>
-            <div className="flex flex-wrap gap-2">
-              {installer.brands.map((brand) => (
-                <Badge key={brand} variant="secondary" className="bg-indigo-100 text-indigo-700 border-indigo-700">{brand}</Badge>
-              ))}
-            </div>
-          </div>
-        )}
-        {installer.skills && installer.skills.length > 0 && (
-          <div>
-            <h4 className="font-semibold text-base mb-2">Product Skills:</h4>
-            <div className="flex flex-wrap gap-2">
-              {installer.skills.map((skill) => (
-                <Badge key={skill} variant="secondary" className="border-border">{skill}</Badge>
-              ))}
-            </div>
-          </div>
-        )}
-        {installer.acceptsShipments !== undefined && (
-          <div className="text-gray-700">
-            <span className="font-medium">Accepts Shipments :</span> {installer.acceptsShipments ? "Yes" : "No"}
-          </div>
-        )}
-      </CardContent>
-      {isPublicView && searchedZipCode && installer.is_local_service_area !== undefined && (
-        <div className="absolute bottom-4 right-4">
-          {installer.is_local_service_area ? (
-            <Badge variant="default" className="bg-green-100 text-green-800 border-green-300 hover:bg-green-200">
-              Mileage Covered
-            </Badge>
-          ) : (
-            <Badge variant="default" className="bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200">
-              Mileage Charged
-            </Badge>
-          )}
-        </div>
-      )}
+      </div>
     </Card>
   );
 };
