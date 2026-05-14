@@ -1,7 +1,7 @@
 import React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer"; // Import new types
+import { InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
 
 interface BrandSkillFilterProps {
   selectedBrands: InstallerBrand[];
@@ -10,13 +10,13 @@ interface BrandSkillFilterProps {
   onBrandChange: (brand: InstallerBrand, checked: boolean) => void;
   onProductSkillChange: (skill: InstallerSkill, checked: boolean) => void;
   onCertificationChange: (certification: InstallerCertification, checked: boolean) => void;
-  hideBrands?: boolean; // New prop to conditionally hide brands section
-  brandsToShow?: InstallerBrand[]; // New prop to specify which brands to show
+  hideBrands?: boolean;
+  brandsToShow?: InstallerBrand[];
 }
 
 const allBrands: InstallerBrand[] = ["Hunter Douglas", "Alta", "Carole", "Architectural", "Levolor", "Three Day Blinds"];
-const allProductSkills: InstallerSkill[] = ["Blinds & Shades", "Shutters", "Drapery", "Automation", "Tall Window"]; // Removed Service Call, Fixture Displays, Outdoor, High Voltage Hardwired, Alta Motorization
-const allCertifications: InstallerCertification[] = ["Motorization Pro", "Certified Installer", "Master Installer", "Shutter Pro", "Drapery Pro"]; // Removed PIP Certified
+const allProductSkills: InstallerSkill[] = ["Blinds & Shades", "Shutters", "Drapery", "Automation", "Tall Window"];
+const allCertifications: InstallerCertification[] = ["Motorization Pro", "Certified Installer", "Master Installer", "Shutter Pro", "Drapery Pro"];
 
 const BrandSkillFilter: React.FC<BrandSkillFilterProps> = ({
   selectedBrands,
@@ -25,12 +25,12 @@ const BrandSkillFilter: React.FC<BrandSkillFilterProps> = ({
   onBrandChange,
   onProductSkillChange,
   onCertificationChange,
-  hideBrands = false, // Default to false
-  brandsToShow = allBrands, // Default to all brands if not provided
+  hideBrands = false,
+  brandsToShow = allBrands,
 }) => {
   return (
     <div className="space-y-4">
-      {!hideBrands && ( // Conditionally render Brands section
+      {!hideBrands && (
         <div>
           <h3 className="font-semibold text-lg mb-2">Brand</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -48,7 +48,7 @@ const BrandSkillFilter: React.FC<BrandSkillFilterProps> = ({
         </div>
       )}
       <div>
-        <h3 className="font-semibold text-lg mb-2">Product Skills</h3> {/* Removed (Level 2) */}
+        <h3 className="font-semibold text-lg mb-2">Product Skills</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {allProductSkills.map((skill) => (
             <div key={skill} className="flex items-center space-x-2">

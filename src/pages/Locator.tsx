@@ -17,8 +17,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import MultiSelect from "@/components/MultiSelect";
 import InstallerSummary from "@/components/InstallerSummary";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import LoadingSayings from "@/components/LoadingSayings";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery } from "@tanstack/react-query";
 import { useAllInstallers, useDrivingDistances } from "@/hooks/useInstallerData";
 
@@ -192,12 +192,18 @@ const Locator: React.FC = () => {
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow">
         <div className="flex flex-col sm:flex-row items-center justify-center mb-8 text-center sm:text-left">
           <img src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg" alt="Hunter Douglas Logo" className="h-12 mb-4 sm:mb-0 sm:mr-4" />
-          <h1 className="text-3xl font-bold text-gray-700">Installer Locator</h1>
+          <h1
+            className="text-3xl font-bold text-[#5b676f]"
+            style={{ fontFamily: 'Lato, system-ui, sans-serif' }}
+          >
+            Installer Locator
+          </h1>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1 space-y-6">
-            <div className="p-4 border rounded-lg shadow-sm bg-card space-y-6">
-              <h2 className="text-2xl font-semibold mb-4">Find Installers</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-6 lg:auto-rows-min">
+          {/* 1. Filters card — mobile #1, desktop col 1 row 1 */}
+          <div className="lg:col-start-1 lg:col-span-1 lg:row-start-1">
+            <div className="p-4 border rounded-lg shadow-sm bg-card space-y-3">
+              <h2 className="text-xl font-semibold mb-2">Find Installers</h2>
               {!showAdditionalFilters && (<>
                 <InstallerSearch value={inputValue} onChange={setInputValue} onSearch={handleSearch} />
                 <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
@@ -214,6 +220,18 @@ const Locator: React.FC = () => {
               />
               <Separator />
               <div>
+                <h3 className="font-semibold text-lg mb-2">Other</h3>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="filter-accepts-shipments"
+                    checked={filterAcceptsShipments === 'yes'}
+                    onCheckedChange={(checked) => setFilterAcceptsShipments(checked ? 'yes' : 'any')}
+                  />
+                  <Label htmlFor="filter-accepts-shipments">Accepts Shipments</Label>
+                </div>
+              </div>
+              <Separator />
+              <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold text-lg">Additional Filters</h3>
                   <Switch id="additional-filters-toggle" checked={showAdditionalFilters} onCheckedChange={setShowAdditionalFilters} />
@@ -224,64 +242,62 @@ const Locator: React.FC = () => {
                       <Label htmlFor="state-province-select">State / Province</Label>
                       <MultiSelect options={allStatesProvinces} selectedValues={filterStates} onValueChange={setFilterStates} placeholder="Select States/Provinces" />
                     </div>
-                    <div>
-                      <Label className="mb-2 block">Accepts Shipments</Label>
-                      <RadioGroup
-                        value={filterAcceptsShipments}
-                        onValueChange={(value) => setFilterAcceptsShipments(value as 'any' | 'yes' | 'no')}
-                        className="flex space-x-4"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="any" id="shipments-any-locator" />
-                          <Label htmlFor="shipments-any-locator">Any</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="yes" id="shipments-yes-locator" />
-                          <Label htmlFor="shipments-yes-locator">Yes</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="no" id="shipments-no-locator" />
-                          <Label htmlFor="shipments-no-locator">No</Label>
-                        </div>
-                      </RadioGroup>
-                    </div>
                   </div>
                 )}
               </div>
             </div>
-            <div className="mt-8">
-              {isLoadingData ? (
-                <div className="text-center text-gray-500 mt-8">
-                  <LoadingSayings />
-                </div>
-              ) : (
-                <InstallerList 
-                  installers={filteredAndSortedInstallers} 
-                  searchedZipCode={searchedZipCode} 
-                  selectedInstallerId={selectedInstallerId} 
-                  onInstallerCardClick={handleInstallerCardClick}
-                  searchRadius={searchRadius}
-                  distanceUnit={distanceUnit}
-                />
-              )}
-              {searchedZipCode && (!userLocation || userLocation.lat === null) && !loadingUserLocation && (!showAdditionalFilters || filterStates.length === 0) && (
-                <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
-              )}
-            </div>
           </div>
-          <div className="lg:col-span-2">
+
+          {/* 2. Installer list — mobile #2, desktop col 2-3 row 3 */}
+          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-3">
+            {isLoadingData ? (
+              <div className="text-center text-gray-500 mt-8">
+                <LoadingSayings />
+              </div>
+            ) : (
+              <InstallerList
+                installers={filteredAndSortedInstallers}
+                searchedZipCode={searchedZipCode}
+                selectedInstallerId={selectedInstallerId}
+                onInstallerCardClick={handleInstallerCardClick}
+                searchRadius={searchRadius}
+                distanceUnit={distanceUnit}
+              />
+            )}
+            {searchedZipCode && (!userLocation || userLocation.lat === null) && !loadingUserLocation && (!showAdditionalFilters || filterStates.length === 0) && (
+              <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
+            )}
+          </div>
+
+          {/* 3. Map — mobile #3, desktop col 2-3 row 1 */}
+          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-1">
             <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
               <InstallerMapComponent userLocation={userLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
             </div>
-            <div className="flex justify-end mt-4 space-x-2">
+          </div>
+
+          {/* 4. Action buttons — mobile #4, desktop col 2-3 row 2 */}
+          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <Button onClick={() => navigate("/public-locator")} variant="outline">Public Locator View</Button>
               <Button onClick={toggleCountry} variant="outline">Switch to {isCanada ? "US" : "Canada"} View</Button>
               <Button onClick={() => navigate("/installers")}>Installer Management</Button>
             </div>
-            {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
-              <InstallerSummary installers={filteredAndSortedInstallers} searchedZipCode={searchedZipCode} userLocation={userLocation} showAdditionalFilters={showAdditionalFilters} selectedStatesProvinces={filterStates} searchRadius={searchRadius} />
-            )}
           </div>
+
+          {/* 5. Installer summary — mobile #5, desktop col 1 row 2 (under filters) */}
+          {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
+            <div className="lg:col-start-1 lg:col-span-1 lg:row-start-2 lg:row-span-2">
+              <InstallerSummary
+                installers={filteredAndSortedInstallers}
+                searchedZipCode={searchedZipCode}
+                userLocation={userLocation}
+                showAdditionalFilters={showAdditionalFilters}
+                selectedStatesProvinces={filterStates}
+                searchRadius={searchRadius}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

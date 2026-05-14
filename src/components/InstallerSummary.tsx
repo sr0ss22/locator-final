@@ -60,25 +60,25 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
   const mileageChartColors = ["#22C55E", "#FBBF24"]; // Green, Yellow
 
   return (
-    <Card className="mt-4 p-4 shadow-sm">
-      <CardHeader className="flex flex-row items-start justify-between pb-2">
-        <div>
-          <CardTitle className="text-xl font-semibold">Installer Summary</CardTitle>
+    <Card className="shadow-sm">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 pt-3 pb-2 px-4">
+        <div className="min-w-0">
+          <CardTitle className="text-lg font-semibold">Installer Summary</CardTitle>
           {!showAdditionalFilters && (
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-xs text-gray-600 mt-0.5">
               Showing {installers.length} installers within {displayRadius} {distanceUnit} of {searchedZipCode || "your search location"}.
             </p>
           )}
         </div>
 
         {!showAdditionalFilters && (
-          <div className="text-right">
-            <p className="text-sm font-medium text-gray-600">Total Installers</p>
-            <p className="text-4xl font-bold text-sky-500">{installers.length}</p>
+          <div className="text-right flex-shrink-0">
+            <p className="text-xs font-medium text-gray-600">Total Installers</p>
+            <p className="text-2xl font-bold text-sky-500 leading-none">{installers.length}</p>
           </div>
         )}
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-0 pb-3 px-3">
         {showAdditionalFilters && selectedStatesProvinces.length > 0 ? (
           <div className="space-y-4">
             <p className="text-sm text-gray-600">Showing installers filtered by selected states/provinces.</p>
@@ -96,7 +96,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
                       <p className="text-4xl font-bold text-sky-500">{installersInState.length}</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 gap-2">
                     <DonutChartComponent data={brandData} title="Brands" colors={chartColors} />
                     <DonutChartComponent data={productData} title="Skills" colors={chartColors} />
                     <DonutChartComponent data={certificationData} title="Certifications" colors={chartColors} />
@@ -106,7 +106,7 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
             })}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+          <div className="grid grid-cols-1 gap-2 pt-2">
             <DonutChartComponent data={processSummaryData(installers).brandData} title="Brands" colors={chartColors} />
             <DonutChartComponent data={processSummaryData(installers).productData} title="Skills" colors={chartColors} />
             {isPublicView && searchedZipCode ? (

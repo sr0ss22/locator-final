@@ -30,3 +30,7 @@ pnpm-debug.log*
 # Vite
 .vite/
 .dyad/
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
