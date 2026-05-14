@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,29 @@ serve(async (req) => {
   }
 
   try {
+    // Require a valid signed-in user. This proxy uses a paid third-party API
+    // (OpenRouteService); without auth, anyone could exhaust the quota.
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: Missing bearer token.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      });
+    }
+
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+    const jwt = authHeader.replace('Bearer ', '');
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(jwt);
+    if (userError || !userData?.user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: Invalid session.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      });
+    }
+
     const { locations } = await req.json()
     const OPENROUTESERVICE_API_KEY = Deno.env.get('OPENROUTESERVICE_API_KEY')
 
@@ -27,6 +51,16 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 400,
         });
+    }
+
+    // Cap the matrix size so a malicious or runaway client can't burn the quota
+    // on a single 10k-location request.
+    const MAX_LOCATIONS = 250;
+    if (locations.length > MAX_LOCATIONS) {
+      return new Response(JSON.stringify({ error: `Too many locations (max ${MAX_LOCATIONS}).` }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
     }
 
     const destinationsIndices = Array.from({ length: locations.length - 1 }, (_, i) => i + 1);
