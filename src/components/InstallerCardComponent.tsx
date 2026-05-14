@@ -1,6 +1,6 @@
 import React, { memo } from "react";
 import { Card } from "@/components/ui/card";
-import { Phone, MapPin, BadgeCheck } from "lucide-react";
+import { Phone, MapPin, BadgeCheck, Truck } from "lucide-react";
 import { Installer } from "@/types/installer";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
     }
   };
 
-  const showMileageBadge = isPublicView && searchedZipCode && installer.is_local_service_area !== undefined;
+  const showMileageBadge = !!searchedZipCode && installer.is_local_service_area !== undefined;
   const hasBrands = installer.brands && installer.brands.length > 0;
   const hasSkills = installer.skills && installer.skills.length > 0;
 
@@ -55,27 +55,31 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
       onClick={handleClick}
     >
       <div className="space-y-3 text-sm">
-        {/* Top row: name, distance, city/state/zip, mileage badge */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <div className="flex items-baseline gap-2 min-w-0">
-            <h3 className="font-semibold text-lg leading-tight truncate">{installer.name}</h3>
-            {formattedDistance && (
-              <span className="text-gray-600 whitespace-nowrap">
-                {formattedDistance}
+        {/* Top row: name + distance + (public-only) city/state/zip on the left,
+            mileage badge anchored top-right. The left side wraps internally when
+            the card narrows; the badge always stays on the title row. */}
+        <div className="flex items-start gap-x-4">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 flex-1 min-w-0">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <h3 className="font-semibold text-lg leading-tight">{installer.name}</h3>
+              {formattedDistance && (
+                <span className="text-gray-600 whitespace-nowrap">
+                  {formattedDistance}
+                </span>
+              )}
+            </div>
+            {cityStateZip && isPublicView && (
+              <span className="inline-flex items-center text-gray-600 whitespace-nowrap">
+                <MapPin className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" aria-hidden="true" />
+                {cityStateZip}
               </span>
             )}
           </div>
-          {cityStateZip && (
-            <span className="inline-flex items-center text-gray-600 whitespace-nowrap">
-              <MapPin className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" aria-hidden="true" />
-              {cityStateZip}
-            </span>
-          )}
           {showMileageBadge && (
             <Badge
               variant="default"
               className={cn(
-                "ml-auto border-transparent",
+                "flex-shrink-0 border-transparent",
                 installer.is_local_service_area
                   ? "bg-green-100 text-green-800 hover:bg-green-200"
                   : "bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
@@ -98,29 +102,48 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
           </div>
         )}
 
-        {/* Admin-only details: full address, phone, vendor id, accepts shipments */}
+        {/* Admin-only details: address (Google Maps), phone (tel:), accepts-shipments truck, vendor id */}
         {!isPublicView && (
           <div className="space-y-1 text-gray-600">
-            {installer.address && (
-              <div className="flex items-start">
-                <MapPin className="h-4 w-4 mr-2 mt-0.5 text-gray-500 flex-shrink-0" />
-                <span className="break-words">{installer.address}</span>
-              </div>
-            )}
-            {installer.phone && (
-              <div className="flex items-center">
-                <Phone className="h-4 w-4 mr-2 text-gray-500 flex-shrink-0" />
-                <span>{installer.phone}</span>
+            {(installer.address || installer.phone || installer.acceptsShipments) && (
+              <div className="flex flex-wrap items-start gap-x-4 gap-y-1">
+                {installer.address && (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(installer.address)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-start min-w-0 hover:text-sky-600 hover:underline"
+                  >
+                    <MapPin className="h-4 w-4 mr-1 mt-0.5 text-black flex-shrink-0" />
+                    <span className="break-words">{installer.address}</span>
+                  </a>
+                )}
+                {installer.phone && (
+                  <a
+                    href={`tel:${installer.phone.replace(/[^0-9+]/g, "")}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center hover:text-sky-600 hover:underline whitespace-nowrap"
+                  >
+                    <Phone className="h-4 w-4 mr-1 text-black flex-shrink-0" />
+                    <span>{installer.phone}</span>
+                  </a>
+                )}
+                {installer.acceptsShipments && (
+                  <span
+                    className="inline-flex items-center whitespace-nowrap"
+                    title="Accepts Shipments"
+                    aria-label="Accepts Shipments"
+                  >
+                    <Truck className="h-4 w-4 mr-1 text-black flex-shrink-0" />
+                    <span>Accepts Shipments</span>
+                  </span>
+                )}
               </div>
             )}
             {installer.installerVendorId && (
               <div className="text-gray-700">
                 <span className="font-medium">Installer Vendor Id:</span> {installer.installerVendorId}
-              </div>
-            )}
-            {installer.acceptsShipments !== undefined && (
-              <div className="text-gray-700">
-                <span className="font-medium">Accepts Shipments:</span> {installer.acceptsShipments ? "Yes" : "No"}
               </div>
             )}
           </div>

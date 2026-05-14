@@ -20,7 +20,7 @@ import InstallerSummary from "@/components/InstallerSummary";
 import LoadingSayings from "@/components/LoadingSayings";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery } from "@tanstack/react-query";
-import { useAllInstallers, useDrivingDistances } from "@/hooks/useInstallerData";
+import { useAllInstallers, useDrivingDistances, useInstallersInLocalArea } from "@/hooks/useInstallerData";
 
 const Locator: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -80,6 +80,7 @@ const Locator: React.FC = () => {
   }), [locationData]);
 
   const { data: allInstallersData, isLoading: loadingInstallers } = useAllInstallers();
+  const { data: localAreaInstallerIds } = useInstallersInLocalArea(searchedZipCode);
 
   const toBoolean = (value: any): boolean => {
     if (typeof value === 'string') return value.toLowerCase() === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
@@ -139,6 +140,9 @@ const Locator: React.FC = () => {
         latitude: rawInstaller.latitude, longitude: rawInstaller.longitude,
         installerVendorId: rawInstaller.installer_vendor_id?.toString(),
         acceptsShipments: toBoolean(rawInstaller.shipment),
+        is_local_service_area: searchedZipCode
+          ? localAreaInstallerIds?.has(rawInstaller.id) ?? false
+          : undefined,
         rawSupabaseData: rawInstaller,
       };
     });
@@ -146,7 +150,7 @@ const Locator: React.FC = () => {
     (allInstallersData || []).forEach((rawInstaller: any) => { if (rawInstaller.state) uniqueStates.add(rawInstaller.state); });
     setAllStatesProvinces(Array.from(uniqueStates).sort());
     return mappedInstallers;
-  }, [allInstallersData]);
+  }, [allInstallersData, searchedZipCode, localAreaInstallerIds]);
 
   const { data: installerDistancesMap, isLoading: loadingOrs } = useDrivingDistances(userLocation, installers);
 
@@ -181,8 +185,8 @@ const Locator: React.FC = () => {
   const handleCertificationChange = (certification: InstallerCertification, checked: boolean) => setFilterCertifications(p => checked ? [...p, certification] : p.filter(c => c !== certification));
   
   const handleInstallerCardClick = useCallback((installerId: string) => {
-    setSelectedInstallerId(installerId);
-  }, []);
+    navigate(`/installers/edit/${installerId}`);
+  }, [navigate]);
 
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingUserLocation || loadingOrs;
@@ -269,9 +273,13 @@ const Locator: React.FC = () => {
             )}
           </div>
 
-          {/* 3. Map — mobile #3, desktop col 2-3 row 1 */}
-          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-1">
-            <div className="h-[600px] w-full rounded-lg overflow-hidden shadow-sm">
+          {/* 3. Map — mobile #3, desktop col 2-3 row 1.
+              On lg screens the map stretches to match the height of the
+              "Find Installers" filter card (the tallest item in row 1).
+              On mobile it falls back to a fixed height since the layout
+              is stacked. */}
+          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-1 lg:h-full">
+            <div className="h-[500px] lg:h-full w-full rounded-lg overflow-hidden shadow-sm">
               <InstallerMapComponent userLocation={userLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
             </div>
           </div>
