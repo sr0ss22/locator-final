@@ -53,16 +53,6 @@ serve(async (req) => {
         });
     }
 
-    // Cap the matrix size so a malicious or runaway client can't burn the quota
-    // on a single 10k-location request.
-    const MAX_LOCATIONS = 250;
-    if (locations.length > MAX_LOCATIONS) {
-      return new Response(JSON.stringify({ error: `Too many locations (max ${MAX_LOCATIONS}).` }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      });
-    }
-
     const destinationsIndices = Array.from({ length: locations.length - 1 }, (_, i) => i + 1);
 
     const response = await fetch('https://api.openrouteservice.org/v2/matrix/driving-car', {
