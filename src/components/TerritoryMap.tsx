@@ -259,6 +259,19 @@ const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: n
   </div>
 );
 
+// Display modes for the Canadian map. FSA mode renders only the static
+// 3-character FSA polygons; "postal-codes" additionally fetches and renders
+// the ~6-character postal code dots from the database. Persisted in
+// localStorage so the user's preference survives reloads.
+type CanadaDisplayMode = 'fsa' | 'postal-codes';
+const CANADA_DISPLAY_MODE_KEY = 'territory-map-canada-display-mode';
+
+function readCanadaDisplayMode(): CanadaDisplayMode {
+  if (typeof window === 'undefined') return 'fsa';
+  const stored = window.localStorage.getItem(CANADA_DISPLAY_MODE_KEY);
+  return stored === 'postal-codes' ? 'postal-codes' : 'fsa';
+}
+
 const TerritoryMap: React.FC<TerritoryMapProps> = ({
   onZipCodeClick,
   centerLocation,
@@ -279,13 +292,24 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const [allCanadaGeoJsonData, setAllCanadaGeoJsonData] = useState<any>(null);
   const [dataError, setDataError] = useState<string | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
-  
+
   const [allCanadaPoints, setAllCanadaPoints] = useState<any[]>([]);
   const [renderedCanadaPoints, setRenderedCanadaPoints] = useState<any[]>([]);
   const [loadingStage, setLoadingStage] = useState<'idle' | 'counting' | 'fetching' | 'rendering' | 'complete'>('idle');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [totalPointsToLoad, setTotalPointsToLoad] = useState(0);
   const lastSearchKey = useRef<string | null>(null);
+
+  const [canadaDisplayMode, setCanadaDisplayMode] =
+    useState<CanadaDisplayMode>(readCanadaDisplayMode);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CANADA_DISPLAY_MODE_KEY, canadaDisplayMode);
+    } catch {
+      // localStorage may be unavailable (private mode, quota); ignore.
+    }
+  }, [canadaDisplayMode]);
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
@@ -295,6 +319,36 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
 
+  // Process the static Canada FSA GeoJSON once. Used by both display modes,
+  // so it runs independently of the postal-code DB fetch.
+  useEffect(() => {
+    if (!isCanada || allCanadaGeoJsonData || !canadaGeoJsonData) return;
+
+    const processed = (canadaGeoJsonData as any).features.map((feature: any) => {
+      const newFeature = JSON.parse(JSON.stringify(feature));
+      try {
+        const transformedGeometry = turf.clone(feature.geometry);
+        turf.coordEach(transformedGeometry, (currentCoord) => {
+          const [lon, lat] = proj4('EPSG:3347', 'EPSG:4326').forward(currentCoord);
+          currentCoord[0] = lon;
+          currentCoord[1] = lat;
+        });
+        const centroid = turf.centroid(transformedGeometry);
+        if (centroid?.geometry?.coordinates) {
+          newFeature.properties.calculated_centroid = {
+            lat: centroid.geometry.coordinates[1],
+            lng: centroid.geometry.coordinates[0],
+          };
+        }
+        newFeature.geometry = transformedGeometry;
+      } catch (e) {
+        console.error('Error transforming Canada GeoJSON feature', e);
+      }
+      return newFeature;
+    });
+    setAllCanadaGeoJsonData({ type: 'FeatureCollection', features: processed });
+  }, [isCanada, allCanadaGeoJsonData]);
+
   // Main data loading effect
   useEffect(() => {
     const loadAndRenderData = async () => {
@@ -303,6 +357,17 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         : null;
 
       if (isCanada) {
+        // FSA mode: render only the static polygons; skip the heavy DB fetch.
+        if (canadaDisplayMode === 'fsa') {
+          if (allCanadaPoints.length > 0) setAllCanadaPoints([]);
+          if (renderedCanadaPoints.length > 0) setRenderedCanadaPoints([]);
+          lastSearchKey.current = null;
+          if (loadingStage !== 'idle' && loadingStage !== 'complete') {
+            setLoadingStage('complete');
+          }
+          return;
+        }
+
         if (!searchKey || searchKey === lastSearchKey.current) {
           if (!searchKey) {
             setAllCanadaPoints([]);
@@ -311,7 +376,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           return;
         }
         lastSearchKey.current = searchKey;
-        
+
         setAllCanadaPoints([]);
         setRenderedCanadaPoints([]);
         setLoadingProgress(0);
@@ -359,36 +424,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
             }
             setLoadingProgress(fetchedPoints.length);
           }
-          
+
           setAllCanadaPoints(fetchedPoints);
           setLoadingStage('rendering');
-
-          // Also process Canada GeoJSON if not done yet
-          if (!allCanadaGeoJsonData && canadaGeoJsonData) {
-            const processed = (canadaGeoJsonData as any).features.map((feature: any) => {
-              const newFeature = JSON.parse(JSON.stringify(feature));
-              try {
-                const transformedGeometry = turf.clone(feature.geometry);
-                turf.coordEach(transformedGeometry, (currentCoord) => {
-                  const [lon, lat] = proj4('EPSG:3347', 'EPSG:4326').forward(currentCoord);
-                  currentCoord[0] = lon; currentCoord[1] = lat;
-                });
-                const centroid = turf.centroid(transformedGeometry);
-                if (centroid?.geometry?.coordinates) {
-                  newFeature.properties.calculated_centroid = {
-                    lat: centroid.geometry.coordinates[1],
-                    lng: centroid.geometry.coordinates[0]
-                  };
-                }
-                newFeature.geometry = transformedGeometry; // Use transformed geometry for rendering
-              } catch (e) {
-                console.error("Error transforming Canada GeoJSON feature", e);
-              }
-              return newFeature;
-            });
-            setAllCanadaGeoJsonData({ type: 'FeatureCollection', features: processed });
-          }
-
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
           toast.error(`Failed to load Canadian postal codes: ${err.message}`);
@@ -422,7 +460,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     };
     loadAndRenderData();
-  }, [isCanada, centerLocation, currentDisplayRadius, allCanadaGeoJsonData, allGeoJsonData]);
+  }, [isCanada, centerLocation, currentDisplayRadius, allGeoJsonData, canadaDisplayMode]);
 
   useEffect(() => {
     if (loadingStage !== 'rendering' || !isCanada || allCanadaPoints.length === 0) return;
@@ -571,6 +609,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   }
 
   return (
+    <div className="relative h-full w-full">
     <MapContainer
       center={isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795]}
       zoom={4}
@@ -586,7 +625,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       />
       <Pane name="polygons" style={{ zIndex: 450 }} />
       {(loadingStage === 'counting' || loadingStage === 'fetching' || loadingStage === 'rendering') && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} stage={loadingStage} />}
-      {isCanada && renderedCanadaPoints.length > 0 && (
+      {isCanada && canadaDisplayMode === 'postal-codes' && renderedCanadaPoints.length > 0 && (
         renderedCanadaPoints.map(point => {
           const postalCode = point.POSTAL_CODE;
           const status = highlightedZipCodes.get(postalCode);
@@ -602,7 +641,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           );
         })
       )}
-      {filteredGeoJsonData && (
+      {filteredGeoJsonData && !(isCanada && canadaDisplayMode === 'postal-codes') && (
         <GeoJSON key={geoJsonStyleKey} ref={geoJsonLayerRef} data={filteredGeoJsonData as any} style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))} onEachFeature={onEachFeature} pane="polygons" />
       )}
       {centerLocation?.lat != null && centerLocation?.lng != null && (
@@ -626,6 +665,43 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       <MapUpdater centerLocation={centerLocation} isOpen={isOpen} country={country} />
       <MapInteractionHandler isBulkSelecting={isBulkSelecting} geoJsonData={allGeoJsonData} onBulkSelectionComplete={onBulkSelectionComplete} isCanada={isCanada} publicAuth={publicAuth} />
     </MapContainer>
+    {isCanada && (
+      <div
+        className="absolute top-3 right-3 z-[1000] bg-white rounded-md shadow-md border border-gray-200 p-1 flex gap-1 text-xs"
+        role="group"
+        aria-label="Map detail level"
+      >
+        <button
+          type="button"
+          onClick={() => setCanadaDisplayMode('fsa')}
+          className={cn(
+            'px-3 py-1.5 rounded font-medium transition-colors',
+            canadaDisplayMode === 'fsa'
+              ? 'bg-gray-900 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+          )}
+          aria-pressed={canadaDisplayMode === 'fsa'}
+          title="Show 3-character FSA areas only (faster)"
+        >
+          FSA
+        </button>
+        <button
+          type="button"
+          onClick={() => setCanadaDisplayMode('postal-codes')}
+          className={cn(
+            'px-3 py-1.5 rounded font-medium transition-colors',
+            canadaDisplayMode === 'postal-codes'
+              ? 'bg-gray-900 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+          )}
+          aria-pressed={canadaDisplayMode === 'postal-codes'}
+          title="Show full 6-character postal codes (slower; large territories take time to load)"
+        >
+          Postal codes
+        </button>
+      </div>
+    )}
+    </div>
   );
 };
 
