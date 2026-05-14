@@ -55,27 +55,31 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
       onClick={handleClick}
     >
       <div className="space-y-3 text-sm">
-        {/* Top row: name, distance, city/state/zip, mileage badge */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <div className="flex items-baseline gap-2 min-w-0">
-            <h3 className="font-semibold text-lg leading-tight truncate">{installer.name}</h3>
-            {formattedDistance && (
-              <span className="text-gray-600 whitespace-nowrap">
-                {formattedDistance}
+        {/* Top row: name + distance + (public-only) city/state/zip on the left,
+            mileage badge anchored top-right. The left side wraps internally when
+            the card narrows; the badge always stays on the title row. */}
+        <div className="flex items-start gap-x-4">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 flex-1 min-w-0">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <h3 className="font-semibold text-lg leading-tight">{installer.name}</h3>
+              {formattedDistance && (
+                <span className="text-gray-600 whitespace-nowrap">
+                  {formattedDistance}
+                </span>
+              )}
+            </div>
+            {cityStateZip && isPublicView && (
+              <span className="inline-flex items-center text-gray-600 whitespace-nowrap">
+                <MapPin className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" aria-hidden="true" />
+                {cityStateZip}
               </span>
             )}
           </div>
-          {cityStateZip && isPublicView && (
-            <span className="inline-flex items-center text-gray-600 whitespace-nowrap">
-              <MapPin className="h-4 w-4 mr-1 text-gray-500 flex-shrink-0" aria-hidden="true" />
-              {cityStateZip}
-            </span>
-          )}
           {showMileageBadge && (
             <Badge
               variant="default"
               className={cn(
-                "ml-auto border-transparent",
+                "flex-shrink-0 border-transparent",
                 installer.is_local_service_area
                   ? "bg-green-100 text-green-800 hover:bg-green-200"
                   : "bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
