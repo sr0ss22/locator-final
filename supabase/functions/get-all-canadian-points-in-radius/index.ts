@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { buildCorsHeaders } from '../_shared/cors.ts';
+import { authorizeJwtOrToken } from '../_shared/auth.ts';
 
 serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
@@ -10,7 +11,8 @@ serve(async (req) => {
   }
 
   try {
-    const { center_lat, center_lng, radius_meters } = await req.json();
+    const body = await req.json();
+    const { center_lat, center_lng, radius_meters, installerId, token } = body ?? {};
 
     if (center_lat === undefined || center_lng === undefined || radius_meters === undefined) {
       return new Response(JSON.stringify({ error: 'center_lat, center_lng, and radius_meters are required.' }), {
@@ -23,6 +25,14 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
+
+    const authResult = await authorizeJwtOrToken(req, { installerId, token }, supabaseAdmin);
+    if (!authResult.ok) {
+      return new Response(JSON.stringify({ error: authResult.reason }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      });
+    }
 
     // 1. Get the total count first
     const { data: count, error: countError } = await supabaseAdmin.rpc('get_canadian_points_in_radius_count', {
