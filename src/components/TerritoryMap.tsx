@@ -793,17 +793,51 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
-    layer.off('click'); 
+    layer.off('click');
     layer.on({
       click: (e) => {
         L.DomEvent.stopPropagation(e);
-        if (!isBulkSelecting) onZipCodeClickRef.current(zipCode, stateProvince); 
+        if (!isBulkSelecting) onZipCodeClickRef.current(zipCode, stateProvince);
       },
     });
     const label = isCanada ? 'FSA' : 'ZIP';
-    let tooltipText = `${label}: ${zipCode}`;
-    if (stateProvince && stateProvince !== 'Unknown') tooltipText += ` (${stateProvince})`;
-    layer.bindTooltip(tooltipText, { permanent: false, direction: 'auto' });
+    let tooltipHtml = `<div><strong>${label}: ${zipCode}</strong>`;
+    if (stateProvince && stateProvince !== 'Unknown') tooltipHtml += ` (${stateProvince})`;
+    tooltipHtml += `</div>`;
+
+    // Coverage breakdown for Canadian FSAs. Helps the user verify why an
+    // FSA is solid vs. striped without guessing.
+    if (isCanada) {
+      const sel = fsaSelectionAggregates?.get(zipCode);
+      if (sel) {
+        const assigned = sel.free + sel.paid;
+        const total = fsaTotalPostalCounts?.get(zipCode);
+        const breakdownParts: string[] = [];
+        if (sel.free > 0) breakdownParts.push(`${sel.free.toLocaleString()} free`);
+        if (sel.paid > 0) breakdownParts.push(`${sel.paid.toLocaleString()} paid`);
+        const breakdown = breakdownParts.length > 0 ? ` (${breakdownParts.join(', ')})` : '';
+        if (total != null && total > 0) {
+          const pct = Math.min(100, Math.round((assigned / total) * 1000) / 10);
+          tooltipHtml += `<div>${assigned.toLocaleString()} / ${total.toLocaleString()} postals assigned (${pct}%)${breakdown}</div>`;
+        } else {
+          tooltipHtml += `<div>${assigned.toLocaleString()} postals assigned${breakdown}</div>`;
+        }
+      } else if (isTerritoryManagementPage) {
+        const t = fsaTerritoryAggregates?.get(zipCode);
+        if (t) {
+          const assigned = t.free + t.paid;
+          const total = fsaTotalPostalCounts?.get(zipCode);
+          if (total != null && total > 0) {
+            const pct = Math.min(100, Math.round((assigned / total) * 1000) / 10);
+            tooltipHtml += `<div>${assigned.toLocaleString()} / ${total.toLocaleString()} postals assigned globally (${pct}%)</div>`;
+          } else {
+            tooltipHtml += `<div>${assigned.toLocaleString()} postals assigned globally</div>`;
+          }
+        }
+      }
+    }
+
+    layer.bindTooltip(tooltipHtml, { permanent: false, direction: 'auto', sticky: true });
   };
 
   // The key change is the only reliable way to force React-Leaflet GeoJSON to re-draw colors
