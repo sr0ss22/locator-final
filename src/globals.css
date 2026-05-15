@@ -173,3 +173,14 @@
 .marker-cluster-orange div {
 	background-color: rgba(249, 115, 22, 0.6); /* orange-500/60 */
 }
+
+/* Match the rest of the app's popovers (shadcn rounded-lg). Targets the
+ * FSA bulk-action popup specifically via its className. */
+.leaflet-popup.fsa-bulk-popup .leaflet-popup-content-wrapper,
+.leaflet-popup.fsa-bulk-popup .leaflet-popup-tip {
+	border-radius: 0.75rem; /* rounded-xl */
+	box-shadow: 0 10px 30px -8px rgba(15, 23, 42, 0.18), 0 2px 6px -2px rgba(15, 23, 42, 0.08);
+}
+.leaflet-popup.fsa-bulk-popup .leaflet-popup-content {
+	margin: 14px 16px;
+}

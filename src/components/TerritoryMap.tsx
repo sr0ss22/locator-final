@@ -1321,6 +1321,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           closeButton
           closeOnClick={false}
           minWidth={260}
+          className="fsa-bulk-popup"
         >
           <FsaBulkActionPopupContents
             fsa={fsaBulkPopup.fsa}

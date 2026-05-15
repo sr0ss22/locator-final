@@ -263,72 +263,151 @@ const EditInstallerPage: React.FC = () => {
   }, [formData, selectedMapZipCodes, initialFormData, initialSelectedMapZipCodes, installerBlockingLoad, sessionLoading]);
 
   // FSA bulk action: replace every assignment in the FSA with the chosen
-  // status (Free/Paid) or remove them all. Fetches the full postal list
-  // from the precomputed-normalisation RPC so we always reflect what the
-  // FSA polygon actually contains, not just postals we happened to have
-  // already seen via the radius prefetch. Edits stay in component state
-  // and are persisted by the existing Save button.
+  // status (Free/Paid) or remove them all. Persists immediately to the
+  // database via the same edge function the regular Save button uses,
+  // but only for the diff scoped to this FSA - any other unsaved form
+  // edits or single-postal toggles stay pending under the bottom Save
+  // button.
+  //
+  // Implementation:
+  //   1. Compute the diff (added / updated / removed) for THIS FSA only
+  //      by comparing the new FSA assignments against the persisted
+  //      initialSelectedMapZipCodes baseline.
+  //   2. Send the diff to save-public-territory-data in chunks (matches
+  //      the existing save flow's chunking).
+  //   3. On success, update both selectedMapZipCodes and
+  //      initialSelectedMapZipCodes so the form's dirty state reflects
+  //      only the user's other unsaved changes.
   const handleFsaBulkAction = useCallback(
     async (
       fsa: string,
       action: 'free' | 'paid' | 'remove',
       stateProvinceFromMap: string,
     ) => {
+      if (!installerId) return;
       const fsaUpper = fsa.toUpperCase();
+      const startsWithFsa = (z: string) => z.toUpperCase().startsWith(fsaUpper);
+
+      let nextEntries: Array<{
+        zipCode: string;
+        assignedStatus: TerritoryStatus;
+        stateProvince: string;
+        centroid_latitude: number | null;
+        centroid_longitude: number | null;
+      }> = [];
 
       if (action === 'remove') {
-        let removed = 0;
-        setSelectedMapZipCodes(prev => {
-          const next = prev.filter(item => {
-            const matches = item.zipCode.toUpperCase().startsWith(fsaUpper);
-            if (matches) removed += 1;
-            return !matches;
-          });
-          return removed > 0 ? next : prev;
-        });
-        if (removed > 0) {
-          toast.success(`Removed ${removed.toLocaleString()} postals from ${fsa}.`);
-          setMapRefreshKey(p => p + 1);
-        } else {
-          toast.info(`No assignments to remove in ${fsa}.`);
+        nextEntries = [];
+      } else {
+        let postals;
+        try {
+          postals = await fetchCanadianPostalsForFsa(fsa);
+        } catch (err: any) {
+          console.error('Failed to fetch FSA postals:', err);
+          toast.error(`Could not load postals for ${fsa}: ${err?.message ?? 'unknown error'}`);
+          throw err;
         }
-        return;
-      }
-
-      let postals;
-      try {
-        postals = await fetchCanadianPostalsForFsa(fsa);
-      } catch (err: any) {
-        console.error('Failed to fetch FSA postals:', err);
-        toast.error(`Could not load postals for ${fsa}: ${err?.message ?? 'unknown error'}`);
-        throw err;
-      }
-      if (!postals.length) {
-        toast.info(`No postals found for ${fsa}.`);
-        return;
-      }
-
-      const newStatus: TerritoryStatus = action === 'free' ? 'Approved' : 'Needs Approval';
-
-      setSelectedMapZipCodes(prev => {
-        const remaining = prev.filter(
-          item => !item.zipCode.toUpperCase().startsWith(fsaUpper),
-        );
-        const additions = postals.map(p => ({
+        if (!postals.length) {
+          toast.info(`No postals found for ${fsa}.`);
+          return;
+        }
+        const newStatus: TerritoryStatus = action === 'free' ? 'Approved' : 'Needs Approval';
+        nextEntries = postals.map(p => ({
           zipCode: p.postal_code.toUpperCase(),
           assignedStatus: newStatus,
           stateProvince: p.province_abbr || stateProvinceFromMap || 'Unknown',
           centroid_latitude: p.latitude ?? null,
           centroid_longitude: p.longitude ?? null,
         }));
-        return [...remaining, ...additions];
-      });
-      setMapRefreshKey(p => p + 1);
-      toast.success(
-        `Set ${postals.length.toLocaleString()} postals in ${fsa} as ${action === 'free' ? 'Free' : 'Paid'}.`,
+      }
+
+      // Diff against the persisted baseline so we only push what
+      // actually changed for THIS FSA.
+      const baselineForFsa = new Map(
+        initialSelectedMapZipCodes
+          .filter(z => startsWithFsa(z.zipCode))
+          .map(z => [z.zipCode.toUpperCase(), z]),
       );
+      const nextForFsa = new Map(nextEntries.map(z => [z.zipCode.toUpperCase(), z]));
+
+      const addedZips = nextEntries
+        .filter(z => !baselineForFsa.has(z.zipCode.toUpperCase()))
+        .map(z => ({ zip_code: z.zipCode, state_province: z.stateProvince, assigned_status: z.assignedStatus }));
+      const updatedZips = nextEntries
+        .filter(z => {
+          const b = baselineForFsa.get(z.zipCode.toUpperCase());
+          return b && b.assignedStatus !== z.assignedStatus;
+        })
+        .map(z => ({ zip_code: z.zipCode, assigned_status: z.assignedStatus }));
+      const removedZips = Array.from(baselineForFsa.values())
+        .filter(z => !nextForFsa.has(z.zipCode.toUpperCase()))
+        .map(z => ({ zipCode: z.zipCode }));
+
+      if (addedZips.length === 0 && updatedZips.length === 0 && removedZips.length === 0) {
+        if (action === 'remove') {
+          toast.info(`No assignments to remove in ${fsa}.`);
+        } else {
+          toast.info(`${fsa} is already set as ${action === 'free' ? 'Free' : 'Paid'}.`);
+        }
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const CHUNK_SIZE = 200;
+      const processChanges = async (
+        type: 'added' | 'updated' | 'removed',
+        items: any[],
+      ) => {
+        if (items.length === 0) return;
+        for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+          const chunk = items.slice(i, i + CHUNK_SIZE);
+          const body: any = {
+            installerId,
+            addedZips: type === 'added' ? chunk : [],
+            updatedZips: type === 'updated' ? chunk : [],
+            removedZips: type === 'removed' ? chunk : [],
+          };
+          const { error } = await supabase.functions.invoke('save-public-territory-data', {
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+            body,
+          });
+          if (error) throw new Error(`Failed during ${type} step: ${error.message}`);
+        }
+      };
+
+      try {
+        await processChanges('removed', removedZips);
+        await processChanges('updated', updatedZips);
+        await processChanges('added', addedZips);
+      } catch (err: any) {
+        console.error('FSA bulk save failed:', err);
+        toast.error(`Could not save ${fsa}: ${err?.message ?? 'unknown error'}`);
+        throw err;
+      }
+
+      // Apply the same diff to both the working copy and the persisted
+      // baseline so the form's dirty state stays accurate (only the
+      // user's other unrelated edits remain pending).
+      const applyDiff = (
+        prev: typeof selectedMapZipCodes,
+      ): typeof selectedMapZipCodes => {
+        const remaining = prev.filter(item => !startsWithFsa(item.zipCode));
+        return [...remaining, ...nextEntries];
+      };
+      setSelectedMapZipCodes(applyDiff);
+      setInitialSelectedMapZipCodes(prev => applyDiff(prev));
+      setMapRefreshKey(p => p + 1);
+
+      if (action === 'remove') {
+        toast.success(`Removed ${removedZips.length.toLocaleString()} postals from ${fsa}.`);
+      } else {
+        const total = nextEntries.length;
+        toast.success(
+          `Saved ${total.toLocaleString()} postals in ${fsa} as ${action === 'free' ? 'Free' : 'Paid'}.`,
+        );
+      }
     },
-    [],
+    [installerId, initialSelectedMapZipCodes],
   );
 
   const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
