@@ -438,14 +438,21 @@ const EditInstallerPage: React.FC = () => {
   );
 
   const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
+    // Match by normalized form so "T4X 2T2" (clicked from a postal-code
+    // dot) resolves to the existing "T4X2T2" entry created by an earlier
+    // FSA bulk add. Keeps the cycle Approved → Needs Approval → removed
+    // working regardless of whitespace/case in the stored zipCode.
+    const normZip = (zipCode ?? '').toUpperCase().replace(/\s+/g, '');
     setSelectedMapZipCodes(prev => {
-      const idx = prev.findIndex(item => item.zipCode === zipCode);
+      const idx = prev.findIndex(
+        item => (item.zipCode ?? '').toUpperCase().replace(/\s+/g, '') === normZip,
+      );
       const c = zipCodeCentroids.get(zipCode);
       if (idx !== -1) {
         if (prev[idx].assignedStatus === 'Approved') {
           return [...prev.slice(0, idx), { ...prev[idx], assignedStatus: 'Needs Approval' }, ...prev.slice(idx + 1)];
         }
-        return prev.filter(item => item.zipCode !== zipCode);
+        return [...prev.slice(0, idx), ...prev.slice(idx + 1)];
       }
       return [...prev, { zipCode, assignedStatus: 'Approved', stateProvince, centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null }];
     });
@@ -565,15 +572,34 @@ const EditInstallerPage: React.FC = () => {
   };
 
   const handleBulkSelectionComplete = useCallback((selectedZips: any[]) => {
+    // Bulk Free / Bulk Paid / Bulk Deselect: also normalize so a
+    // selection over postal-code dots ("T4X 2T2" with space) matches
+    // existing entries that the FSA bulk add stored normalized
+    // ("T4X2T2"). And make Bulk Paid symmetric with Bulk Free - both
+    // overwrite whatever was there. Without this, Bulk Paid silently
+    // skips any postal that was already Approved.
+    const norm = (s: string) => (s ?? '').toUpperCase().replace(/\s+/g, '');
     setSelectedMapZipCodes(prev => {
-      const map = new Map(prev.map(item => [item.zipCode, item]));
+      // normalized-key → existing entry (preserves the entry's stored
+      // zipCode string so we don't churn between formats).
+      const byNorm = new Map(prev.map(item => [norm(item.zipCode), item]));
       selectedZips.forEach(z => {
         const c = zipCodeCentroids.get(z.zipCode);
-        if (bulkActionType === 'deselect') map.delete(z.zipCode);
-        else if (bulkActionType === 'approve') map.set(z.zipCode, { ...z, assignedStatus: 'Approved', centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null });
-        else if (bulkActionType === 'needs_approval' && (!map.has(z.zipCode) || map.get(z.zipCode)!.assignedStatus === 'Needs Approval')) map.set(z.zipCode, { ...z, assignedStatus: 'Needs Approval', centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null });
+        const k = norm(z.zipCode);
+        const existing = byNorm.get(k);
+        const baseEntry = {
+          ...z,
+          // keep the existing zipCode format if we already have one,
+          // otherwise use what the selection gave us
+          zipCode: existing?.zipCode ?? z.zipCode,
+          centroid_latitude: c?.lat ?? existing?.centroid_latitude ?? null,
+          centroid_longitude: c?.lng ?? existing?.centroid_longitude ?? null,
+        };
+        if (bulkActionType === 'deselect') byNorm.delete(k);
+        else if (bulkActionType === 'approve') byNorm.set(k, { ...baseEntry, assignedStatus: 'Approved' });
+        else if (bulkActionType === 'needs_approval') byNorm.set(k, { ...baseEntry, assignedStatus: 'Needs Approval' });
       });
-      return Array.from(map.values());
+      return Array.from(byNorm.values());
     });
     setMapRefreshKey(p => p + 1);
     setBulkActionType(null);
