@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,13 @@ import { calculateDistance } from "@/utils/distance";
 import LoadingSayings from "@/components/LoadingSayings";
 import DebugPostalCodeChecker from "@/components/DebugPostalCodeChecker";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useInstaller, useInstallerZipCodes, useSaveInstaller } from "@/hooks/useInstallerData";
+import {
+  useInstaller,
+  useInstallerZipCodes,
+  useSaveInstaller,
+  useCanadianFsaPostalCounts,
+  fetchCanadianPostalsForFsa,
+} from "@/hooks/useInstallerData";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -61,6 +67,9 @@ const certificationCheckboxes = [
 const otherFields = ["installer_vendor_id", "star_rating", "shipment"];
 const textAreaFields = ["comments", "specialnote"];
 
+/** Admin maps use their own localStorage key so a prior "postal codes" choice on /territory-editor does not force a heavy load on /installers/edit. */
+const CANADA_MAP_MODE_STORAGE_ADMIN = "territory-map-canada-display-mode-admin";
+
 const EditInstallerPage: React.FC = () => {
   const { installerId } = useParams<{ installerId: string }>();
   const navigate = useNavigate();
@@ -77,14 +86,25 @@ const EditInstallerPage: React.FC = () => {
   const [mapRefreshKey, setMapRefreshKey] = useState<number>(0); 
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
-  const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
   const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | 'deselect' | null>(null);
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
   const { profile, user, loading: sessionLoading } = useSession();
 
-  const loading = isLoadingInstaller || isLoadingZips;
-  const error = installerError || zipsError;
+  const installerBlockingLoad = isLoadingInstaller;
+
+  const currentInstaller = useMemo((): Installer | null => {
+    if (!installerData) return null;
+    return {
+      ...installerData,
+      id: installerData.id,
+      name: installerData.name,
+      skills: [],
+      brands: [],
+      certifications: [],
+      rawSupabaseData: installerData,
+    } as Installer;
+  }, [installerData]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -113,6 +133,12 @@ const EditInstallerPage: React.FC = () => {
     const c = formData?.country?.toUpperCase();
     return (c === 'CANADA' || c === 'CA') ? 'Canada' : 'USA';
   }, [formData?.country]);
+
+  // Loaded once and cached forever (~3.8k FSA → count entries). Drives
+  // the "fully covered vs partial" colouring on Canadian FSA polygons.
+  const { data: fsaTotalPostalCounts, isLoading: isFsaTotalPostalCountsLoading } = useCanadianFsaPostalCounts(
+    installerCountry === 'Canada',
+  );
 
   const zipCodeCentroids = useMemo(() => {
     const map = new Map<string, { lat: number, lng: number, state: string }>();
@@ -154,10 +180,16 @@ const EditInstallerPage: React.FC = () => {
     return null;
   }, [currentInstaller?.latitude, currentInstaller?.longitude]);
 
+  // Canadian postals come from the database as e.g. "T4X 2J3" (with a
+  // space) but the FSA bulk-add path stores them as "T4X2J3". Normalize
+  // both sides so the postal-codes layer colours every dot whose
+  // canonical form has been assigned, regardless of stored whitespace
+  // or case.
   const highlightedZipCodes = useMemo(() => {
     const highlights = new Map<string, 'green' | 'orange'>();
     selectedMapZipCodes.forEach(item => {
-      highlights.set(item.zipCode, item.assignedStatus === 'Approved' ? 'green' : 'orange');
+      const key = item.zipCode.toUpperCase().replace(/\s+/g, '');
+      highlights.set(key, item.assignedStatus === 'Approved' ? 'green' : 'orange');
     });
     return highlights;
   }, [selectedMapZipCodes]);
@@ -196,54 +228,231 @@ const EditInstallerPage: React.FC = () => {
     return statusMap;
   }, []);
 
-  useEffect(() => {
-    if (installerData && zipCodeData) {
-      const enrichedZips = zipCodeData.map(item => {
-        const centroid = zipCodeCentroids.get(item.zip_code);
-        return {
-          zipCode: item.zip_code,
-          assignedStatus: item.status as TerritoryStatus,
-          stateProvince: item.state_province,
-          centroid_latitude: centroid?.lat || null,
-          centroid_longitude: centroid?.lng || null,
-        };
-      });
-
-      setFormData(installerData);
-      setInitialFormData(JSON.parse(JSON.stringify(installerData)));
-      
-      setSelectedMapZipCodes(enrichedZips);
-      setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
-
-      setCurrentInstaller({
-        ...installerData,
-        id: installerData.id,
-        name: installerData.name,
-        skills: [], brands: [], certifications: [],
-        rawSupabaseData: installerData
-      });
-      
-      setIsDirty(false);
-      fetchTerritoryStatuses();
-    }
-  }, [installerData, zipCodeData, zipCodeCentroids, fetchTerritoryStatuses]);
+  useLayoutEffect(() => {
+    if (!installerData) return;
+    setFormData(installerData);
+    setInitialFormData(JSON.parse(JSON.stringify(installerData)));
+    setIsDirty(false);
+  }, [installerData]);
 
   useEffect(() => {
-    if (loading || sessionLoading || !initialFormData) return;
+    if (!installerId) return;
+    setSelectedMapZipCodes([]);
+    setInitialSelectedMapZipCodes([]);
+  }, [installerId]);
+
+  useEffect(() => {
+    if (zipCodeData === undefined || !installerData || installerData.id !== installerId) return;
+
+    const enrichedZips = zipCodeData.map((item) => {
+      const centroid = zipCodeCentroids.get(item.zip_code);
+      return {
+        zipCode: item.zip_code,
+        assignedStatus: item.status as TerritoryStatus,
+        stateProvince: item.state_province,
+        centroid_latitude: centroid?.lat || null,
+        centroid_longitude: centroid?.lng || null,
+      };
+    });
+
+    setSelectedMapZipCodes(enrichedZips);
+    setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
+
+    fetchTerritoryStatuses();
+  }, [installerData, installerId, zipCodeData, zipCodeCentroids, fetchTerritoryStatuses]);
+
+  useEffect(() => {
+    if (installerBlockingLoad || sessionLoading || !initialFormData) return;
     const normalizeZips = (zips: any[]) => zips.map(({ zipCode, assignedStatus }) => ({ zipCode, assignedStatus })).sort((a, b) => a.zipCode.localeCompare(b.zipCode));
     const zipCodesChanged = JSON.stringify(normalizeZips(selectedMapZipCodes)) !== JSON.stringify(normalizeZips(initialSelectedMapZipCodes));
     setIsDirty(JSON.stringify(formData) !== JSON.stringify(initialFormData) || zipCodesChanged);
-  }, [formData, selectedMapZipCodes, initialFormData, initialSelectedMapZipCodes, loading, sessionLoading]);
+  }, [formData, selectedMapZipCodes, initialFormData, initialSelectedMapZipCodes, installerBlockingLoad, sessionLoading]);
+
+  // FSA bulk action: replace every assignment in the FSA with the chosen
+  // status (Free/Paid) or remove them all. Persists immediately to the
+  // database via the same edge function the regular Save button uses,
+  // but only for the diff scoped to this FSA - any other unsaved form
+  // edits or single-postal toggles stay pending under the bottom Save
+  // button.
+  //
+  // Implementation:
+  //   1. Compute the diff (added / updated / removed) for THIS FSA only
+  //      by comparing the new FSA assignments against the persisted
+  //      initialSelectedMapZipCodes baseline.
+  //   2. Send the diff to save-public-territory-data in chunks (matches
+  //      the existing save flow's chunking).
+  //   3. On success, update both selectedMapZipCodes and
+  //      initialSelectedMapZipCodes so the form's dirty state reflects
+  //      only the user's other unsaved changes.
+  const handleFsaBulkAction = useCallback(
+    async (
+      fsa: string,
+      action: 'free' | 'paid' | 'remove',
+      stateProvinceFromMap: string,
+    ) => {
+      if (!installerId) return;
+      const fsaUpper = fsa.toUpperCase();
+      // Normalize: uppercase + strip all whitespace. Existing rows in
+      // the DB tend to be "T4X 2J3"; fresh ones from the FSA RPC are
+      // "T4X2J3". Always match on the normalized form.
+      const norm = (s: string) => (s ?? '').toUpperCase().replace(/\s+/g, '');
+      const startsWithFsa = (z: string) => norm(z).startsWith(fsaUpper);
+
+      let nextEntries: Array<{
+        zipCode: string;
+        assignedStatus: TerritoryStatus;
+        stateProvince: string;
+        centroid_latitude: number | null;
+        centroid_longitude: number | null;
+      }> = [];
+
+      if (action === 'remove') {
+        nextEntries = [];
+      } else {
+        let postals;
+        try {
+          postals = await fetchCanadianPostalsForFsa(fsa);
+        } catch (err: any) {
+          console.error('Failed to fetch FSA postals:', err);
+          toast.error(`Could not load postals for ${fsa}: ${err?.message ?? 'unknown error'}`);
+          throw err;
+        }
+        if (!postals.length) {
+          toast.info(`No postals found for ${fsa}.`);
+          return;
+        }
+        const newStatus: TerritoryStatus = action === 'free' ? 'Approved' : 'Needs Approval';
+        nextEntries = postals.map(p => ({
+          zipCode: p.postal_code.toUpperCase(),
+          assignedStatus: newStatus,
+          stateProvince: p.province_abbr || stateProvinceFromMap || 'Unknown',
+          centroid_latitude: p.latitude ?? null,
+          centroid_longitude: p.longitude ?? null,
+        }));
+      }
+
+      // Diff against the persisted baseline so we only push what
+      // actually changed for THIS FSA. Both maps are keyed by the
+      // normalized postal code so e.g. "T4X 1A1" (existing) and
+      // "T4X1A1" (incoming) match cleanly.
+      const baselineForFsa = new Map(
+        initialSelectedMapZipCodes
+          .filter(z => startsWithFsa(z.zipCode))
+          .map(z => [norm(z.zipCode), z]),
+      );
+      const nextForFsa = new Map(nextEntries.map(z => [norm(z.zipCode), z]));
+
+      const addedZips = nextEntries
+        .filter(z => !baselineForFsa.has(norm(z.zipCode)))
+        .map(z => ({ zip_code: z.zipCode, state_province: z.stateProvince, assigned_status: z.assignedStatus }));
+      // Status updates: use the BASELINE's stored zipCode string so we
+      // hit the right row in the DB (the table column is the raw text,
+      // including any space).
+      const updatedZips = nextEntries
+        .map(z => {
+          const b = baselineForFsa.get(norm(z.zipCode));
+          if (!b || b.assignedStatus === z.assignedStatus) return null;
+          return { zip_code: b.zipCode, assigned_status: z.assignedStatus };
+        })
+        .filter((x): x is { zip_code: string; assigned_status: TerritoryStatus } => x !== null);
+      const removedZips = Array.from(baselineForFsa.values())
+        .filter(z => !nextForFsa.has(norm(z.zipCode)))
+        .map(z => ({ zipCode: z.zipCode }));
+
+      if (addedZips.length === 0 && updatedZips.length === 0 && removedZips.length === 0) {
+        if (action === 'remove') {
+          toast.info(`No assignments to remove in ${fsa}.`);
+        } else {
+          toast.info(`${fsa} is already set as ${action === 'free' ? 'Free' : 'Paid'}.`);
+        }
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const CHUNK_SIZE = 200;
+      const processChanges = async (
+        type: 'added' | 'updated' | 'removed',
+        items: any[],
+      ) => {
+        if (items.length === 0) return;
+        for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+          const chunk = items.slice(i, i + CHUNK_SIZE);
+          const body: any = {
+            installerId,
+            addedZips: type === 'added' ? chunk : [],
+            updatedZips: type === 'updated' ? chunk : [],
+            removedZips: type === 'removed' ? chunk : [],
+          };
+          const { error } = await supabase.functions.invoke('save-public-territory-data', {
+            headers: { Authorization: `Bearer ${session?.access_token}` },
+            body,
+          });
+          if (error) throw new Error(`Failed during ${type} step: ${error.message}`);
+        }
+      };
+
+      try {
+        await processChanges('removed', removedZips);
+        await processChanges('updated', updatedZips);
+        await processChanges('added', addedZips);
+      } catch (err: any) {
+        console.error('FSA bulk save failed:', err);
+        toast.error(`Could not save ${fsa}: ${err?.message ?? 'unknown error'}`);
+        throw err;
+      }
+
+      // Apply the same diff to both the working copy and the persisted
+      // baseline so the form's dirty state stays accurate (only the
+      // user's other unrelated edits remain pending).
+      // For postals already in the baseline we keep the BASELINE's
+      // zipCode string (preserves whatever format is in the DB) and
+      // only swap the assignedStatus. New postals carry the normalized
+      // string from the FSA RPC.
+      const applyDiff = (
+        prev: typeof selectedMapZipCodes,
+      ): typeof selectedMapZipCodes => {
+        const remaining = prev.filter(item => !startsWithFsa(item.zipCode));
+        const merged = nextEntries.map(next => {
+          const b = baselineForFsa.get(norm(next.zipCode));
+          if (b) {
+            return { ...b, assignedStatus: next.assignedStatus };
+          }
+          return next;
+        });
+        return [...remaining, ...merged];
+      };
+      setSelectedMapZipCodes(applyDiff);
+      setInitialSelectedMapZipCodes(prev => applyDiff(prev));
+      setMapRefreshKey(p => p + 1);
+
+      if (action === 'remove') {
+        toast.success(`Removed ${removedZips.length.toLocaleString()} postals from ${fsa}.`);
+      } else {
+        const total = nextEntries.length;
+        toast.success(
+          `Saved ${total.toLocaleString()} postals in ${fsa} as ${action === 'free' ? 'Free' : 'Paid'}.`,
+        );
+      }
+    },
+    [installerId, initialSelectedMapZipCodes],
+  );
 
   const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
+    // Match by normalized form so "T4X 2T2" (clicked from a postal-code
+    // dot) resolves to the existing "T4X2T2" entry created by an earlier
+    // FSA bulk add. Keeps the cycle Approved → Needs Approval → removed
+    // working regardless of whitespace/case in the stored zipCode.
+    const normZip = (zipCode ?? '').toUpperCase().replace(/\s+/g, '');
     setSelectedMapZipCodes(prev => {
-      const idx = prev.findIndex(item => item.zipCode === zipCode);
+      const idx = prev.findIndex(
+        item => (item.zipCode ?? '').toUpperCase().replace(/\s+/g, '') === normZip,
+      );
       const c = zipCodeCentroids.get(zipCode);
       if (idx !== -1) {
         if (prev[idx].assignedStatus === 'Approved') {
           return [...prev.slice(0, idx), { ...prev[idx], assignedStatus: 'Needs Approval' }, ...prev.slice(idx + 1)];
         }
-        return prev.filter(item => item.zipCode !== zipCode);
+        return [...prev.slice(0, idx), ...prev.slice(idx + 1)];
       }
       return [...prev, { zipCode, assignedStatus: 'Approved', stateProvince, centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null }];
     });
@@ -363,15 +572,34 @@ const EditInstallerPage: React.FC = () => {
   };
 
   const handleBulkSelectionComplete = useCallback((selectedZips: any[]) => {
+    // Bulk Free / Bulk Paid / Bulk Deselect: also normalize so a
+    // selection over postal-code dots ("T4X 2T2" with space) matches
+    // existing entries that the FSA bulk add stored normalized
+    // ("T4X2T2"). And make Bulk Paid symmetric with Bulk Free - both
+    // overwrite whatever was there. Without this, Bulk Paid silently
+    // skips any postal that was already Approved.
+    const norm = (s: string) => (s ?? '').toUpperCase().replace(/\s+/g, '');
     setSelectedMapZipCodes(prev => {
-      const map = new Map(prev.map(item => [item.zipCode, item]));
+      // normalized-key → existing entry (preserves the entry's stored
+      // zipCode string so we don't churn between formats).
+      const byNorm = new Map(prev.map(item => [norm(item.zipCode), item]));
       selectedZips.forEach(z => {
         const c = zipCodeCentroids.get(z.zipCode);
-        if (bulkActionType === 'deselect') map.delete(z.zipCode);
-        else if (bulkActionType === 'approve') map.set(z.zipCode, { ...z, assignedStatus: 'Approved', centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null });
-        else if (bulkActionType === 'needs_approval' && (!map.has(z.zipCode) || map.get(z.zipCode)!.assignedStatus === 'Needs Approval')) map.set(z.zipCode, { ...z, assignedStatus: 'Needs Approval', centroid_latitude: c?.lat || null, centroid_longitude: c?.lng || null });
+        const k = norm(z.zipCode);
+        const existing = byNorm.get(k);
+        const baseEntry = {
+          ...z,
+          // keep the existing zipCode format if we already have one,
+          // otherwise use what the selection gave us
+          zipCode: existing?.zipCode ?? z.zipCode,
+          centroid_latitude: c?.lat ?? existing?.centroid_latitude ?? null,
+          centroid_longitude: c?.lng ?? existing?.centroid_longitude ?? null,
+        };
+        if (bulkActionType === 'deselect') byNorm.delete(k);
+        else if (bulkActionType === 'approve') byNorm.set(k, { ...baseEntry, assignedStatus: 'Approved' });
+        else if (bulkActionType === 'needs_approval') byNorm.set(k, { ...baseEntry, assignedStatus: 'Needs Approval' });
       });
-      return Array.from(map.values());
+      return Array.from(byNorm.values());
     });
     setMapRefreshKey(p => p + 1);
     setBulkActionType(null);
@@ -470,11 +698,35 @@ const EditInstallerPage: React.FC = () => {
     toast.success("Territories exported successfully!");
   };
 
-  if (loading || sessionLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><LoadingSayings /></div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center text-red-500">Error: {error.message}</div>;
+  const loadAllData = useCallback(() => {
+    if (initialFormData) {
+      setFormData(JSON.parse(JSON.stringify(initialFormData)));
+    }
+    setSelectedMapZipCodes(JSON.parse(JSON.stringify(initialSelectedMapZipCodes)));
+    setMapRefreshKey((p) => p + 1);
+    setIsDirty(false);
+  }, [initialFormData, initialSelectedMapZipCodes]);
+
+  if (sessionLoading || installerBlockingLoad) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <LoadingSayings />
+      </div>
+    );
+  }
+  if (installerError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-500">
+        Error: {installerError.message}
+      </div>
+    );
+  }
   if (!currentInstaller) return null;
 
   const canEdit = profile?.role === 'admin' || (profile?.role === 'installer' && currentInstaller.rawSupabaseData?.account_id === user?.id);
+
+  const territoryActionsDisabled =
+    saveMutation.isPending || !canEdit || isLoadingZips || !!zipsError;
 
   return (
     <>
@@ -606,46 +858,83 @@ const EditInstallerPage: React.FC = () => {
             <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
             <div className="flex flex-wrap justify-between gap-2 mb-4">
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={handleAutoApprove} disabled={saveMutation.isPending || !canEdit}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={saveMutation.isPending || !canEdit}>Bulk Free Mileage</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={saveMutation.isPending || !canEdit}>Bulk Paid Mileage</Button>
+                <Button variant="outline" onClick={handleAutoApprove} disabled={territoryActionsDisabled}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={territoryActionsDisabled}>Bulk Free Mileage</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={territoryActionsDisabled}>Bulk Paid Mileage</Button>
                 {installerCountry === 'Canada' ? (
-                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white" : "text-red-600")} onClick={() => setBulkActionType('deselect')} disabled={saveMutation.isPending || !canEdit}>
+                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white" : "text-red-600")} onClick={() => setBulkActionType('deselect')} disabled={territoryActionsDisabled}>
                     <Eraser className="mr-2 h-4 w-4" /> Bulk Deselect
                   </Button>
                 ) : (
-                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={saveMutation.isPending || !canEdit}>
+                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={territoryActionsDisabled}>
                     <Eraser className="mr-2 h-4 w-4" /> Clear All
                   </Button>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={saveMutation.isPending || !canEdit}>
+                <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={territoryActionsDisabled}>
                   <Upload className="mr-2 h-4 w-4" /> Import
                 </Button>
-                <Button variant="outline" onClick={handleExportTerritories} disabled={saveMutation.isPending}>
+                <Button variant="outline" onClick={handleExportTerritories} disabled={saveMutation.isPending || isLoadingZips}>
                   <Download className="mr-2 h-4 w-4" /> Export
                 </Button>
               </div>
             </div>
-            <div className="h-[800px] w-full border rounded-lg overflow-hidden">
-              <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} />
-            </div>
-            <InstallerTerritoryList
-              assignedZipCodes={selectedMapZipCodes}
-              onZipCodeClick={handleMapZipCodeClick}
-              onAddZipCode={handleAddZipCode}
-              mapClickStates={highlightedZipCodes}
-              installerLocation={memoizedCenterLocation}
-              listDisplayRadius={listDisplayRadius}
-            />
+            {zipsError && (
+              <p className="text-sm text-red-600 mb-2" role="alert">
+                Territory assignments failed to load: {zipsError.message}
+              </p>
+            )}
+            {isLoadingZips ? (
+              <div className="h-[800px] w-full border rounded-lg overflow-hidden flex flex-col items-center justify-center bg-muted/20 gap-3 text-muted-foreground">
+                <Loader2 className="h-10 w-10 animate-spin" />
+                <p className="text-sm font-medium text-center max-w-md px-4">
+                  Loading territory assignments&hellip; Large installers can take up to a minute while rows arrive from the database.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="h-[800px] w-full border rounded-lg overflow-hidden">
+                  <TerritoryMap
+                    country={installerCountry}
+                    isOpen={true}
+                    centerLocation={memoizedCenterLocation}
+                    onZipCodeClick={handleMapZipCodeClick}
+                    selectedZipCodes={selectedMapZipCodes}
+                    currentDisplayRadius={mapDisplayRadius}
+                    showRadiusCircles={true}
+                    territoryStatuses={territoryStatuses}
+                    highlightedZipCodes={highlightedZipCodes}
+                    isBulkSelecting={!!bulkActionType}
+                    onBulkSelectionComplete={handleBulkSelectionComplete}
+                    refreshKey={mapRefreshKey}
+                    canadaDisplayModeStorageKey={installerCountry === 'Canada' ? CANADA_MAP_MODE_STORAGE_ADMIN : undefined}
+                    fsaTotalPostalCounts={fsaTotalPostalCounts}
+                    fsaTotalPostalCountsLoading={isFsaTotalPostalCountsLoading}
+                    onFsaBulkAction={installerCountry === 'Canada' ? handleFsaBulkAction : undefined}
+                  />
+                </div>
+                <InstallerTerritoryList
+                  assignedZipCodes={selectedMapZipCodes}
+                  onZipCodeClick={handleMapZipCodeClick}
+                  onAddZipCode={handleAddZipCode}
+                  mapClickStates={highlightedZipCodes}
+                  installerLocation={memoizedCenterLocation}
+                  listDisplayRadius={listDisplayRadius}
+                />
+              </>
+            )}
           </div>
         </div>
       </div>
       {isDirty && (
         <div className="fixed bottom-0 left-0 w-full z-[1000] bg-white border-t p-4 flex justify-end gap-2">
-          <Button variant="outline" onClick={() => loadAllData()} disabled={saveMutation.isPending}>Discard</Button>
-          <Button onClick={() => handleSubmit()} disabled={saveMutation.isPending} className="bg-green-600">
+          <Button variant="outline" onClick={loadAllData} disabled={saveMutation.isPending}>Discard</Button>
+          <Button
+            onClick={() => handleSubmit()}
+            disabled={saveMutation.isPending || isLoadingZips || !!zipsError}
+            className="bg-green-600"
+          >
             {saveMutation.isPending ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />} Save
           </Button>
         </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo, memo, startTransition } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, Tooltip, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
@@ -47,10 +47,36 @@ L.Icon.Default.mergeOptions({
   // installer is not signed in. Pass the URL's installerId+token so child
   // edge function calls can authenticate as the public installer.
   publicAuth?: { installerId: string; token: string };
+  /** When set, Canada FSA vs postal-code preference is stored separately (e.g. admin vs public). */
+  canadaDisplayModeStorageKey?: string;
+  /**
+   * Total postal codes per Canadian FSA (3-char prefix). Used to colour FSAs
+   * as "fully covered" (solid) vs. "partially covered" (striped). When
+   * absent, FSAs colour based only on the assignments we know about
+   * (best-effort fallback).
+   */
+  fsaTotalPostalCounts?: Map<string, number>;
+  /**
+   * True while the FSA totals query is in flight. Lets the map render the
+   * optimistic "any-assigned → solid" colouring (and surface a small
+   * "refining coverage" badge) instead of flashing every FSA as partial
+   * coverage during the load.
+   */
+  fsaTotalPostalCountsLoading?: boolean;
+  /**
+   * If set, FSA polygon clicks (Canada, FSA mode) open a popup that lets
+   * the user assign or remove every postal in that FSA in one shot. The
+   * caller is responsible for fetching the FSA's postals (we keep it on
+   * the page so the page already-knows how to update its own state).
+   */
+  onFsaBulkAction?: (
+    fsa: string,
+    action: 'free' | 'paid' | 'remove',
+    stateProvince: string,
+  ) => Promise<void>;
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
-const RENDER_BATCH_SIZE = 2000;
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
   if (!feature || !feature.properties) return '';
@@ -242,22 +268,364 @@ function MapInteractionHandler({
   return null;
 }
 
-const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: number, stage: 'counting' | 'fetching' | 'rendering' }) => (
+const LoadingOverlay = ({
+  progress,
+  total,
+  stage,
+  footnote,
+}: {
+  progress: number;
+  total: number;
+  stage: 'counting' | 'fetching';
+  /** Explains what the progress bar measures (e.g. map postal points vs installer assignments). */
+  footnote?: string;
+}) => (
   <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-[1000]">
-    <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg w-64">
+    <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg max-w-sm w-[min(100%,24rem)] px-5">
       <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-4" />
-      <p className="font-semibold text-lg mb-2">
-        {stage === 'counting' ? 'Calculating...' : stage === 'fetching' ? 'Fetching Territories...' : 'Rendering Territories...'}
+      <p className="font-semibold text-lg mb-2 text-center">
+        {stage === 'counting' ? 'Calculating...' : 'Loading map postal codes...'}
       </p>
       {stage !== 'counting' && (
         <>
           <Progress value={total > 0 ? (progress / total) * 100 : 0} className="w-full" />
-          <p className="text-sm text-gray-500 mt-2">{progress.toLocaleString()} / {total.toLocaleString()}</p>
+          <p className="text-sm text-gray-500 mt-2 tabular-nums">{progress.toLocaleString()} / {total.toLocaleString()}</p>
         </>
       )}
+      {footnote ? (
+        <p className="text-xs text-gray-500 mt-3 text-center leading-snug">{footnote}</p>
+      ) : null}
     </div>
   </div>
 );
+
+// Hidden SVG <defs> mounted once per TerritoryMap. Browsers resolve
+// `fill="url(#id)"` against any <defs> in the same document, so the Leaflet
+// SVG renderer can reference these patterns even though they live in a
+// separate inline SVG element. Kept tiny and aria-hidden.
+const FsaFillPatternDefs: React.FC = () => (
+  <svg
+    width="0"
+    height="0"
+    style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <defs>
+      {/* Mix of free + paid (FSA fully covered, but assignments differ). */}
+      <pattern
+        id="fsa-mixed-pattern"
+        patternUnits="userSpaceOnUse"
+        width="8"
+        height="8"
+        patternTransform="rotate(45)"
+      >
+        <rect width="8" height="8" fill="#F97316" fillOpacity={0.45} />
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
+      </pattern>
+      {/* Partial coverage, all assigned are Free. */}
+      <pattern
+        id="fsa-partial-free-pattern"
+        patternUnits="userSpaceOnUse"
+        width="8"
+        height="8"
+        patternTransform="rotate(45)"
+      >
+        <rect width="8" height="8" fill="#FFFFFF" fillOpacity={0.85} />
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
+      </pattern>
+      {/* Partial coverage, all assigned are Paid. */}
+      <pattern
+        id="fsa-partial-paid-pattern"
+        patternUnits="userSpaceOnUse"
+        width="8"
+        height="8"
+        patternTransform="rotate(45)"
+      >
+        <rect width="8" height="8" fill="#FFFFFF" fillOpacity={0.85} />
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#F97316" strokeWidth={2.5} strokeOpacity={0.5} />
+      </pattern>
+    </defs>
+  </svg>
+);
+
+// Inline UI for the FSA bulk-action popup. Shows the action-focused
+// breakdown (missing / free / paid) and three buttons. Each button has a
+// two-step confirmation so users don't accidentally overwrite a large
+// FSA. The actual write happens in the parent (EditInstallerPage) via
+// the onFsaBulkAction callback so all assignment edits flow through the
+// same Save button.
+const FsaBulkActionPopupContents: React.FC<{
+  fsa: string;
+  stateProvince: string;
+  free: number;
+  paid: number;
+  total: number | undefined;
+  onAction: (action: 'free' | 'paid' | 'remove') => Promise<void>;
+  onClose: () => void;
+}> = ({ fsa, stateProvince, free, paid, total, onAction, onClose }) => {
+  const assigned = free + paid;
+  const missing = total != null ? Math.max(0, total - assigned) : null;
+
+  const [pending, setPending] = React.useState<'free' | 'paid' | 'remove' | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Inside Leaflet popups, native click/scroll events bubble to the map
+  // and can swallow React's button clicks. Stop Leaflet from handling
+  // them so onClick handlers fire normally.
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+  }, []);
+
+  const totalDisplay = total != null ? total.toLocaleString() : '—';
+  const targetCount = total ?? assigned;
+
+  const confirmCopy = (() => {
+    if (!pending) return null;
+    if (pending === 'remove') {
+      return assigned > 0
+        ? `Remove all ${assigned.toLocaleString()} assignments from ${fsa}?`
+        : `Nothing to remove in ${fsa}.`;
+    }
+    const label = pending === 'free' ? 'Free' : 'Paid';
+    if (total != null) {
+      return `Set all ${total.toLocaleString()} postals in ${fsa} as ${label}? Existing assignments in this FSA will be replaced.`;
+    }
+    return `Set every postal in ${fsa} as ${label}? Existing assignments in this FSA will be replaced.`;
+  })();
+
+  const runConfirmed = async () => {
+    if (!pending) return;
+    if (pending === 'remove' && assigned === 0) {
+      setPending(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      await onAction(pending);
+      onClose();
+    } finally {
+      setBusy(false);
+      setPending(null);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="text-sm w-[260px]">
+      <div className="font-semibold text-gray-900">
+        FSA: {fsa}
+        {stateProvince && stateProvince !== 'Unknown' && (
+          <span className="text-gray-500 font-normal"> ({stateProvince})</span>
+        )}
+      </div>
+
+      <div className="mt-2 space-y-0.5">
+        {missing != null && missing === 0 ? (
+          <div className="text-emerald-700 font-medium">
+            ✓ All {totalDisplay} postals assigned
+          </div>
+        ) : missing != null ? (
+          <div>
+            <span className="font-semibold text-gray-900">{missing.toLocaleString()} unassigned</span>
+            <span className="text-gray-500"> of {totalDisplay}</span>
+          </div>
+        ) : (
+          <div className="text-gray-500">{assigned.toLocaleString()} assigned</div>
+        )}
+        <div className="text-gray-600 text-xs">
+          {free > 0 && <span>{free.toLocaleString()} free</span>}
+          {free > 0 && paid > 0 && <span> · </span>}
+          {paid > 0 && <span>{paid.toLocaleString()} paid</span>}
+          {free === 0 && paid === 0 && <span>No assignments yet</span>}
+        </div>
+      </div>
+
+      {pending ? (
+        <div className="mt-3 border-t border-gray-200 pt-3">
+          <div className="text-gray-800 text-xs leading-snug">{confirmCopy}</div>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={runConfirmed}
+              disabled={busy || (pending === 'remove' && assigned === 0)}
+              className={
+                'flex-1 px-2.5 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-50 ' +
+                (pending === 'remove'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : pending === 'free'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-orange-600 hover:bg-orange-700')
+              }
+            >
+              {busy ? 'Working…' : 'Confirm'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPending(null)}
+              disabled={busy}
+              className="flex-1 px-2.5 py-1.5 rounded text-xs font-medium bg-gray-100 text-gray-800 hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 border-t border-gray-200 pt-3 space-y-1.5">
+          <button
+            type="button"
+            onClick={() => setPending('free')}
+            className="w-full px-2.5 py-1.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+          >
+            Set all {targetCount > 0 ? targetCount.toLocaleString() : ''} to Free
+          </button>
+          <button
+            type="button"
+            onClick={() => setPending('paid')}
+            className="w-full px-2.5 py-1.5 rounded text-xs font-semibold bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100"
+          >
+            Set all {targetCount > 0 ? targetCount.toLocaleString() : ''} to Paid
+          </button>
+          <button
+            type="button"
+            onClick={() => setPending('remove')}
+            disabled={assigned === 0}
+            className="w-full px-2.5 py-1.5 rounded text-xs font-medium text-red-700 border border-red-200 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Remove all from FSA
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Module-level cache for Canadian postal-code fetches. Keyed by
+// `${lat}-${lng}-${radius}`. Survives across:
+//   * toggling FSA <-> Postal codes inside the same map instance
+//   * navigating between installers (TerritoryMap mounts/unmounts)
+//   * the public sharable territory editor reusing the same map component
+//
+// Bounded LRU so a long session moving between many installers in different
+// cities can't grow memory unbounded. Each entry is the raw point array
+// (~50 bytes/point JSON, ~7-10 MB for the busiest urban radii).
+const CANADA_POINTS_CACHE_LIMIT = 8;
+const canadaPointsCache = new Map<string, any[]>();
+
+function readCanadaPointsCache(key: string): any[] | undefined {
+  const value = canadaPointsCache.get(key);
+  if (value !== undefined) {
+    // Touch: re-insert so it becomes the most-recently-used entry.
+    canadaPointsCache.delete(key);
+    canadaPointsCache.set(key, value);
+  }
+  return value;
+}
+
+function writeCanadaPointsCache(key: string, value: any[]) {
+  if (canadaPointsCache.has(key)) {
+    canadaPointsCache.delete(key);
+  }
+  canadaPointsCache.set(key, value);
+  while (canadaPointsCache.size > CANADA_POINTS_CACHE_LIMIT) {
+    const oldest = canadaPointsCache.keys().next().value;
+    if (oldest === undefined) break;
+    canadaPointsCache.delete(oldest);
+  }
+}
+
+// In-flight fetches keyed by `${lat}-${lng}-${radius}`. Prevents
+// duplicate work when (a) the user is in postal-codes mode and a parallel
+// FSA-mode prefetch is also running, or (b) two TerritoryMap instances
+// open the same area at once.
+const canadaPointsInFlight = new Map<string, Promise<any[]>>();
+
+type CanadaPointsProgress = {
+  onCount?: (count: number) => void;
+  onProgress?: (loaded: number) => void;
+};
+
+// Shared fetcher used by both the live load and the background prefetch.
+// On success, populates the module-level cache so any concurrent or
+// subsequent caller can read it for free.
+async function fetchCanadaPointsForKey(
+  searchKey: string,
+  centerLat: number,
+  centerLng: number,
+  radiusKm: number,
+  progress: CanadaPointsProgress = {},
+): Promise<any[]> {
+  const cached = canadaPointsCache.get(searchKey);
+  if (cached) return cached;
+
+  const inFlight = canadaPointsInFlight.get(searchKey);
+  if (inFlight) return inFlight;
+
+  const promise = (async () => {
+    const radiusMeters = radiusKm * 1000;
+    const { data: count, error: countError } = await supabase.rpc(
+      'get_canadian_points_in_radius_count',
+      { center_lat: centerLat, center_lng: centerLng, radius_meters: radiusMeters },
+    );
+    if (countError) throw new Error(`Failed to get count: ${countError.message}`);
+    progress.onCount?.(count ?? 0);
+    if (!count) {
+      writeCanadaPointsCache(searchKey, []);
+      return [];
+    }
+
+    const PAGE_SIZE = 1000;
+    const totalPages = Math.ceil(count / PAGE_SIZE);
+    const CONCURRENCY_LIMIT = 20;
+    let fetchedPoints: any[] = [];
+    for (let i = 0; i < totalPages; i += CONCURRENCY_LIMIT) {
+      const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalPages);
+      const promises = [];
+      for (let j = i; j < chunkEnd; j++) {
+        const page = j + 1;
+        promises.push(
+          supabase.rpc('get_all_canadian_points_in_radius', {
+            center_lat: centerLat,
+            center_lng: centerLng,
+            radius_meters: radiusMeters,
+            page_size: PAGE_SIZE,
+            page_number: page,
+          }),
+        );
+      }
+      const results = await Promise.all(promises);
+      for (const result of results) {
+        if (result.data) fetchedPoints = fetchedPoints.concat(result.data);
+      }
+      progress.onProgress?.(fetchedPoints.length);
+    }
+    writeCanadaPointsCache(searchKey, fetchedPoints);
+    return fetchedPoints;
+  })();
+
+  canadaPointsInFlight.set(searchKey, promise);
+  try {
+    return await promise;
+  } finally {
+    canadaPointsInFlight.delete(searchKey);
+  }
+}
+
+// requestIdleCallback shim — falls back to setTimeout(0) on Safari where
+// it isn't implemented yet. Used to schedule the FSA-mode prefetch so it
+// never competes with synchronous render work.
+function scheduleIdle(callback: () => void): () => void {
+  const w = typeof window !== 'undefined' ? (window as any) : undefined;
+  if (w?.requestIdleCallback) {
+    const id = w.requestIdleCallback(callback, { timeout: 1500 });
+    return () => w.cancelIdleCallback?.(id);
+  }
+  const id = setTimeout(callback, 250);
+  return () => clearTimeout(id);
+}
 
 // Display modes for the Canadian map. FSA mode renders only the static
 // 3-character FSA polygons; "postal-codes" additionally fetches and renders
@@ -266,9 +634,9 @@ const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: n
 type CanadaDisplayMode = 'fsa' | 'postal-codes';
 const CANADA_DISPLAY_MODE_KEY = 'territory-map-canada-display-mode';
 
-function readCanadaDisplayMode(): CanadaDisplayMode {
+function readCanadaDisplayMode(storageKey: string): CanadaDisplayMode {
   if (typeof window === 'undefined') return 'fsa';
-  const stored = window.localStorage.getItem(CANADA_DISPLAY_MODE_KEY);
+  const stored = window.localStorage.getItem(storageKey);
   return stored === 'postal-codes' ? 'postal-codes' : 'fsa';
 }
 
@@ -287,7 +655,15 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   country = 'USA',
   refreshKey = 0,
   publicAuth,
+  canadaDisplayModeStorageKey,
+  fsaTotalPostalCounts,
+  fsaTotalPostalCountsLoading = false,
+  onFsaBulkAction,
 }) => {
+  const resolvedCanadaModeKey =
+    canadaDisplayModeStorageKey && canadaDisplayModeStorageKey.length > 0
+      ? canadaDisplayModeStorageKey
+      : CANADA_DISPLAY_MODE_KEY;
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [allCanadaGeoJsonData, setAllCanadaGeoJsonData] = useState<any>(null);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -295,29 +671,56 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   const [allCanadaPoints, setAllCanadaPoints] = useState<any[]>([]);
   const [renderedCanadaPoints, setRenderedCanadaPoints] = useState<any[]>([]);
-  const [loadingStage, setLoadingStage] = useState<'idle' | 'counting' | 'fetching' | 'rendering' | 'complete'>('idle');
+  const [loadingStage, setLoadingStage] = useState<'idle' | 'counting' | 'fetching' | 'complete'>('idle');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [totalPointsToLoad, setTotalPointsToLoad] = useState(0);
   const lastSearchKey = useRef<string | null>(null);
 
-  const [canadaDisplayMode, setCanadaDisplayMode] =
-    useState<CanadaDisplayMode>(readCanadaDisplayMode);
+  const [canadaDisplayMode, setCanadaDisplayMode] = useState<CanadaDisplayMode>(() =>
+    readCanadaDisplayMode(resolvedCanadaModeKey),
+  );
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(CANADA_DISPLAY_MODE_KEY, canadaDisplayMode);
+      window.localStorage.setItem(resolvedCanadaModeKey, canadaDisplayMode);
     } catch {
       // localStorage may be unavailable (private mode, quota); ignore.
     }
-  }, [canadaDisplayMode]);
+  }, [canadaDisplayMode, resolvedCanadaModeKey]);
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
+
+  // Stable SVG renderer for the Canadian FSA polygon layer. We need SVG (not
+  // canvas) here because canvas cannot reference SVG patterns; the FSA "mixed"
+  // fill (`url(#fsa-mixed-pattern)`) requires SVG paint servers. ~1,600 FSAs
+  // is well within SVG's comfort zone — the heavy 160k postal-code dots stay
+  // on the MapContainer's default canvas renderer.
+  const svgPolygonRenderer = useMemo(() => L.svg({ pane: 'polygons' }), []);
 
   const onZipCodeClickRef = useRef(onZipCodeClick);
   useEffect(() => {
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
+
+  // FSA bulk-action popup. Opened when the user clicks an FSA polygon in
+  // FSA mode and the parent provided an onFsaBulkAction callback. The
+  // ref-indirection keeps the click handler attached to each Leaflet
+  // layer (memoised across renders) able to call into the latest opener.
+  const [fsaBulkPopup, setFsaBulkPopup] = useState<{
+    fsa: string;
+    stateProvince: string;
+    latlng: L.LatLng;
+  } | null>(null);
+  const openFsaBulkPopupRef = useRef<
+    ((fsa: string, stateProvince: string, latlng: L.LatLng | null) => void) | null
+  >(null);
+  useEffect(() => {
+    openFsaBulkPopupRef.current = (fsa, stateProvince, latlng) => {
+      if (!latlng) return;
+      setFsaBulkPopup({ fsa, stateProvince, latlng });
+    };
+  }, []);
 
   // Process the static Canada FSA GeoJSON once. Used by both display modes,
   // so it runs independently of the postal-code DB fetch.
@@ -357,24 +760,46 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         : null;
 
       if (isCanada) {
-        // FSA mode: render only the static polygons; skip the heavy DB fetch.
+        // FSA mode: just render the static polygons. We INTENTIONALLY do
+        // not clear allCanadaPoints / renderedCanadaPoints here — the JSX
+        // already gates rendering on `canadaDisplayMode === 'postal-codes'`,
+        // and keeping the data in state means toggling back to Postal
+        // codes for the same (lat, lng, radius) is instant.
         if (canadaDisplayMode === 'fsa') {
-          if (allCanadaPoints.length > 0) setAllCanadaPoints([]);
-          if (renderedCanadaPoints.length > 0) setRenderedCanadaPoints([]);
-          lastSearchKey.current = null;
           if (loadingStage !== 'idle' && loadingStage !== 'complete') {
             setLoadingStage('complete');
           }
           return;
         }
 
-        if (!searchKey || searchKey === lastSearchKey.current) {
-          if (!searchKey) {
-            setAllCanadaPoints([]);
-            setRenderedCanadaPoints([]);
-          }
+        // No specific location/radius (e.g. /territories "all" view): nothing
+        // to fetch, drop any postal-code state we may have inherited.
+        if (!searchKey) {
+          if (renderedCanadaPoints.length > 0) setRenderedCanadaPoints([]);
+          if (allCanadaPoints.length > 0) setAllCanadaPoints([]);
+          lastSearchKey.current = null;
           return;
         }
+
+        // Already showing the right data for this search.
+        if (searchKey === lastSearchKey.current) {
+          return;
+        }
+
+        // Module-level cache hit. Skip the network entirely — covers the
+        // case where the user navigated away (e.g. to a different installer
+        // in the same city) and came back.
+        const cached = readCanadaPointsCache(searchKey);
+        if (cached) {
+          lastSearchKey.current = searchKey;
+          setAllCanadaPoints(cached);
+          setRenderedCanadaPoints(cached);
+          setTotalPointsToLoad(cached.length);
+          setLoadingProgress(cached.length);
+          setLoadingStage('complete');
+          return;
+        }
+
         lastSearchKey.current = searchKey;
 
         setAllCanadaPoints([]);
@@ -384,49 +809,34 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         setLoadingStage('counting');
 
         try {
-          const radiusMeters = (currentDisplayRadius as number) * 1000;
-          const { data: count, error: countError } = await supabase.rpc('get_canadian_points_in_radius_count', {
-            center_lat: centerLocation!.lat,
-            center_lng: centerLocation!.lng,
-            radius_meters: radiusMeters,
-          });
+          const fetchedPoints = await fetchCanadaPointsForKey(
+            searchKey,
+            centerLocation!.lat,
+            centerLocation!.lng,
+            currentDisplayRadius as number,
+            {
+              onCount: (count) => {
+                setTotalPointsToLoad(count);
+                if (count > 0) setLoadingStage('fetching');
+              },
+              onProgress: (loaded) => setLoadingProgress(loaded),
+            },
+          );
 
-          if (countError) throw new Error(`Failed to get count: ${countError.message}`);
-          if (count === 0) {
+          if (fetchedPoints.length === 0) {
             setLoadingStage('complete');
             return;
           }
 
-          setTotalPointsToLoad(count);
-          setLoadingStage('fetching');
-
-          const PAGE_SIZE = 1000;
-          const totalPages = Math.ceil(count / PAGE_SIZE);
-          const CONCURRENCY_LIMIT = 10;
-          let fetchedPoints: any[] = [];
-
-          for (let i = 0; i < totalPages; i += CONCURRENCY_LIMIT) {
-            const promises = [];
-            const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalPages);
-            for (let j = i; j < chunkEnd; j++) {
-              const page = j + 1;
-              promises.push(supabase.rpc('get_all_canadian_points_in_radius', {
-                  center_lat: centerLocation!.lat,
-                  center_lng: centerLocation!.lng,
-                  radius_meters: radiusMeters,
-                  page_size: PAGE_SIZE,
-                  page_number: page,
-                }));
-            }
-            const results = await Promise.all(promises);
-            for (const result of results) {
-              if (result.data) fetchedPoints = fetchedPoints.concat(result.data);
-            }
-            setLoadingProgress(fetchedPoints.length);
-          }
-
           setAllCanadaPoints(fetchedPoints);
-          setLoadingStage('rendering');
+          setLoadingProgress(fetchedPoints.length);
+          // Incremental `setRenderedCanadaPoints(prev => [...prev, batch])` was
+          // O(n²) in total work copying arrays and dominated render time (~30s
+          // for ~160k points). One transition update is far cheaper.
+          startTransition(() => {
+            setRenderedCanadaPoints(fetchedPoints);
+            setLoadingStage('complete');
+          });
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
           toast.error(`Failed to load Canadian postal codes: ${err.message}`);
@@ -462,29 +872,63 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     loadAndRenderData();
   }, [isCanada, centerLocation, currentDisplayRadius, allGeoJsonData, canadaDisplayMode]);
 
+  // Background prefetch: while the user is in FSA mode, opportunistically
+  // fetch the postal-code points for the current (lat, lng, radius) into
+  // the module-level cache so flipping to "Postal codes" is instant.
+  //
+  // Carefully gated to avoid competing with the critical-path queries
+  // that the page also makes on first load (FSA totals,
+  // get_global_territory_statuses, the installer's own zip-codes RPC):
+  //   * never fires while fsaTotalPostalCounts is still loading
+  //   * waits a fixed 5s after gating clears so the initial render and
+  //     map style passes settle first
+  //   * scheduled via requestIdleCallback as a final back-off, so the
+  //     fetch only kicks off when the browser is otherwise idle
+  //
+  // No React state is touched here — the live load effect above will
+  // read straight from the module-level cache when the user toggles to
+  // Postal codes mode.
   useEffect(() => {
-    if (loadingStage !== 'rendering' || !isCanada || allCanadaPoints.length === 0) return;
-  
-    setRenderedCanadaPoints([]);
-    setLoadingProgress(0);
-    let renderIndex = 0;
-    let animationFrameId: number;
-  
-    const renderNextBatch = () => {
-      if (renderIndex >= allCanadaPoints.length) {
-        setLoadingStage('complete');
-        return;
-      }
-      const nextBatch = allCanadaPoints.slice(renderIndex, renderIndex + RENDER_BATCH_SIZE);
-      setRenderedCanadaPoints(prev => [...prev, ...nextBatch]);
-      setLoadingProgress(prev => prev + nextBatch.length);
-      renderIndex += RENDER_BATCH_SIZE;
-      animationFrameId = requestAnimationFrame(renderNextBatch);
+    if (!isCanada) return;
+    if (canadaDisplayMode !== 'fsa') return;
+    if (fsaTotalPostalCountsLoading) return;
+    if (!centerLocation?.lat || !centerLocation?.lng) return;
+    if (currentDisplayRadius === 'all') return;
+
+    const searchKey = `${centerLocation.lat}-${centerLocation.lng}-${currentDisplayRadius}`;
+    if (canadaPointsCache.has(searchKey)) return;
+    if (canadaPointsInFlight.has(searchKey)) return;
+
+    let cancelled = false;
+    let cancelIdle: (() => void) | null = null;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      cancelIdle = scheduleIdle(() => {
+        if (cancelled) return;
+        void fetchCanadaPointsForKey(
+          searchKey,
+          centerLocation.lat as number,
+          centerLocation.lng as number,
+          currentDisplayRadius as number,
+        ).catch(() => {
+          // Background prefetch — swallow errors. The live load will
+          // surface the real error if/when the user toggles.
+        });
+      });
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      cancelIdle?.();
     };
-  
-    animationFrameId = requestAnimationFrame(renderNextBatch);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [loadingStage, allCanadaPoints, isCanada]);
+  }, [
+    isCanada,
+    canadaDisplayMode,
+    fsaTotalPostalCountsLoading,
+    centerLocation,
+    currentDisplayRadius,
+  ]);
 
   const filteredGeoJsonData = useMemo(() => {
     const geoJsonToUse = isCanada ? allCanadaGeoJsonData : allGeoJsonData;
@@ -508,36 +952,132 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     return { ...geoJsonToUse, features: filteredFeatures };
   }, [allGeoJsonData, allCanadaGeoJsonData, isCanada, centerLocation, currentDisplayRadius, isTerritoryManagementPage]);
 
-  const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
-    let isHighlighted: 'green' | 'orange' | undefined = highlightedZipCodes.get(zipCode);
-    let isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
-    let status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
-
-    // For Canada, zipCode is the FSA (3 chars). We need to check if any 6-char code matches this FSA.
-    if (isCanada) {
-      // Find if any highlighted zip code starts with this FSA
-      for (const [key, value] of highlightedZipCodes.entries()) {
-        if (key.startsWith(zipCode)) {
-          isHighlighted = value;
-          break;
-        }
+  // Per-FSA aggregates of THIS installer's selected postals. Lets us paint
+  // each Canadian FSA based on whether all of its assigned postals are
+  // free, all are paid, or it's a mix — and replaces the old O(N) scan that
+  // ran inside getGeoJsonStyle for every FSA polygon, every restyle.
+  const fsaSelectionAggregates = useMemo(() => {
+    if (!isCanada) return null;
+    const map = new Map<string, { free: number; paid: number }>();
+    for (const sel of selectedZipCodes) {
+      const fsa = sel.zipCode.substring(0, 3).toUpperCase();
+      let entry = map.get(fsa);
+      if (!entry) {
+        entry = { free: 0, paid: 0 };
+        map.set(fsa, entry);
       }
-      
-      const selectedMatch = selectedZipCodes.find(z => z.zipCode.startsWith(zipCode));
-      if (selectedMatch) {
-        isSelected = true;
-        status = selectedMatch.assignedStatus;
-      }
-      
-      if (!status) {
-        for (const [key, value] of territoryStatuses.entries()) {
-          if (key.startsWith(zipCode)) {
-            status = value as TerritoryStatus;
-            break;
-          }
-        }
-      }
+      if (sel.assignedStatus === 'Approved') entry.free++;
+      else if (sel.assignedStatus === 'Needs Approval') entry.paid++;
     }
+    return map;
+  }, [isCanada, selectedZipCodes]);
+
+  // Same shape, but for the global heatmap on /territories. Keyed off
+  // territoryStatuses (which is global across all installers there).
+  const fsaTerritoryAggregates = useMemo(() => {
+    if (!isCanada || !isTerritoryManagementPage) return null;
+    const map = new Map<string, { free: number; paid: number }>();
+    territoryStatuses.forEach((status, postal) => {
+      const fsa = postal.substring(0, 3).toUpperCase();
+      let entry = map.get(fsa);
+      if (!entry) {
+        entry = { free: 0, paid: 0 };
+        map.set(fsa, entry);
+      }
+      if (status === 'Approved') entry.free++;
+      else if (status === 'Needs Approval') entry.paid++;
+    });
+    return map;
+  }, [isCanada, isTerritoryManagementPage, territoryStatuses]);
+
+  const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
+    // ---- Canada branch (FSA polygons) ---------------------------------------
+    // Each FSA may contain dozens or hundreds of 6-character postal codes.
+    // We have two pieces of information:
+    //   * fsaSelectionAggregates  - how many of this installer's assignments
+    //                               in this FSA are Free vs Paid.
+    //   * fsaTotalPostalCounts    - the total postal codes that exist in
+    //                               this FSA across the whole DB.
+    //
+    // From those we classify the FSA as one of:
+    //   solid green  - assigned == total AND all free
+    //   solid orange - assigned == total AND all paid
+    //   stripe (orange/green) - fully covered but mixed Free/Paid
+    //   stripe (white/green)  - partial coverage, all assigned Free
+    //   stripe (white/orange) - partial coverage, all assigned Paid
+    //   stripe (orange/green) - partial coverage AND mixed
+    //
+    // Falls back to the previous "any assigned -> solid" behaviour only if
+    // we don't yet know the FSA total (data still loading).
+    if (isCanada) {
+      // While the FSA totals are still loading, treat any-assigned as solid
+      // (best-effort optimistic colouring) so we don't flash every FSA into
+      // the partial-coverage stripes for a few seconds before snapping back
+      // to solid. The sticky tooltip + the small "refining coverage" badge
+      // in the corner indicate that the breakdown is still being refined.
+      const totalsKnown = !fsaTotalPostalCountsLoading;
+
+      const sel = fsaSelectionAggregates?.get(zipCode);
+      if (sel) {
+        const total = fsaTotalPostalCounts?.get(zipCode);
+        const assigned = sel.free + sel.paid;
+        // Allow a 1% tolerance to absorb residual data quirks in
+        // canadian_postal_codes (rare format variants the SQL normalizer
+        // can't fully collapse, special-purpose codes the installer would
+        // never service, etc.). 99% covered with all-uniform status reads
+        // as fully covered.
+        const isFullyCovered =
+          !totalsKnown ||
+          (total != null && (assigned >= total || assigned / total >= 0.99));
+        const isMixed = sel.free > 0 && sel.paid > 0;
+
+        if (isFullyCovered && !isMixed) {
+          if (sel.free > 0) {
+            return { fillColor: '#22C55E', fillOpacity: 0.45, color: '#166534', weight: 1.5, opacity: 0.75, interactive: true };
+          }
+          return { fillColor: '#F97316', fillOpacity: 0.45, color: '#9A3412', weight: 1.5, opacity: 0.75, interactive: true };
+        }
+
+        // Anything else is a "miss" of some kind: partial coverage and/or
+        // mixed statuses. Pattern conveys the kind.
+        if (isMixed) {
+          return { fillColor: 'url(#fsa-mixed-pattern)', fillOpacity: 1, color: '#9A3412', weight: 1.5, opacity: 0.85, interactive: true };
+        }
+        if (sel.free > 0) {
+          return { fillColor: 'url(#fsa-partial-free-pattern)', fillOpacity: 1, color: '#166534', weight: 1.5, opacity: 0.75, interactive: true };
+        }
+        return { fillColor: 'url(#fsa-partial-paid-pattern)', fillOpacity: 1, color: '#9A3412', weight: 1.5, opacity: 0.75, interactive: true };
+      }
+
+      if (isTerritoryManagementPage) {
+        const t = fsaTerritoryAggregates?.get(zipCode);
+        if (t) {
+          const total = fsaTotalPostalCounts?.get(zipCode);
+          const assigned = t.free + t.paid;
+          const isFullyCovered =
+            !totalsKnown ||
+            (total != null && (assigned >= total || assigned / total >= 0.99));
+          const isMixed = t.free > 0 && t.paid > 0;
+
+          if (isFullyCovered && !isMixed) {
+            if (t.free > 0) return { fillColor: '#D4EDDA', fillOpacity: 0.5, color: '#166534', weight: 1, opacity: 0.5, interactive: true };
+            return { fillColor: '#FFF3CD', fillOpacity: 0.5, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
+          }
+          if (isMixed) return { fillColor: 'url(#fsa-mixed-pattern)', fillOpacity: 0.55, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
+          if (t.free > 0) return { fillColor: 'url(#fsa-partial-free-pattern)', fillOpacity: 0.7, color: '#166534', weight: 1, opacity: 0.5, interactive: true };
+          return { fillColor: 'url(#fsa-partial-paid-pattern)', fillOpacity: 0.7, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
+        }
+      }
+
+      return { fillColor: '#F0F0F0', weight: 1, opacity: 0.15, color: '#94a3b8', fillOpacity: 0, interactive: true };
+    }
+
+    // ---- US branch (ZCTA polygons) ------------------------------------------
+    // Each ZCTA is one zip code, so per-postal lookups are exact, no aggregation.
+    const isHighlighted = highlightedZipCodes.get(zipCode);
+    const selectedMatch = selectedZipCodes.find(z => z.zipCode === zipCode);
+    const isSelected = !!selectedMatch;
+    const status = isSelected ? selectedMatch?.assignedStatus : territoryStatuses.get(zipCode);
 
     let fillColor = '#F0F0F0';
     let color = '#94a3b8';
@@ -547,13 +1087,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E';
-      fillOpacity = 0.3; // Increased visibility
+      fillOpacity = 0.3;
       color = '#166534';
       weight = 2;
       opacity = 0.6;
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316';
-      fillOpacity = 0.3; // Increased visibility
+      fillOpacity = 0.3;
       color = '#9A3412';
       weight = 2;
       opacity = 0.6;
@@ -571,29 +1111,104 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     }
     return { fillColor, weight, opacity, color, fillOpacity, interactive: true };
-  }, [highlightedZipCodes, selectedZipCodes, territoryStatuses, isTerritoryManagementPage]);
+  }, [
+    isCanada,
+    isTerritoryManagementPage,
+    fsaSelectionAggregates,
+    fsaTerritoryAggregates,
+    fsaTotalPostalCounts,
+    fsaTotalPostalCountsLoading,
+    highlightedZipCodes,
+    selectedZipCodes,
+    territoryStatuses,
+  ]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
-    layer.off('click'); 
+    const isFsaBulkClickable =
+      isCanada && canadaDisplayMode === 'fsa' && !!onFsaBulkAction;
+    layer.off('click');
     layer.on({
-      click: (e) => {
+      click: (e: any) => {
         L.DomEvent.stopPropagation(e);
-        if (!isBulkSelecting) onZipCodeClickRef.current(zipCode, stateProvince); 
+        if (isBulkSelecting) return;
+        if (isFsaBulkClickable) {
+          openFsaBulkPopupRef.current?.(zipCode, stateProvince, e?.latlng ?? null);
+          return;
+        }
+        onZipCodeClickRef.current(zipCode, stateProvince);
       },
     });
     const label = isCanada ? 'FSA' : 'ZIP';
-    let tooltipText = `${label}: ${zipCode}`;
-    if (stateProvince && stateProvince !== 'Unknown') tooltipText += ` (${stateProvince})`;
-    layer.bindTooltip(tooltipText, { permanent: false, direction: 'auto' });
+    let tooltipHtml = `<div><strong>${label}: ${zipCode}</strong>`;
+    if (stateProvince && stateProvince !== 'Unknown') tooltipHtml += ` (${stateProvince})`;
+    tooltipHtml += `</div>`;
+
+    // Action-focused coverage breakdown for Canadian FSAs. Headlines the
+    // missing count (the most useful number for the bulk-action popup),
+    // then breaks down free / paid below. Hover for a quick read; click
+    // to open the bulk-action popup.
+    if (isCanada) {
+      const sel = fsaSelectionAggregates?.get(zipCode);
+      const total = fsaTotalPostalCounts?.get(zipCode);
+      if (sel) {
+        const assigned = sel.free + sel.paid;
+        if (total != null && total > 0) {
+          const missing = Math.max(0, total - assigned);
+          if (missing === 0) {
+            const statusLine =
+              sel.free > 0 && sel.paid > 0
+                ? `${sel.free.toLocaleString()} free &middot; ${sel.paid.toLocaleString()} paid`
+                : sel.free > 0
+                  ? 'All assigned are Free'
+                  : 'All assigned are Paid';
+            tooltipHtml += `<div style="margin-top:2px">&#10003; All ${total.toLocaleString()} postals assigned</div>`;
+            tooltipHtml += `<div style="color:#475569">${statusLine}</div>`;
+          } else {
+            tooltipHtml += `<div style="margin-top:2px"><strong>${missing.toLocaleString()} unassigned</strong> of ${total.toLocaleString()}</div>`;
+            const partsAssigned: string[] = [];
+            if (sel.free > 0) partsAssigned.push(`${sel.free.toLocaleString()} free`);
+            if (sel.paid > 0) partsAssigned.push(`${sel.paid.toLocaleString()} paid`);
+            tooltipHtml += `<div style="color:#475569">${partsAssigned.join(' &middot; ')}</div>`;
+          }
+        } else {
+          const partsAssigned: string[] = [];
+          if (sel.free > 0) partsAssigned.push(`${sel.free.toLocaleString()} free`);
+          if (sel.paid > 0) partsAssigned.push(`${sel.paid.toLocaleString()} paid`);
+          tooltipHtml += `<div style="margin-top:2px">${assigned.toLocaleString()} assigned (${partsAssigned.join(' &middot; ')})</div>`;
+        }
+      } else if (total != null && total > 0) {
+        tooltipHtml += `<div style="margin-top:2px;color:#475569">${total.toLocaleString()} postals &middot; none assigned</div>`;
+      }
+      if (isFsaBulkClickable) {
+        tooltipHtml += `<div style="margin-top:4px;color:#64748b;font-size:0.7rem">Click to bulk-assign</div>`;
+      }
+      if (isTerritoryManagementPage && !sel) {
+        const t = fsaTerritoryAggregates?.get(zipCode);
+        if (t) {
+          const assigned = t.free + t.paid;
+          if (total != null && total > 0) {
+            const pct = Math.min(100, Math.round((assigned / total) * 1000) / 10);
+            tooltipHtml += `<div>${assigned.toLocaleString()} / ${total.toLocaleString()} postals assigned globally (${pct}%)</div>`;
+          } else {
+            tooltipHtml += `<div>${assigned.toLocaleString()} postals assigned globally</div>`;
+          }
+        }
+      }
+    }
+
+    layer.bindTooltip(tooltipHtml, { permanent: false, direction: 'auto', sticky: true });
   };
 
   // The key change is the only reliable way to force React-Leaflet GeoJSON to re-draw colors
   const geoJsonStyleKey = useMemo(() => {
-    // We use a combination of simple markers to trigger a redraw without huge strings
-    return `${currentDisplayRadius}-${isBulkSelecting}-${refreshKey}-${country}`;
-  }, [currentDisplayRadius, isBulkSelecting, refreshKey, country]);
+    // Include `fsaCountsKey` so that when the FSA total-postal counts finish
+    // loading, the polygon layer rebuilds with the more accurate styling.
+    const fsaCountsKey = fsaTotalPostalCounts ? fsaTotalPostalCounts.size : 0;
+    const fsaLoadingKey = fsaTotalPostalCountsLoading ? 'l' : 'r';
+    return `${currentDisplayRadius}-${isBulkSelecting}-${refreshKey}-${country}-${fsaCountsKey}-${fsaLoadingKey}`;
+  }, [currentDisplayRadius, isBulkSelecting, refreshKey, country, fsaTotalPostalCounts, fsaTotalPostalCountsLoading]);
 
   const radiiConfig = isCanada ? [{ radius: 35, color: '#22c55e' }, { radius: 50, color: '#facc15' }, { radius: 75, color: '#f97316' }] 
                                : [{ radius: 25, color: '#22c55e' }, { radius: 50, color: '#facc15' }, { radius: 100, color: '#f97316' }, { radius: 150, color: '#ef4444' }];
@@ -608,8 +1223,19 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     );
   }
 
+  // Whether the new FSA aggregate styling has anything to show. Used to
+  // decide whether to render the small legend in the corner.
+  const hasAggregateColoredFsas = useMemo(() => {
+    if (!isCanada) return false;
+    const sel = fsaSelectionAggregates;
+    if (sel && sel.size > 0) return true;
+    const t = fsaTerritoryAggregates;
+    return !!t && t.size > 0;
+  }, [isCanada, fsaSelectionAggregates, fsaTerritoryAggregates]);
+
   return (
     <div className="relative h-full w-full">
+    <FsaFillPatternDefs />
     <MapContainer
       center={isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795]}
       zoom={4}
@@ -624,11 +1250,26 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       <Pane name="polygons" style={{ zIndex: 450 }} />
-      {(loadingStage === 'counting' || loadingStage === 'fetching' || loadingStage === 'rendering') && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} stage={loadingStage} />}
+      {(loadingStage === 'counting' || loadingStage === 'fetching') && (
+        <LoadingOverlay
+          progress={loadingProgress}
+          total={totalPointsToLoad}
+          stage={loadingStage}
+          footnote={
+            isCanada && canadaDisplayMode === 'postal-codes'
+              ? 'This count is postal points inside the map radius for drawing dots. It is not the number of territories assigned to this installer.'
+              : undefined
+          }
+        />
+      )}
       {isCanada && canadaDisplayMode === 'postal-codes' && renderedCanadaPoints.length > 0 && (
         renderedCanadaPoints.map(point => {
           const postalCode = point.POSTAL_CODE;
-          const status = highlightedZipCodes.get(postalCode);
+          // Normalize for the highlight lookup so a stored "T4X2J3" matches
+          // a point whose POSTAL_CODE is "T4X 2J3" (and vice versa).
+          const status = highlightedZipCodes.get(
+            (postalCode ?? '').toUpperCase().replace(/\s+/g, ''),
+          );
           let color = '#3b82f6';
           let fillOpacity = 0.5;
           let pointRadius = 2;
@@ -642,7 +1283,19 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         })
       )}
       {filteredGeoJsonData && !(isCanada && canadaDisplayMode === 'postal-codes') && (
-        <GeoJSON key={geoJsonStyleKey} ref={geoJsonLayerRef} data={filteredGeoJsonData as any} style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))} onEachFeature={onEachFeature} pane="polygons" />
+        <GeoJSON
+          key={geoJsonStyleKey}
+          ref={geoJsonLayerRef}
+          data={filteredGeoJsonData as any}
+          style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))}
+          onEachFeature={onEachFeature}
+          pane="polygons"
+          // Canadian FSA fills can be SVG paint servers (the "mixed" stripe
+          // pattern). Patterns require an SVG renderer; the canvas renderer
+          // would silently drop them. US ZCTAs don't use patterns and can
+          // ride the MapContainer's default canvas renderer, which is faster.
+          {...(isCanada ? { renderer: svgPolygonRenderer } : {})}
+        />
       )}
       {centerLocation?.lat != null && centerLocation?.lng != null && (
         <Marker position={[centerLocation.lat, centerLocation.lng]} icon={createStarIcon()}><Popup>Installer Location</Popup></Marker>
@@ -664,7 +1317,129 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       )}
       <MapUpdater centerLocation={centerLocation} isOpen={isOpen} country={country} />
       <MapInteractionHandler isBulkSelecting={isBulkSelecting} geoJsonData={allGeoJsonData} onBulkSelectionComplete={onBulkSelectionComplete} isCanada={isCanada} publicAuth={publicAuth} />
+      {fsaBulkPopup && onFsaBulkAction && (
+        <Popup
+          position={fsaBulkPopup.latlng}
+          eventHandlers={{ remove: () => setFsaBulkPopup(null) }}
+          autoPan
+          closeButton
+          closeOnClick={false}
+          minWidth={260}
+          className="fsa-bulk-popup"
+        >
+          <FsaBulkActionPopupContents
+            fsa={fsaBulkPopup.fsa}
+            stateProvince={fsaBulkPopup.stateProvince}
+            free={fsaSelectionAggregates?.get(fsaBulkPopup.fsa)?.free ?? 0}
+            paid={fsaSelectionAggregates?.get(fsaBulkPopup.fsa)?.paid ?? 0}
+            total={fsaTotalPostalCounts?.get(fsaBulkPopup.fsa)}
+            onAction={async (action) => {
+              await onFsaBulkAction(
+                fsaBulkPopup.fsa,
+                action,
+                fsaBulkPopup.stateProvince,
+              );
+            }}
+            onClose={() => setFsaBulkPopup(null)}
+          />
+        </Popup>
+      )}
     </MapContainer>
+    {isCanada && canadaDisplayMode === 'fsa' && fsaTotalPostalCountsLoading && (
+      <div
+        className="absolute inset-0 z-[1000] flex items-center justify-center pointer-events-none"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px]" aria-hidden="true" />
+        <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 px-5 py-4 flex items-center gap-3 max-w-sm pointer-events-auto">
+          <svg
+            className="animate-spin h-5 w-5 text-gray-700 flex-shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+            <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+          <div className="text-sm">
+            <div className="font-semibold text-gray-900">Loading territories&hellip;</div>
+            <div className="text-gray-600 text-xs mt-0.5">
+              Coverage is approximate until this finishes.
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    {isCanada && canadaDisplayMode === 'fsa' && hasAggregateColoredFsas && (
+      <div
+        className="absolute bottom-3 left-3 z-[1000] bg-white/95 backdrop-blur-sm rounded-md shadow-md border border-gray-200 px-3 py-2 text-xs text-gray-800 max-w-xs"
+        role="note"
+        aria-label="FSA color legend"
+      >
+        <p className="font-semibold mb-1.5">FSA color key</p>
+        <ul className="space-y-1">
+          <li className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="inline-block h-3 w-5 rounded-sm border border-green-700"
+              style={{ backgroundColor: '#22C55E', opacity: 0.6 }}
+            />
+            <span>Fully covered &mdash; all free</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="inline-block h-3 w-5 rounded-sm border border-orange-700"
+              style={{ backgroundColor: '#F97316', opacity: 0.6 }}
+            />
+            <span>Fully covered &mdash; all paid</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <svg
+              width="20"
+              height="12"
+              viewBox="0 0 20 12"
+              aria-hidden="true"
+              className="rounded-sm border border-orange-700"
+            >
+              <rect width="20" height="12" fill="#F97316" fillOpacity={0.45} />
+              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
+              <line x1="-2" y1="6" x2="22" y2="22" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
+            </svg>
+            <span>Mix of free and paid</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <svg
+              width="20"
+              height="12"
+              viewBox="0 0 20 12"
+              aria-hidden="true"
+              className="rounded-sm border border-green-700"
+            >
+              <rect width="20" height="12" fill="#FFFFFF" />
+              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
+              <line x1="-2" y1="6" x2="22" y2="22" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
+            </svg>
+            <span>Partial coverage &mdash; assigned ones are free</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <svg
+              width="20"
+              height="12"
+              viewBox="0 0 20 12"
+              aria-hidden="true"
+              className="rounded-sm border border-orange-700"
+            >
+              <rect width="20" height="12" fill="#FFFFFF" />
+              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#F97316" strokeWidth={2.5} strokeOpacity={0.5} />
+              <line x1="-2" y1="6" x2="22" y2="22" stroke="#F97316" strokeWidth={2.5} strokeOpacity={0.5} />
+            </svg>
+            <span>Partial coverage &mdash; assigned ones are paid</span>
+          </li>
+        </ul>
+      </div>
+    )}
     {isCanada && (
       <div
         className="absolute top-3 right-3 z-[1000] bg-white rounded-md shadow-md border border-gray-200 p-1 flex gap-1 text-xs"
