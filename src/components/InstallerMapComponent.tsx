@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Installer } from '@/types/installer';
+import { Installer, InstallerBrand, InstallerCertification, InstallerSkill } from '@/types/installer';
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SKILL_ICON_MAP } from "@/lib/skillIcons";
+import CoverageOverlay from "@/components/CoverageOverlay";
+import CoverageLegend from "@/components/CoverageLegend";
+import type { CoverageCounts } from "@/lib/coverageStyle";
 
 // Small inline version of the numbered map pin, used inside the popup header
 // so the popup visually matches the marker the user just clicked.
@@ -47,17 +50,35 @@ L.Icon.Default.mergeOptions({
   shadowUrl,
 });
 
+interface CoverageOverlayConfig {
+  enabled: boolean;
+  defaultVisible: boolean;
+  searchCenter: { lat: number | null; lng: number | null };
+  searchRadiusMiles: number;
+  brands: InstallerBrand[];
+  skills: InstallerSkill[];
+  certifications: InstallerCertification[];
+  acceptsShipments: boolean;
+  onZipClick?: (zip: string, counts: CoverageCounts) => void;
+}
+
 interface InstallerMapProps {
   userLocation: { lat: number | null; lng: number | null } | null;
   installers: (Installer & { distance?: number })[];
   selectedInstallerId: string | null;
   isPublicView?: boolean;
+  coverageOverlay?: CoverageOverlayConfig;
 }
 
-const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, installers, selectedInstallerId, isPublicView = false }) => {
+const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, installers, selectedInstallerId, isPublicView = false, coverageOverlay }) => {
   const mapRef = useRef<L.Map | null>(null);
   const [mounted, setMounted] = useState(false);
   const { distanceUnit, isCanada } = useCountrySettings();
+
+  // Coverage overlay visibility (legend toggle). Falls back to false when
+  // the overlay isn't configured at all so this hook always runs.
+  const [coverageVisible, setCoverageVisible] = useState<boolean>(coverageOverlay?.defaultVisible ?? false);
+  const [coverageLoading, setCoverageLoading] = useState<boolean>(false);
 
   useEffect(() => {
     setMounted(true);
@@ -132,7 +153,11 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
     return <div className="h-full w-full flex items-center justify-center text-gray-500">Loading map...</div>;
   }
 
+  const overlayActive = !!coverageOverlay?.enabled;
+  const overlayCountry: 'USA' | 'Canada' = isCanada ? 'Canada' : 'USA';
+
   return (
+    <div className="relative h-full w-full">
     <MapContainer
       center={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : (isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795])}
       zoom={userLocation?.lat && userLocation?.lng ? 10 : 4}
@@ -145,6 +170,20 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+      {overlayActive && coverageOverlay && (
+        <CoverageOverlay
+          country={overlayCountry}
+          center={coverageOverlay.searchCenter}
+          radiusMiles={coverageOverlay.searchRadiusMiles}
+          brands={coverageOverlay.brands}
+          skills={coverageOverlay.skills}
+          certifications={coverageOverlay.certifications}
+          acceptsShipments={coverageOverlay.acceptsShipments}
+          enabled={coverageVisible}
+          onZipClick={coverageOverlay.onZipClick}
+          onLoadingChange={setCoverageLoading}
+        />
+      )}
       {userLocation?.lat && userLocation?.lng && (
         <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
           <Popup>Your Search Location</Popup>
@@ -240,6 +279,15 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
       })}
       <MapUpdater />
     </MapContainer>
+      {overlayActive && (
+        <CoverageLegend
+          visible={coverageVisible}
+          onToggle={() => setCoverageVisible((v) => !v)}
+          isLoading={coverageLoading}
+          className="top-3 right-3"
+        />
+      )}
+    </div>
   );
 };
 

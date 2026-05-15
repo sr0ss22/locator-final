@@ -390,6 +390,16 @@ const PublicLocator: React.FC = () => {
                 installers={filteredAndSortedInstallers}
                 selectedInstallerId={null}
                 isPublicView={true}
+                coverageOverlay={{
+                  enabled: true,
+                  defaultVisible: true,
+                  searchCenter: userSearchLocation ?? { lat: null, lng: null },
+                  searchRadiusMiles: searchRadius,
+                  brands: selectedBrands,
+                  skills: selectedProductSkills,
+                  certifications: selectedCertifications,
+                  acceptsShipments: filterAcceptsShipments,
+                }}
               />
             </div>
             {isLoadingData && (
