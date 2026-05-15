@@ -690,12 +690,23 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   // Background prefetch: while the user is in FSA mode, opportunistically
   // fetch the postal-code points for the current (lat, lng, radius) into
   // the module-level cache so flipping to "Postal codes" is instant.
-  // Scheduled via requestIdleCallback so it never competes with the
-  // visible FSA render. No React state is touched — the live load effect
-  // above will read straight from the cache when the user toggles.
+  //
+  // Carefully gated to avoid competing with the critical-path queries
+  // that the page also makes on first load (FSA totals,
+  // get_global_territory_statuses, the installer's own zip-codes RPC):
+  //   * never fires while fsaTotalPostalCounts is still loading
+  //   * waits a fixed 5s after gating clears so the initial render and
+  //     map style passes settle first
+  //   * scheduled via requestIdleCallback as a final back-off, so the
+  //     fetch only kicks off when the browser is otherwise idle
+  //
+  // No React state is touched here — the live load effect above will
+  // read straight from the module-level cache when the user toggles to
+  // Postal codes mode.
   useEffect(() => {
     if (!isCanada) return;
     if (canadaDisplayMode !== 'fsa') return;
+    if (fsaTotalPostalCountsLoading) return;
     if (!centerLocation?.lat || !centerLocation?.lng) return;
     if (currentDisplayRadius === 'all') return;
 
@@ -704,24 +715,35 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     if (canadaPointsInFlight.has(searchKey)) return;
 
     let cancelled = false;
-    const cancelIdle = scheduleIdle(() => {
+    let cancelIdle: (() => void) | null = null;
+    const timer = setTimeout(() => {
       if (cancelled) return;
-      void fetchCanadaPointsForKey(
-        searchKey,
-        centerLocation.lat as number,
-        centerLocation.lng as number,
-        currentDisplayRadius as number,
-      ).catch(() => {
-        // Background prefetch — swallow errors. The live load will
-        // surface the real error if/when the user toggles.
+      cancelIdle = scheduleIdle(() => {
+        if (cancelled) return;
+        void fetchCanadaPointsForKey(
+          searchKey,
+          centerLocation.lat as number,
+          centerLocation.lng as number,
+          currentDisplayRadius as number,
+        ).catch(() => {
+          // Background prefetch — swallow errors. The live load will
+          // surface the real error if/when the user toggles.
+        });
       });
-    });
+    }, 5000);
 
     return () => {
       cancelled = true;
-      cancelIdle();
+      clearTimeout(timer);
+      cancelIdle?.();
     };
-  }, [isCanada, canadaDisplayMode, centerLocation, currentDisplayRadius]);
+  }, [
+    isCanada,
+    canadaDisplayMode,
+    fsaTotalPostalCountsLoading,
+    centerLocation,
+    currentDisplayRadius,
+  ]);
 
   const filteredGeoJsonData = useMemo(() => {
     const geoJsonToUse = isCanada ? allCanadaGeoJsonData : allGeoJsonData;
