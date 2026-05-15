@@ -331,6 +331,40 @@ const FsaFillPatternDefs: React.FC = () => (
   </svg>
 );
 
+// Module-level cache for Canadian postal-code fetches. Keyed by
+// `${lat}-${lng}-${radius}`. Survives across:
+//   * toggling FSA <-> Postal codes inside the same map instance
+//   * navigating between installers (TerritoryMap mounts/unmounts)
+//   * the public sharable territory editor reusing the same map component
+//
+// Bounded LRU so a long session moving between many installers in different
+// cities can't grow memory unbounded. Each entry is the raw point array
+// (~50 bytes/point JSON, ~7-10 MB for the busiest urban radii).
+const CANADA_POINTS_CACHE_LIMIT = 8;
+const canadaPointsCache = new Map<string, any[]>();
+
+function readCanadaPointsCache(key: string): any[] | undefined {
+  const value = canadaPointsCache.get(key);
+  if (value !== undefined) {
+    // Touch: re-insert so it becomes the most-recently-used entry.
+    canadaPointsCache.delete(key);
+    canadaPointsCache.set(key, value);
+  }
+  return value;
+}
+
+function writeCanadaPointsCache(key: string, value: any[]) {
+  if (canadaPointsCache.has(key)) {
+    canadaPointsCache.delete(key);
+  }
+  canadaPointsCache.set(key, value);
+  while (canadaPointsCache.size > CANADA_POINTS_CACHE_LIMIT) {
+    const oldest = canadaPointsCache.keys().next().value;
+    if (oldest === undefined) break;
+    canadaPointsCache.delete(oldest);
+  }
+}
+
 // Display modes for the Canadian map. FSA mode renders only the static
 // 3-character FSA polygons; "postal-codes" additionally fetches and renders
 // the ~6-character postal code dots from the database. Persisted in
@@ -443,24 +477,46 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         : null;
 
       if (isCanada) {
-        // FSA mode: render only the static polygons; skip the heavy DB fetch.
+        // FSA mode: just render the static polygons. We INTENTIONALLY do
+        // not clear allCanadaPoints / renderedCanadaPoints here — the JSX
+        // already gates rendering on `canadaDisplayMode === 'postal-codes'`,
+        // and keeping the data in state means toggling back to Postal
+        // codes for the same (lat, lng, radius) is instant.
         if (canadaDisplayMode === 'fsa') {
-          if (allCanadaPoints.length > 0) setAllCanadaPoints([]);
-          if (renderedCanadaPoints.length > 0) setRenderedCanadaPoints([]);
-          lastSearchKey.current = null;
           if (loadingStage !== 'idle' && loadingStage !== 'complete') {
             setLoadingStage('complete');
           }
           return;
         }
 
-        if (!searchKey || searchKey === lastSearchKey.current) {
-          if (!searchKey) {
-            setAllCanadaPoints([]);
-            setRenderedCanadaPoints([]);
-          }
+        // No specific location/radius (e.g. /territories "all" view): nothing
+        // to fetch, drop any postal-code state we may have inherited.
+        if (!searchKey) {
+          if (renderedCanadaPoints.length > 0) setRenderedCanadaPoints([]);
+          if (allCanadaPoints.length > 0) setAllCanadaPoints([]);
+          lastSearchKey.current = null;
           return;
         }
+
+        // Already showing the right data for this search.
+        if (searchKey === lastSearchKey.current) {
+          return;
+        }
+
+        // Module-level cache hit. Skip the network entirely — covers the
+        // case where the user navigated away (e.g. to a different installer
+        // in the same city) and came back.
+        const cached = readCanadaPointsCache(searchKey);
+        if (cached) {
+          lastSearchKey.current = searchKey;
+          setAllCanadaPoints(cached);
+          setRenderedCanadaPoints(cached);
+          setTotalPointsToLoad(cached.length);
+          setLoadingProgress(cached.length);
+          setLoadingStage('complete');
+          return;
+        }
+
         lastSearchKey.current = searchKey;
 
         setAllCanadaPoints([]);
@@ -513,6 +569,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
           setAllCanadaPoints(fetchedPoints);
           setLoadingProgress(fetchedPoints.length);
+          // Cache the fetched points so toggling FSA <-> Postal codes (or
+          // navigating between installers in the same city) does not refetch.
+          writeCanadaPointsCache(searchKey, fetchedPoints);
           // Incremental `setRenderedCanadaPoints(prev => [...prev, batch])` was
           // O(n²) in total work copying arrays and dominated render time (~30s
           // for ~160k points). One transition update is far cheaper.
