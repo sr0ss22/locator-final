@@ -56,6 +56,13 @@ L.Icon.Default.mergeOptions({
    * (best-effort fallback).
    */
   fsaTotalPostalCounts?: Map<string, number>;
+  /**
+   * True while the FSA totals query is in flight. Lets the map render the
+   * optimistic "any-assigned → solid" colouring (and surface a small
+   * "refining coverage" badge) instead of flashing every FSA as partial
+   * coverage during the load.
+   */
+  fsaTotalPostalCountsLoading?: boolean;
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
@@ -395,6 +402,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   publicAuth,
   canadaDisplayModeStorageKey,
   fsaTotalPostalCounts,
+  fsaTotalPostalCountsLoading = false,
 }) => {
   const resolvedCanadaModeKey =
     canadaDisplayModeStorageKey && canadaDisplayModeStorageKey.length > 0
@@ -694,11 +702,25 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     // Falls back to the previous "any assigned -> solid" behaviour only if
     // we don't yet know the FSA total (data still loading).
     if (isCanada) {
+      // While the FSA totals are still loading, treat any-assigned as solid
+      // (best-effort optimistic colouring) so we don't flash every FSA into
+      // the partial-coverage stripes for a few seconds before snapping back
+      // to solid. The sticky tooltip + the small "refining coverage" badge
+      // in the corner indicate that the breakdown is still being refined.
+      const totalsKnown = !fsaTotalPostalCountsLoading;
+
       const sel = fsaSelectionAggregates?.get(zipCode);
       if (sel) {
         const total = fsaTotalPostalCounts?.get(zipCode);
         const assigned = sel.free + sel.paid;
-        const isFullyCovered = total != null && assigned >= total;
+        // Allow a 1% tolerance to absorb residual data quirks in
+        // canadian_postal_codes (rare format variants the SQL normalizer
+        // can't fully collapse, special-purpose codes the installer would
+        // never service, etc.). 99% covered with all-uniform status reads
+        // as fully covered.
+        const isFullyCovered =
+          !totalsKnown ||
+          (total != null && (assigned >= total || assigned / total >= 0.99));
         const isMixed = sel.free > 0 && sel.paid > 0;
 
         if (isFullyCovered && !isMixed) {
@@ -724,7 +746,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         if (t) {
           const total = fsaTotalPostalCounts?.get(zipCode);
           const assigned = t.free + t.paid;
-          const isFullyCovered = total != null && assigned >= total;
+          const isFullyCovered =
+            !totalsKnown ||
+            (total != null && (assigned >= total || assigned / total >= 0.99));
           const isMixed = t.free > 0 && t.paid > 0;
 
           if (isFullyCovered && !isMixed) {
@@ -785,6 +809,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     fsaSelectionAggregates,
     fsaTerritoryAggregates,
     fsaTotalPostalCounts,
+    fsaTotalPostalCountsLoading,
     highlightedZipCodes,
     selectedZipCodes,
     territoryStatuses,
@@ -845,8 +870,9 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     // Include `fsaCountsKey` so that when the FSA total-postal counts finish
     // loading, the polygon layer rebuilds with the more accurate styling.
     const fsaCountsKey = fsaTotalPostalCounts ? fsaTotalPostalCounts.size : 0;
-    return `${currentDisplayRadius}-${isBulkSelecting}-${refreshKey}-${country}-${fsaCountsKey}`;
-  }, [currentDisplayRadius, isBulkSelecting, refreshKey, country, fsaTotalPostalCounts]);
+    const fsaLoadingKey = fsaTotalPostalCountsLoading ? 'l' : 'r';
+    return `${currentDisplayRadius}-${isBulkSelecting}-${refreshKey}-${country}-${fsaCountsKey}-${fsaLoadingKey}`;
+  }, [currentDisplayRadius, isBulkSelecting, refreshKey, country, fsaTotalPostalCounts, fsaTotalPostalCountsLoading]);
 
   const radiiConfig = isCanada ? [{ radius: 35, color: '#22c55e' }, { radius: 50, color: '#facc15' }, { radius: 75, color: '#f97316' }] 
                                : [{ radius: 25, color: '#22c55e' }, { radius: 50, color: '#facc15' }, { radius: 100, color: '#f97316' }, { radius: 150, color: '#ef4444' }];
@@ -952,6 +978,24 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       <MapUpdater centerLocation={centerLocation} isOpen={isOpen} country={country} />
       <MapInteractionHandler isBulkSelecting={isBulkSelecting} geoJsonData={allGeoJsonData} onBulkSelectionComplete={onBulkSelectionComplete} isCanada={isCanada} publicAuth={publicAuth} />
     </MapContainer>
+    {isCanada && canadaDisplayMode === 'fsa' && fsaTotalPostalCountsLoading && (
+      <div
+        className="absolute top-3 left-3 z-[1000] bg-white/95 backdrop-blur-sm rounded-md shadow-md border border-gray-200 px-3 py-1.5 text-xs text-gray-700 flex items-center gap-2"
+        role="status"
+        aria-live="polite"
+      >
+        <svg
+          className="animate-spin h-3.5 w-3.5 text-gray-500"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+          <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+        <span>Refining FSA coverage&hellip;</span>
+      </div>
+    )}
     {isCanada && canadaDisplayMode === 'fsa' && hasAggregateColoredFsas && (
       <div
         className="absolute bottom-3 left-3 z-[1000] bg-white/95 backdrop-blur-sm rounded-md shadow-md border border-gray-200 px-3 py-2 text-xs text-gray-800 max-w-xs"

@@ -135,7 +135,7 @@ const EditInstallerPage: React.FC = () => {
 
   // Loaded once and cached forever (~3.8k FSA → count entries). Drives
   // the "fully covered vs partial" colouring on Canadian FSA polygons.
-  const { data: fsaTotalPostalCounts } = useCanadianFsaPostalCounts(
+  const { data: fsaTotalPostalCounts, isLoading: isFsaTotalPostalCountsLoading } = useCanadianFsaPostalCounts(
     installerCountry === 'Canada',
   );
 
@@ -708,6 +708,7 @@ const EditInstallerPage: React.FC = () => {
                     refreshKey={mapRefreshKey}
                     canadaDisplayModeStorageKey={installerCountry === 'Canada' ? CANADA_MAP_MODE_STORAGE_ADMIN : undefined}
                     fsaTotalPostalCounts={fsaTotalPostalCounts}
+                    fsaTotalPostalCountsLoading={isFsaTotalPostalCountsLoading}
                   />
                 </div>
                 <InstallerTerritoryList

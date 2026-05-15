@@ -113,7 +113,7 @@ const TerritoryManagement: React.FC = () => {
   const totalPages = Math.ceil(totalAssignments / itemsPerPage);
 
   const { isCanada, toggleCountry } = useCountrySettings(); // Use useCountrySettings
-  const { data: fsaTotalPostalCounts } = useCanadianFsaPostalCounts(isCanada);
+  const { data: fsaTotalPostalCounts, isLoading: isFsaTotalPostalCountsLoading } = useCanadianFsaPostalCounts(isCanada);
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -468,6 +468,7 @@ const TerritoryManagement: React.FC = () => {
           currentDisplayRadius="all" // Show all territories
           canadaDisplayModeStorageKey={isCanada ? CANADA_MAP_MODE_STORAGE_ADMIN : undefined}
           fsaTotalPostalCounts={fsaTotalPostalCounts}
+          fsaTotalPostalCountsLoading={isFsaTotalPostalCountsLoading}
         />
       </div>
 
