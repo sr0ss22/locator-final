@@ -48,11 +48,13 @@ export const COVERAGE_COLORS = {
   },
 } as const;
 
-// Opacity tuned to "very opaque to make it clear" per the spec while still
-// letting the underlying basemap roads/labels show through enough to keep
-// the map navigable.
-const FILL_OPACITY = 0.78;
-const STROKE_OPACITY = 0.9;
+// Opacity tuned to be visible-at-a-glance without overwhelming the
+// underlying basemap labels/roads. 15% is the product-tuned value; if
+// you change this, also bump the matching values in
+// CoverageFillPatternDefs and CoverageLegend so the striped variants
+// and the legend swatches stay in sync.
+const FILL_OPACITY = 0.15;
+const STROKE_OPACITY = 0.35;
 
 /**
  * SVG <pattern> ids referenced via fill="url(#...)" for mixed-state polygons.

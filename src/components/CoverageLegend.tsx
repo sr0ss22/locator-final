@@ -18,10 +18,14 @@ interface CoverageLegendProps {
  * Rendered as a single compact card (collapsed) or with the swatch list
  * expanded — toggled by the eye/eye-off button.
  */
+// Swatch opacity intentionally kept higher than the live polygon
+// opacity (0.3) so the legend reads clearly against the white card
+// background — the polygons rely on the basemap underneath for
+// contrast, the legend doesn't.
 const SwatchSolid: React.FC<{ color: string }> = ({ color }) => (
   <span
     className="inline-block w-3.5 h-3.5 rounded-sm border border-black/10"
-    style={{ backgroundColor: color, opacity: 0.78 }}
+    style={{ backgroundColor: color, opacity: 0.55 }}
     aria-hidden="true"
   />
 );
@@ -32,7 +36,7 @@ const SwatchStriped: React.FC<{ base: string; stripe: string }> = ({ base, strip
     aria-hidden="true"
     style={{
       backgroundColor: base,
-      opacity: 0.78,
+      opacity: 0.55,
       backgroundImage: `repeating-linear-gradient(45deg, transparent 0 4px, ${stripe} 4px 6px)`,
       backgroundBlendMode: "multiply",
     }}

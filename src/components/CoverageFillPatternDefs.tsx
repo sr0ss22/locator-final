@@ -31,7 +31,7 @@ export const CoverageFillPatternDefs: React.FC = () => (
         height="10"
         patternTransform="rotate(45)"
       >
-        <rect width="10" height="10" fill={COVERAGE_COLORS.free.fill} fillOpacity={0.78} />
+        <rect width="10" height="10" fill={COVERAGE_COLORS.free.fill} fillOpacity={0.15} />
         <line
           x1="0"
           y1="0"
@@ -39,7 +39,7 @@ export const CoverageFillPatternDefs: React.FC = () => (
           y2="10"
           stroke={COVERAGE_COLORS.paid.fill}
           strokeWidth={3}
-          strokeOpacity={0.95}
+          strokeOpacity={0.25}
         />
       </pattern>
       <pattern
@@ -49,7 +49,7 @@ export const CoverageFillPatternDefs: React.FC = () => (
         height="10"
         patternTransform="rotate(45)"
       >
-        <rect width="10" height="10" fill={COVERAGE_COLORS.paid.fill} fillOpacity={0.78} />
+        <rect width="10" height="10" fill={COVERAGE_COLORS.paid.fill} fillOpacity={0.15} />
         <line
           x1="0"
           y1="0"
@@ -57,7 +57,7 @@ export const CoverageFillPatternDefs: React.FC = () => (
           y2="10"
           stroke={COVERAGE_COLORS.free.fill}
           strokeWidth={3}
-          strokeOpacity={0.95}
+          strokeOpacity={0.25}
         />
       </pattern>
     </defs>
