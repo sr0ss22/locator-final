@@ -372,6 +372,96 @@ function writeCanadaPointsCache(key: string, value: any[]) {
   }
 }
 
+// In-flight fetches keyed by `${lat}-${lng}-${radius}`. Prevents
+// duplicate work when (a) the user is in postal-codes mode and a parallel
+// FSA-mode prefetch is also running, or (b) two TerritoryMap instances
+// open the same area at once.
+const canadaPointsInFlight = new Map<string, Promise<any[]>>();
+
+type CanadaPointsProgress = {
+  onCount?: (count: number) => void;
+  onProgress?: (loaded: number) => void;
+};
+
+// Shared fetcher used by both the live load and the background prefetch.
+// On success, populates the module-level cache so any concurrent or
+// subsequent caller can read it for free.
+async function fetchCanadaPointsForKey(
+  searchKey: string,
+  centerLat: number,
+  centerLng: number,
+  radiusKm: number,
+  progress: CanadaPointsProgress = {},
+): Promise<any[]> {
+  const cached = canadaPointsCache.get(searchKey);
+  if (cached) return cached;
+
+  const inFlight = canadaPointsInFlight.get(searchKey);
+  if (inFlight) return inFlight;
+
+  const promise = (async () => {
+    const radiusMeters = radiusKm * 1000;
+    const { data: count, error: countError } = await supabase.rpc(
+      'get_canadian_points_in_radius_count',
+      { center_lat: centerLat, center_lng: centerLng, radius_meters: radiusMeters },
+    );
+    if (countError) throw new Error(`Failed to get count: ${countError.message}`);
+    progress.onCount?.(count ?? 0);
+    if (!count) {
+      writeCanadaPointsCache(searchKey, []);
+      return [];
+    }
+
+    const PAGE_SIZE = 1000;
+    const totalPages = Math.ceil(count / PAGE_SIZE);
+    const CONCURRENCY_LIMIT = 20;
+    let fetchedPoints: any[] = [];
+    for (let i = 0; i < totalPages; i += CONCURRENCY_LIMIT) {
+      const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalPages);
+      const promises = [];
+      for (let j = i; j < chunkEnd; j++) {
+        const page = j + 1;
+        promises.push(
+          supabase.rpc('get_all_canadian_points_in_radius', {
+            center_lat: centerLat,
+            center_lng: centerLng,
+            radius_meters: radiusMeters,
+            page_size: PAGE_SIZE,
+            page_number: page,
+          }),
+        );
+      }
+      const results = await Promise.all(promises);
+      for (const result of results) {
+        if (result.data) fetchedPoints = fetchedPoints.concat(result.data);
+      }
+      progress.onProgress?.(fetchedPoints.length);
+    }
+    writeCanadaPointsCache(searchKey, fetchedPoints);
+    return fetchedPoints;
+  })();
+
+  canadaPointsInFlight.set(searchKey, promise);
+  try {
+    return await promise;
+  } finally {
+    canadaPointsInFlight.delete(searchKey);
+  }
+}
+
+// requestIdleCallback shim — falls back to setTimeout(0) on Safari where
+// it isn't implemented yet. Used to schedule the FSA-mode prefetch so it
+// never competes with synchronous render work.
+function scheduleIdle(callback: () => void): () => void {
+  const w = typeof window !== 'undefined' ? (window as any) : undefined;
+  if (w?.requestIdleCallback) {
+    const id = w.requestIdleCallback(callback, { timeout: 1500 });
+    return () => w.cancelIdleCallback?.(id);
+  }
+  const id = setTimeout(callback, 250);
+  return () => clearTimeout(id);
+}
+
 // Display modes for the Canadian map. FSA mode renders only the static
 // 3-character FSA polygons; "postal-codes" additionally fetches and renders
 // the ~6-character postal code dots from the database. Persisted in
@@ -534,52 +624,27 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         setLoadingStage('counting');
 
         try {
-          const radiusMeters = (currentDisplayRadius as number) * 1000;
-          const { data: count, error: countError } = await supabase.rpc('get_canadian_points_in_radius_count', {
-            center_lat: centerLocation!.lat,
-            center_lng: centerLocation!.lng,
-            radius_meters: radiusMeters,
-          });
+          const fetchedPoints = await fetchCanadaPointsForKey(
+            searchKey,
+            centerLocation!.lat,
+            centerLocation!.lng,
+            currentDisplayRadius as number,
+            {
+              onCount: (count) => {
+                setTotalPointsToLoad(count);
+                if (count > 0) setLoadingStage('fetching');
+              },
+              onProgress: (loaded) => setLoadingProgress(loaded),
+            },
+          );
 
-          if (countError) throw new Error(`Failed to get count: ${countError.message}`);
-          if (count === 0) {
+          if (fetchedPoints.length === 0) {
             setLoadingStage('complete');
             return;
           }
 
-          setTotalPointsToLoad(count);
-          setLoadingStage('fetching');
-
-          const PAGE_SIZE = 1000;
-          const totalPages = Math.ceil(count / PAGE_SIZE);
-          const CONCURRENCY_LIMIT = 20;
-          let fetchedPoints: any[] = [];
-
-          for (let i = 0; i < totalPages; i += CONCURRENCY_LIMIT) {
-            const promises = [];
-            const chunkEnd = Math.min(i + CONCURRENCY_LIMIT, totalPages);
-            for (let j = i; j < chunkEnd; j++) {
-              const page = j + 1;
-              promises.push(supabase.rpc('get_all_canadian_points_in_radius', {
-                  center_lat: centerLocation!.lat,
-                  center_lng: centerLocation!.lng,
-                  radius_meters: radiusMeters,
-                  page_size: PAGE_SIZE,
-                  page_number: page,
-                }));
-            }
-            const results = await Promise.all(promises);
-            for (const result of results) {
-              if (result.data) fetchedPoints = fetchedPoints.concat(result.data);
-            }
-            setLoadingProgress(fetchedPoints.length);
-          }
-
           setAllCanadaPoints(fetchedPoints);
           setLoadingProgress(fetchedPoints.length);
-          // Cache the fetched points so toggling FSA <-> Postal codes (or
-          // navigating between installers in the same city) does not refetch.
-          writeCanadaPointsCache(searchKey, fetchedPoints);
           // Incremental `setRenderedCanadaPoints(prev => [...prev, batch])` was
           // O(n²) in total work copying arrays and dominated render time (~30s
           // for ~160k points). One transition update is far cheaper.
@@ -621,6 +686,42 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     };
     loadAndRenderData();
   }, [isCanada, centerLocation, currentDisplayRadius, allGeoJsonData, canadaDisplayMode]);
+
+  // Background prefetch: while the user is in FSA mode, opportunistically
+  // fetch the postal-code points for the current (lat, lng, radius) into
+  // the module-level cache so flipping to "Postal codes" is instant.
+  // Scheduled via requestIdleCallback so it never competes with the
+  // visible FSA render. No React state is touched — the live load effect
+  // above will read straight from the cache when the user toggles.
+  useEffect(() => {
+    if (!isCanada) return;
+    if (canadaDisplayMode !== 'fsa') return;
+    if (!centerLocation?.lat || !centerLocation?.lng) return;
+    if (currentDisplayRadius === 'all') return;
+
+    const searchKey = `${centerLocation.lat}-${centerLocation.lng}-${currentDisplayRadius}`;
+    if (canadaPointsCache.has(searchKey)) return;
+    if (canadaPointsInFlight.has(searchKey)) return;
+
+    let cancelled = false;
+    const cancelIdle = scheduleIdle(() => {
+      if (cancelled) return;
+      void fetchCanadaPointsForKey(
+        searchKey,
+        centerLocation.lat as number,
+        centerLocation.lng as number,
+        currentDisplayRadius as number,
+      ).catch(() => {
+        // Background prefetch — swallow errors. The live load will
+        // surface the real error if/when the user toggles.
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelIdle();
+    };
+  }, [isCanada, canadaDisplayMode, centerLocation, currentDisplayRadius]);
 
   const filteredGeoJsonData = useMemo(() => {
     const geoJsonToUse = isCanada ? allCanadaGeoJsonData : allGeoJsonData;
