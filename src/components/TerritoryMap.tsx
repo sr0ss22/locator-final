@@ -1081,20 +1081,28 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     </MapContainer>
     {isCanada && canadaDisplayMode === 'fsa' && fsaTotalPostalCountsLoading && (
       <div
-        className="absolute top-3 left-3 z-[1000] bg-white/95 backdrop-blur-sm rounded-md shadow-md border border-gray-200 px-3 py-1.5 text-xs text-gray-700 flex items-center gap-2"
+        className="absolute inset-0 z-[1000] flex items-center justify-center pointer-events-none"
         role="status"
         aria-live="polite"
       >
-        <svg
-          className="animate-spin h-3.5 w-3.5 text-gray-500"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-          <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-        </svg>
-        <span>Refining FSA coverage&hellip;</span>
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px]" aria-hidden="true" />
+        <div className="relative bg-white rounded-lg shadow-xl border border-gray-200 px-5 py-4 flex items-center gap-3 max-w-sm pointer-events-auto">
+          <svg
+            className="animate-spin h-5 w-5 text-gray-700 flex-shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+            <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+          <div className="text-sm">
+            <div className="font-semibold text-gray-900">Loading territories&hellip;</div>
+            <div className="text-gray-600 text-xs mt-0.5">
+              Coverage is approximate until this finishes.
+            </div>
+          </div>
+        </div>
       </div>
     )}
     {isCanada && canadaDisplayMode === 'fsa' && hasAggregateColoredFsas && (
