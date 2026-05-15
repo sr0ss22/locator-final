@@ -49,6 +49,13 @@ L.Icon.Default.mergeOptions({
   publicAuth?: { installerId: string; token: string };
   /** When set, Canada FSA vs postal-code preference is stored separately (e.g. admin vs public). */
   canadaDisplayModeStorageKey?: string;
+  /**
+   * Total postal codes per Canadian FSA (3-char prefix). Used to colour FSAs
+   * as "fully covered" (solid) vs. "partially covered" (striped). When
+   * absent, FSAs colour based only on the assignments we know about
+   * (best-effort fallback).
+   */
+  fsaTotalPostalCounts?: Map<string, number>;
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
@@ -287,6 +294,7 @@ const FsaFillPatternDefs: React.FC = () => (
     focusable="false"
   >
     <defs>
+      {/* Mix of free + paid (FSA fully covered, but assignments differ). */}
       <pattern
         id="fsa-mixed-pattern"
         patternUnits="userSpaceOnUse"
@@ -296,6 +304,28 @@ const FsaFillPatternDefs: React.FC = () => (
       >
         <rect width="8" height="8" fill="#F97316" fillOpacity={0.45} />
         <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} />
+      </pattern>
+      {/* Partial coverage, all assigned are Free. */}
+      <pattern
+        id="fsa-partial-free-pattern"
+        patternUnits="userSpaceOnUse"
+        width="8"
+        height="8"
+        patternTransform="rotate(45)"
+      >
+        <rect width="8" height="8" fill="#FFFFFF" fillOpacity={0.85} />
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} />
+      </pattern>
+      {/* Partial coverage, all assigned are Paid. */}
+      <pattern
+        id="fsa-partial-paid-pattern"
+        patternUnits="userSpaceOnUse"
+        width="8"
+        height="8"
+        patternTransform="rotate(45)"
+      >
+        <rect width="8" height="8" fill="#FFFFFF" fillOpacity={0.85} />
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#F97316" strokeWidth={2.5} />
       </pattern>
     </defs>
   </svg>
@@ -330,6 +360,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   refreshKey = 0,
   publicAuth,
   canadaDisplayModeStorageKey,
+  fsaTotalPostalCounts,
 }) => {
   const resolvedCanadaModeKey =
     canadaDisplayModeStorageKey && canadaDisplayModeStorageKey.length > 0
@@ -586,36 +617,64 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
     // ---- Canada branch (FSA polygons) ---------------------------------------
-    // FSAs aggregate many postal codes. Style decision is based on the precomputed
-    // per-FSA counts so it is O(1) per polygon (was O(N) per polygon × O(N) polygons).
+    // Each FSA may contain dozens or hundreds of 6-character postal codes.
+    // We have two pieces of information:
+    //   * fsaSelectionAggregates  - how many of this installer's assignments
+    //                               in this FSA are Free vs Paid.
+    //   * fsaTotalPostalCounts    - the total postal codes that exist in
+    //                               this FSA across the whole DB.
+    //
+    // From those we classify the FSA as one of:
+    //   solid green  - assigned == total AND all free
+    //   solid orange - assigned == total AND all paid
+    //   stripe (orange/green) - fully covered but mixed Free/Paid
+    //   stripe (white/green)  - partial coverage, all assigned Free
+    //   stripe (white/orange) - partial coverage, all assigned Paid
+    //   stripe (orange/green) - partial coverage AND mixed
+    //
+    // Falls back to the previous "any assigned -> solid" behaviour only if
+    // we don't yet know the FSA total (data still loading).
     if (isCanada) {
       const sel = fsaSelectionAggregates?.get(zipCode);
       if (sel) {
-        const allFree = sel.free > 0 && sel.paid === 0;
-        const allPaid = sel.paid > 0 && sel.free === 0;
+        const total = fsaTotalPostalCounts?.get(zipCode);
+        const assigned = sel.free + sel.paid;
+        const isFullyCovered = total != null && assigned >= total;
         const isMixed = sel.free > 0 && sel.paid > 0;
 
-        if (allFree) {
-          return { fillColor: '#22C55E', fillOpacity: 0.45, color: '#166534', weight: 1.5, opacity: 0.7, interactive: true };
+        if (isFullyCovered && !isMixed) {
+          if (sel.free > 0) {
+            return { fillColor: '#22C55E', fillOpacity: 0.45, color: '#166534', weight: 1.5, opacity: 0.75, interactive: true };
+          }
+          return { fillColor: '#F97316', fillOpacity: 0.45, color: '#9A3412', weight: 1.5, opacity: 0.75, interactive: true };
         }
-        if (allPaid) {
-          return { fillColor: '#F97316', fillOpacity: 0.45, color: '#9A3412', weight: 1.5, opacity: 0.7, interactive: true };
-        }
+
+        // Anything else is a "miss" of some kind: partial coverage and/or
+        // mixed statuses. Pattern conveys the kind.
         if (isMixed) {
-          // SVG paint server defined in <FsaFillPatternDefs/> below.
           return { fillColor: 'url(#fsa-mixed-pattern)', fillOpacity: 1, color: '#9A3412', weight: 1.5, opacity: 0.85, interactive: true };
         }
+        if (sel.free > 0) {
+          return { fillColor: 'url(#fsa-partial-free-pattern)', fillOpacity: 1, color: '#166534', weight: 1.5, opacity: 0.75, interactive: true };
+        }
+        return { fillColor: 'url(#fsa-partial-paid-pattern)', fillOpacity: 1, color: '#9A3412', weight: 1.5, opacity: 0.75, interactive: true };
       }
 
       if (isTerritoryManagementPage) {
         const t = fsaTerritoryAggregates?.get(zipCode);
         if (t) {
-          const allFree = t.free > 0 && t.paid === 0;
-          const allPaid = t.paid > 0 && t.free === 0;
+          const total = fsaTotalPostalCounts?.get(zipCode);
+          const assigned = t.free + t.paid;
+          const isFullyCovered = total != null && assigned >= total;
           const isMixed = t.free > 0 && t.paid > 0;
-          if (allFree) return { fillColor: '#D4EDDA', fillOpacity: 0.5, color: '#166534', weight: 1, opacity: 0.5, interactive: true };
-          if (allPaid) return { fillColor: '#FFF3CD', fillOpacity: 0.5, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
+
+          if (isFullyCovered && !isMixed) {
+            if (t.free > 0) return { fillColor: '#D4EDDA', fillOpacity: 0.5, color: '#166534', weight: 1, opacity: 0.5, interactive: true };
+            return { fillColor: '#FFF3CD', fillOpacity: 0.5, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
+          }
           if (isMixed) return { fillColor: 'url(#fsa-mixed-pattern)', fillOpacity: 0.55, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
+          if (t.free > 0) return { fillColor: 'url(#fsa-partial-free-pattern)', fillOpacity: 0.7, color: '#166534', weight: 1, opacity: 0.5, interactive: true };
+          return { fillColor: 'url(#fsa-partial-paid-pattern)', fillOpacity: 0.7, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
         }
       }
 
@@ -666,6 +725,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     isTerritoryManagementPage,
     fsaSelectionAggregates,
     fsaTerritoryAggregates,
+    fsaTotalPostalCounts,
     highlightedZipCodes,
     selectedZipCodes,
     territoryStatuses,
@@ -689,9 +749,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   // The key change is the only reliable way to force React-Leaflet GeoJSON to re-draw colors
   const geoJsonStyleKey = useMemo(() => {
-    // We use a combination of simple markers to trigger a redraw without huge strings
-    return `${currentDisplayRadius}-${isBulkSelecting}-${refreshKey}-${country}`;
-  }, [currentDisplayRadius, isBulkSelecting, refreshKey, country]);
+    // Include `fsaCountsKey` so that when the FSA total-postal counts finish
+    // loading, the polygon layer rebuilds with the more accurate styling.
+    const fsaCountsKey = fsaTotalPostalCounts ? fsaTotalPostalCounts.size : 0;
+    return `${currentDisplayRadius}-${isBulkSelecting}-${refreshKey}-${country}-${fsaCountsKey}`;
+  }, [currentDisplayRadius, isBulkSelecting, refreshKey, country, fsaTotalPostalCounts]);
 
   const radiiConfig = isCanada ? [{ radius: 35, color: '#22c55e' }, { radius: 50, color: '#facc15' }, { radius: 75, color: '#f97316' }] 
                                : [{ radius: 25, color: '#22c55e' }, { radius: 50, color: '#facc15' }, { radius: 100, color: '#f97316' }, { radius: 150, color: '#ef4444' }];
@@ -811,7 +873,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
               className="inline-block h-3 w-5 rounded-sm border border-green-700"
               style={{ backgroundColor: '#22C55E', opacity: 0.6 }}
             />
-            <span>All postal codes free</span>
+            <span>Fully covered &mdash; all free</span>
           </li>
           <li className="flex items-center gap-2">
             <span
@@ -819,7 +881,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
               className="inline-block h-3 w-5 rounded-sm border border-orange-700"
               style={{ backgroundColor: '#F97316', opacity: 0.6 }}
             />
-            <span>All postal codes paid</span>
+            <span>Fully covered &mdash; all paid</span>
           </li>
           <li className="flex items-center gap-2">
             <svg
@@ -834,6 +896,34 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
               <line x1="-2" y1="6" x2="22" y2="22" stroke="#16A34A" strokeWidth={2.5} />
             </svg>
             <span>Mix of free and paid</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <svg
+              width="20"
+              height="12"
+              viewBox="0 0 20 12"
+              aria-hidden="true"
+              className="rounded-sm border border-green-700"
+            >
+              <rect width="20" height="12" fill="#FFFFFF" />
+              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#16A34A" strokeWidth={2.5} />
+              <line x1="-2" y1="6" x2="22" y2="22" stroke="#16A34A" strokeWidth={2.5} />
+            </svg>
+            <span>Partial coverage &mdash; assigned ones are free</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <svg
+              width="20"
+              height="12"
+              viewBox="0 0 20 12"
+              aria-hidden="true"
+              className="rounded-sm border border-orange-700"
+            >
+              <rect width="20" height="12" fill="#FFFFFF" />
+              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#F97316" strokeWidth={2.5} />
+              <line x1="-2" y1="6" x2="22" y2="22" stroke="#F97316" strokeWidth={2.5} />
+            </svg>
+            <span>Partial coverage &mdash; assigned ones are paid</span>
           </li>
         </ul>
       </div>

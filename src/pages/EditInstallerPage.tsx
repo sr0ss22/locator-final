@@ -29,7 +29,12 @@ import { calculateDistance } from "@/utils/distance";
 import LoadingSayings from "@/components/LoadingSayings";
 import DebugPostalCodeChecker from "@/components/DebugPostalCodeChecker";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useInstaller, useInstallerZipCodes, useSaveInstaller } from "@/hooks/useInstallerData";
+import {
+  useInstaller,
+  useInstallerZipCodes,
+  useSaveInstaller,
+  useCanadianFsaPostalCounts,
+} from "@/hooks/useInstallerData";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
 proj4.defs("EPSG:4326", "+proj=longlat +datum=WGS84 +no_defs");
@@ -127,6 +132,12 @@ const EditInstallerPage: React.FC = () => {
     const c = formData?.country?.toUpperCase();
     return (c === 'CANADA' || c === 'CA') ? 'Canada' : 'USA';
   }, [formData?.country]);
+
+  // Loaded once and cached forever (~3.8k FSA → count entries). Drives
+  // the "fully covered vs partial" colouring on Canadian FSA polygons.
+  const { data: fsaTotalPostalCounts } = useCanadianFsaPostalCounts(
+    installerCountry === 'Canada',
+  );
 
   const zipCodeCentroids = useMemo(() => {
     const map = new Map<string, { lat: number, lng: number, state: string }>();
@@ -696,6 +707,7 @@ const EditInstallerPage: React.FC = () => {
                     onBulkSelectionComplete={handleBulkSelectionComplete}
                     refreshKey={mapRefreshKey}
                     canadaDisplayModeStorageKey={installerCountry === 'Canada' ? CANADA_MAP_MODE_STORAGE_ADMIN : undefined}
+                    fsaTotalPostalCounts={fsaTotalPostalCounts}
                   />
                 </div>
                 <InstallerTerritoryList

@@ -27,16 +27,22 @@ export const useInstaller = (installerId: string) => {
   });
 };
 
-const fetchInstallerZipCodes = async (installerId: string) => {
-  // Uses a SECURITY DEFINER RPC instead of paginating PostgREST. PostgREST
-  // caps table-API results at 1000 rows, which forced a sequential loop —
-  // ~90 round-trips for installers with ~90K assignments, taking 30+
-  // seconds on every page load. The RPC returns the full set in one call.
-  const { data, error } = await supabase.rpc('get_installer_zip_codes_admin', {
+type InstallerZipRow = { zip_code: string; status: string; state_province: string };
+
+const fetchInstallerZipCodes = async (installerId: string): Promise<InstallerZipRow[]> => {
+  // PostgREST applies its db-max-rows cap (default 1,000 on Supabase) to ANY
+  // multi-row response, including SETOF / TABLE-returning RPCs. A previous
+  // attempt swapped a paginated table loop for a TABLE-returning RPC and was
+  // silently truncated to 1,000 rows for installers with very large
+  // territories. Returning a single jsonb value sidesteps the cap entirely
+  // (one row = one parsed JSON array).
+  const { data, error } = await supabase.rpc('get_installer_zip_codes_admin_v2', {
     p_installer_id: installerId,
   });
   if (error) throw error;
-  return (data ?? []) as Array<{ zip_code: string; status: string; state_province: string }>;
+  if (!data) return [];
+  // Supabase parses jsonb to a JS value automatically.
+  return data as InstallerZipRow[];
 };
 
 export const useInstallerZipCodes = (installerId: string) => {
@@ -46,6 +52,33 @@ export const useInstallerZipCodes = (installerId: string) => {
     enabled: !!installerId,
     refetchOnWindowFocus: false,
     staleTime: Infinity, // Cache data indefinitely
+  });
+};
+
+const fetchCanadianFsaPostalCounts = async (): Promise<Map<string, number>> => {
+  // Returns total postal codes per FSA (3-char prefix) across all of Canada.
+  // Used by TerritoryMap to colour FSAs accurately: fully covered vs partial
+  // vs mixed. ~3,800 FSAs in Canada; jsonb avoids the row cap and arrives as
+  // a single parsed object.
+  const { data, error } = await supabase.rpc('get_canadian_fsa_postal_counts');
+  if (error) throw error;
+  const out = new Map<string, number>();
+  if (!data || typeof data !== 'object') return out;
+  for (const [fsa, count] of Object.entries(data as Record<string, number>)) {
+    if (typeof count === 'number' && Number.isFinite(count)) {
+      out.set(fsa.toUpperCase(), count);
+    }
+  }
+  return out;
+};
+
+export const useCanadianFsaPostalCounts = (enabled: boolean) => {
+  return useQuery({
+    queryKey: ['canadianFsaPostalCounts'],
+    queryFn: fetchCanadianFsaPostalCounts,
+    enabled,
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
   });
 };
 

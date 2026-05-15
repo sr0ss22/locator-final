@@ -40,6 +40,7 @@ import { useNavigate } from "react-router-dom";
 import { InstallerZipAssignment, UserProfile, TerritoryStatus } from "@/types/territory"; // Updated import
 import MultiSelect from "@/components/MultiSelect";
 import TerritoryMap from "@/components/TerritoryMap"; // Import the new map component
+import { useCanadianFsaPostalCounts } from "@/hooks/useInstallerData";
 import DeleteConfirmationModal from "@/components/DeleteConfirmationModal"; // Import DeleteConfirmationModal
 import { Badge } from "@/components/ui/badge"; // Import Badge
 import { useCountrySettings } from "@/hooks/useCountrySettings"; // Import useCountrySettings
@@ -112,6 +113,7 @@ const TerritoryManagement: React.FC = () => {
   const totalPages = Math.ceil(totalAssignments / itemsPerPage);
 
   const { isCanada, toggleCountry } = useCountrySettings(); // Use useCountrySettings
+  const { data: fsaTotalPostalCounts } = useCanadianFsaPostalCounts(isCanada);
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -465,6 +467,7 @@ const TerritoryManagement: React.FC = () => {
           highlightedZipCodes={new Map()} // No specific highlights from this page
           currentDisplayRadius="all" // Show all territories
           canadaDisplayModeStorageKey={isCanada ? CANADA_MAP_MODE_STORAGE_ADMIN : undefined}
+          fsaTotalPostalCounts={fsaTotalPostalCounts}
         />
       </div>
 
