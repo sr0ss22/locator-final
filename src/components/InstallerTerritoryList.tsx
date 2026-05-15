@@ -81,6 +81,27 @@ const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
   const approvedZips = filteredAndSortedAssignedZips.filter(item => item.assignedStatus === 'Approved');
   const needsApprovalZips = filteredAndSortedAssignedZips.filter(item => item.assignedStatus === 'Needs Approval');
 
+  /** Full-row counts (not search/radius filtered) — clarifies map “territories” vs assigned rows in memory. */
+  const fullRowStatusCounts = useMemo(() => {
+    let approved = 0;
+    let needsApproval = 0;
+    let other = 0;
+    for (const z of assignedZipCodes) {
+      if (z.assignedStatus === 'Approved') approved++;
+      else if (z.assignedStatus === 'Needs Approval') needsApproval++;
+      else other++;
+    }
+    return {
+      total: assignedZipCodes.length,
+      approved,
+      needsApproval,
+      other,
+    };
+  }, [assignedZipCodes]);
+
+  const hasActiveListFilter =
+    Boolean(searchTerm.trim()) || listDisplayRadius !== 'all';
+
   const isValidZipOrPostal = useMemo(() => {
     const usRegex = /^\d{5}$/;
     const caRegex = /^[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i;
@@ -114,6 +135,26 @@ const InstallerTerritoryList: React.FC<InstallerTerritoryListProps> = ({
           className="pl-9 pr-3 py-2 w-full"
         />
       </div>
+
+      <p className="text-sm text-muted-foreground mb-3">
+        <span className="font-medium text-foreground">{fullRowStatusCounts.total.toLocaleString()}</span>
+        {' '}assigned territories loaded
+        <span className="text-muted-foreground">
+          {' '}({fullRowStatusCounts.approved.toLocaleString()} free,{' '}
+          {fullRowStatusCounts.needsApproval.toLocaleString()} paid
+          {fullRowStatusCounts.other > 0
+            ? `, ${fullRowStatusCounts.other.toLocaleString()} other status`
+            : ''}
+          ).
+        </span>
+        {hasActiveListFilter && (
+          <span className="block mt-1 text-xs">
+            Below: filtered view —{' '}
+            <span className="font-medium tabular-nums">{filteredAndSortedAssignedZips.length.toLocaleString()}</span>
+            {' '}territories match search/radius.
+          </span>
+        )}
+      </p>
 
       {searchTerm && isValidZipOrPostal && !isAlreadyAssigned && onAddZipCode && (
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2">

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo, memo, startTransition } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, Tooltip, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
@@ -47,10 +47,11 @@ L.Icon.Default.mergeOptions({
   // installer is not signed in. Pass the URL's installerId+token so child
   // edge function calls can authenticate as the public installer.
   publicAuth?: { installerId: string; token: string };
+  /** When set, Canada FSA vs postal-code preference is stored separately (e.g. admin vs public). */
+  canadaDisplayModeStorageKey?: string;
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
-const RENDER_BATCH_SIZE = 2000;
 
 const getPostalCode = (feature: any, isCanada: boolean): string => {
   if (!feature || !feature.properties) return '';
@@ -242,19 +243,33 @@ function MapInteractionHandler({
   return null;
 }
 
-const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: number, stage: 'counting' | 'fetching' | 'rendering' }) => (
+const LoadingOverlay = ({
+  progress,
+  total,
+  stage,
+  footnote,
+}: {
+  progress: number;
+  total: number;
+  stage: 'counting' | 'fetching';
+  /** Explains what the progress bar measures (e.g. map postal points vs installer assignments). */
+  footnote?: string;
+}) => (
   <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-[1000]">
-    <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg w-64">
+    <div className="flex flex-col items-center text-gray-700 bg-white p-6 rounded-lg shadow-lg max-w-sm w-[min(100%,24rem)] px-5">
       <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-4" />
-      <p className="font-semibold text-lg mb-2">
-        {stage === 'counting' ? 'Calculating...' : stage === 'fetching' ? 'Fetching Territories...' : 'Rendering Territories...'}
+      <p className="font-semibold text-lg mb-2 text-center">
+        {stage === 'counting' ? 'Calculating...' : 'Loading map postal codes...'}
       </p>
       {stage !== 'counting' && (
         <>
           <Progress value={total > 0 ? (progress / total) * 100 : 0} className="w-full" />
-          <p className="text-sm text-gray-500 mt-2">{progress.toLocaleString()} / {total.toLocaleString()}</p>
+          <p className="text-sm text-gray-500 mt-2 tabular-nums">{progress.toLocaleString()} / {total.toLocaleString()}</p>
         </>
       )}
+      {footnote ? (
+        <p className="text-xs text-gray-500 mt-3 text-center leading-snug">{footnote}</p>
+      ) : null}
     </div>
   </div>
 );
@@ -266,9 +281,9 @@ const LoadingOverlay = ({ progress, total, stage }: { progress: number, total: n
 type CanadaDisplayMode = 'fsa' | 'postal-codes';
 const CANADA_DISPLAY_MODE_KEY = 'territory-map-canada-display-mode';
 
-function readCanadaDisplayMode(): CanadaDisplayMode {
+function readCanadaDisplayMode(storageKey: string): CanadaDisplayMode {
   if (typeof window === 'undefined') return 'fsa';
-  const stored = window.localStorage.getItem(CANADA_DISPLAY_MODE_KEY);
+  const stored = window.localStorage.getItem(storageKey);
   return stored === 'postal-codes' ? 'postal-codes' : 'fsa';
 }
 
@@ -287,7 +302,12 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   country = 'USA',
   refreshKey = 0,
   publicAuth,
+  canadaDisplayModeStorageKey,
 }) => {
+  const resolvedCanadaModeKey =
+    canadaDisplayModeStorageKey && canadaDisplayModeStorageKey.length > 0
+      ? canadaDisplayModeStorageKey
+      : CANADA_DISPLAY_MODE_KEY;
   const [allGeoJsonData, setAllGeoJsonData] = useState<any>(null);
   const [allCanadaGeoJsonData, setAllCanadaGeoJsonData] = useState<any>(null);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -295,21 +315,22 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   const [allCanadaPoints, setAllCanadaPoints] = useState<any[]>([]);
   const [renderedCanadaPoints, setRenderedCanadaPoints] = useState<any[]>([]);
-  const [loadingStage, setLoadingStage] = useState<'idle' | 'counting' | 'fetching' | 'rendering' | 'complete'>('idle');
+  const [loadingStage, setLoadingStage] = useState<'idle' | 'counting' | 'fetching' | 'complete'>('idle');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [totalPointsToLoad, setTotalPointsToLoad] = useState(0);
   const lastSearchKey = useRef<string | null>(null);
 
-  const [canadaDisplayMode, setCanadaDisplayMode] =
-    useState<CanadaDisplayMode>(readCanadaDisplayMode);
+  const [canadaDisplayMode, setCanadaDisplayMode] = useState<CanadaDisplayMode>(() =>
+    readCanadaDisplayMode(resolvedCanadaModeKey),
+  );
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(CANADA_DISPLAY_MODE_KEY, canadaDisplayMode);
+      window.localStorage.setItem(resolvedCanadaModeKey, canadaDisplayMode);
     } catch {
       // localStorage may be unavailable (private mode, quota); ignore.
     }
-  }, [canadaDisplayMode]);
+  }, [canadaDisplayMode, resolvedCanadaModeKey]);
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
@@ -402,7 +423,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
           const PAGE_SIZE = 1000;
           const totalPages = Math.ceil(count / PAGE_SIZE);
-          const CONCURRENCY_LIMIT = 10;
+          const CONCURRENCY_LIMIT = 20;
           let fetchedPoints: any[] = [];
 
           for (let i = 0; i < totalPages; i += CONCURRENCY_LIMIT) {
@@ -426,7 +447,14 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           }
 
           setAllCanadaPoints(fetchedPoints);
-          setLoadingStage('rendering');
+          setLoadingProgress(fetchedPoints.length);
+          // Incremental `setRenderedCanadaPoints(prev => [...prev, batch])` was
+          // O(n²) in total work copying arrays and dominated render time (~30s
+          // for ~160k points). One transition update is far cheaper.
+          startTransition(() => {
+            setRenderedCanadaPoints(fetchedPoints);
+            setLoadingStage('complete');
+          });
         } catch (err: any) {
           console.error("Error fetching Canadian postal codes:", err);
           toast.error(`Failed to load Canadian postal codes: ${err.message}`);
@@ -461,30 +489,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     };
     loadAndRenderData();
   }, [isCanada, centerLocation, currentDisplayRadius, allGeoJsonData, canadaDisplayMode]);
-
-  useEffect(() => {
-    if (loadingStage !== 'rendering' || !isCanada || allCanadaPoints.length === 0) return;
-  
-    setRenderedCanadaPoints([]);
-    setLoadingProgress(0);
-    let renderIndex = 0;
-    let animationFrameId: number;
-  
-    const renderNextBatch = () => {
-      if (renderIndex >= allCanadaPoints.length) {
-        setLoadingStage('complete');
-        return;
-      }
-      const nextBatch = allCanadaPoints.slice(renderIndex, renderIndex + RENDER_BATCH_SIZE);
-      setRenderedCanadaPoints(prev => [...prev, ...nextBatch]);
-      setLoadingProgress(prev => prev + nextBatch.length);
-      renderIndex += RENDER_BATCH_SIZE;
-      animationFrameId = requestAnimationFrame(renderNextBatch);
-    };
-  
-    animationFrameId = requestAnimationFrame(renderNextBatch);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [loadingStage, allCanadaPoints, isCanada]);
 
   const filteredGeoJsonData = useMemo(() => {
     const geoJsonToUse = isCanada ? allCanadaGeoJsonData : allGeoJsonData;
@@ -624,7 +628,18 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       <Pane name="polygons" style={{ zIndex: 450 }} />
-      {(loadingStage === 'counting' || loadingStage === 'fetching' || loadingStage === 'rendering') && <LoadingOverlay progress={loadingProgress} total={totalPointsToLoad} stage={loadingStage} />}
+      {(loadingStage === 'counting' || loadingStage === 'fetching') && (
+        <LoadingOverlay
+          progress={loadingProgress}
+          total={totalPointsToLoad}
+          stage={loadingStage}
+          footnote={
+            isCanada && canadaDisplayMode === 'postal-codes'
+              ? 'This count is postal points inside the map radius for drawing dots. It is not the number of territories assigned to this installer.'
+              : undefined
+          }
+        />
+      )}
       {isCanada && canadaDisplayMode === 'postal-codes' && renderedCanadaPoints.length > 0 && (
         renderedCanadaPoints.map(point => {
           const postalCode = point.POSTAL_CODE;

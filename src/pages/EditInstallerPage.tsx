@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +61,9 @@ const certificationCheckboxes = [
 const otherFields = ["installer_vendor_id", "star_rating", "shipment"];
 const textAreaFields = ["comments", "specialnote"];
 
+/** Admin maps use their own localStorage key so a prior "postal codes" choice on /territory-editor does not force a heavy load on /installers/edit. */
+const CANADA_MAP_MODE_STORAGE_ADMIN = "territory-map-canada-display-mode-admin";
+
 const EditInstallerPage: React.FC = () => {
   const { installerId } = useParams<{ installerId: string }>();
   const navigate = useNavigate();
@@ -77,14 +80,25 @@ const EditInstallerPage: React.FC = () => {
   const [mapRefreshKey, setMapRefreshKey] = useState<number>(0); 
   const [selectedMapZipCodes, setSelectedMapZipCodes] = useState<Array<{ zipCode: string, assignedStatus: TerritoryStatus, stateProvince: string, centroid_latitude: number | null, centroid_longitude: number | null }>>([]);
   const [territoryStatuses, setTerritoryStatuses] = useState<Map<string, TerritoryStatus>>(new Map());
-  const [currentInstaller, setCurrentInstaller] = useState<Installer | null>(null);
   const [bulkActionType, setBulkActionType] = useState<'approve' | 'needs_approval' | 'deselect' | null>(null);
   const [isImportTerritoriesModalOpen, setIsImportTerritoriesModalOpen] = useState(false);
   const [listDisplayRadius, setListDisplayRadius] = useState<string | 'all'>('all');
   const { profile, user, loading: sessionLoading } = useSession();
 
-  const loading = isLoadingInstaller || isLoadingZips;
-  const error = installerError || zipsError;
+  const installerBlockingLoad = isLoadingInstaller;
+
+  const currentInstaller = useMemo((): Installer | null => {
+    if (!installerData) return null;
+    return {
+      ...installerData,
+      id: installerData.id,
+      name: installerData.name,
+      skills: [],
+      brands: [],
+      certifications: [],
+      rawSupabaseData: installerData,
+    } as Installer;
+  }, [installerData]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -196,44 +210,45 @@ const EditInstallerPage: React.FC = () => {
     return statusMap;
   }, []);
 
-  useEffect(() => {
-    if (installerData && zipCodeData) {
-      const enrichedZips = zipCodeData.map(item => {
-        const centroid = zipCodeCentroids.get(item.zip_code);
-        return {
-          zipCode: item.zip_code,
-          assignedStatus: item.status as TerritoryStatus,
-          stateProvince: item.state_province,
-          centroid_latitude: centroid?.lat || null,
-          centroid_longitude: centroid?.lng || null,
-        };
-      });
-
-      setFormData(installerData);
-      setInitialFormData(JSON.parse(JSON.stringify(installerData)));
-      
-      setSelectedMapZipCodes(enrichedZips);
-      setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
-
-      setCurrentInstaller({
-        ...installerData,
-        id: installerData.id,
-        name: installerData.name,
-        skills: [], brands: [], certifications: [],
-        rawSupabaseData: installerData
-      });
-      
-      setIsDirty(false);
-      fetchTerritoryStatuses();
-    }
-  }, [installerData, zipCodeData, zipCodeCentroids, fetchTerritoryStatuses]);
+  useLayoutEffect(() => {
+    if (!installerData) return;
+    setFormData(installerData);
+    setInitialFormData(JSON.parse(JSON.stringify(installerData)));
+    setIsDirty(false);
+  }, [installerData]);
 
   useEffect(() => {
-    if (loading || sessionLoading || !initialFormData) return;
+    if (!installerId) return;
+    setSelectedMapZipCodes([]);
+    setInitialSelectedMapZipCodes([]);
+  }, [installerId]);
+
+  useEffect(() => {
+    if (zipCodeData === undefined || !installerData || installerData.id !== installerId) return;
+
+    const enrichedZips = zipCodeData.map((item) => {
+      const centroid = zipCodeCentroids.get(item.zip_code);
+      return {
+        zipCode: item.zip_code,
+        assignedStatus: item.status as TerritoryStatus,
+        stateProvince: item.state_province,
+        centroid_latitude: centroid?.lat || null,
+        centroid_longitude: centroid?.lng || null,
+      };
+    });
+
+    setSelectedMapZipCodes(enrichedZips);
+    setInitialSelectedMapZipCodes(JSON.parse(JSON.stringify(enrichedZips)));
+
+    fetchTerritoryStatuses();
+  }, [installerData, installerId, zipCodeData, zipCodeCentroids, fetchTerritoryStatuses]);
+
+  useEffect(() => {
+    if (installerBlockingLoad || sessionLoading || !initialFormData) return;
     const normalizeZips = (zips: any[]) => zips.map(({ zipCode, assignedStatus }) => ({ zipCode, assignedStatus })).sort((a, b) => a.zipCode.localeCompare(b.zipCode));
     const zipCodesChanged = JSON.stringify(normalizeZips(selectedMapZipCodes)) !== JSON.stringify(normalizeZips(initialSelectedMapZipCodes));
     setIsDirty(JSON.stringify(formData) !== JSON.stringify(initialFormData) || zipCodesChanged);
-  }, [formData, selectedMapZipCodes, initialFormData, initialSelectedMapZipCodes, loading, sessionLoading]);
+  }, [formData, selectedMapZipCodes, initialFormData, initialSelectedMapZipCodes, installerBlockingLoad, sessionLoading]);
 
   const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
     setSelectedMapZipCodes(prev => {
@@ -470,11 +485,35 @@ const EditInstallerPage: React.FC = () => {
     toast.success("Territories exported successfully!");
   };
 
-  if (loading || sessionLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><LoadingSayings /></div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center text-red-500">Error: {error.message}</div>;
+  const loadAllData = useCallback(() => {
+    if (initialFormData) {
+      setFormData(JSON.parse(JSON.stringify(initialFormData)));
+    }
+    setSelectedMapZipCodes(JSON.parse(JSON.stringify(initialSelectedMapZipCodes)));
+    setMapRefreshKey((p) => p + 1);
+    setIsDirty(false);
+  }, [initialFormData, initialSelectedMapZipCodes]);
+
+  if (sessionLoading || installerBlockingLoad) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <LoadingSayings />
+      </div>
+    );
+  }
+  if (installerError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-500">
+        Error: {installerError.message}
+      </div>
+    );
+  }
   if (!currentInstaller) return null;
 
   const canEdit = profile?.role === 'admin' || (profile?.role === 'installer' && currentInstaller.rawSupabaseData?.account_id === user?.id);
+
+  const territoryActionsDisabled =
+    saveMutation.isPending || !canEdit || isLoadingZips || !!zipsError;
 
   return (
     <>
@@ -606,46 +645,80 @@ const EditInstallerPage: React.FC = () => {
             <h3 className="text-lg font-semibold mb-2">Assigned Territories</h3>
             <div className="flex flex-wrap justify-between gap-2 mb-4">
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={handleAutoApprove} disabled={saveMutation.isPending || !canEdit}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={saveMutation.isPending || !canEdit}>Bulk Free Mileage</Button>
-                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={saveMutation.isPending || !canEdit}>Bulk Paid Mileage</Button>
+                <Button variant="outline" onClick={handleAutoApprove} disabled={territoryActionsDisabled}><Star className="mr-2 h-4 w-4" /> Auto Approve {installerCountry === 'Canada' ? '35km' : '25 miles'}</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'approve' ? "bg-green-600 text-white" : "text-green-600")} onClick={() => setBulkActionType('approve')} disabled={territoryActionsDisabled}>Bulk Free Mileage</Button>
+                <Button variant="outline" className={cn(bulkActionType === 'needs_approval' ? "bg-orange-600 text-white" : "text-orange-600")} onClick={() => setBulkActionType('needs_approval')} disabled={territoryActionsDisabled}>Bulk Paid Mileage</Button>
                 {installerCountry === 'Canada' ? (
-                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white" : "text-red-600")} onClick={() => setBulkActionType('deselect')} disabled={saveMutation.isPending || !canEdit}>
+                  <Button variant="outline" className={cn(bulkActionType === 'deselect' ? "bg-red-600 text-white" : "text-red-600")} onClick={() => setBulkActionType('deselect')} disabled={territoryActionsDisabled}>
                     <Eraser className="mr-2 h-4 w-4" /> Bulk Deselect
                   </Button>
                 ) : (
-                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={saveMutation.isPending || !canEdit}>
+                  <Button variant="outline" onClick={handleClearAllAssignedZips} disabled={territoryActionsDisabled}>
                     <Eraser className="mr-2 h-4 w-4" /> Clear All
                   </Button>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={saveMutation.isPending || !canEdit}>
+                <Button variant="outline" onClick={() => setIsImportTerritoriesModalOpen(true)} disabled={territoryActionsDisabled}>
                   <Upload className="mr-2 h-4 w-4" /> Import
                 </Button>
-                <Button variant="outline" onClick={handleExportTerritories} disabled={saveMutation.isPending}>
+                <Button variant="outline" onClick={handleExportTerritories} disabled={saveMutation.isPending || isLoadingZips}>
                   <Download className="mr-2 h-4 w-4" /> Export
                 </Button>
               </div>
             </div>
-            <div className="h-[800px] w-full border rounded-lg overflow-hidden">
-              <TerritoryMap country={installerCountry} isOpen={true} centerLocation={memoizedCenterLocation} onZipCodeClick={handleMapZipCodeClick} selectedZipCodes={selectedMapZipCodes} currentDisplayRadius={mapDisplayRadius} showRadiusCircles={true} territoryStatuses={territoryStatuses} highlightedZipCodes={highlightedZipCodes} isBulkSelecting={!!bulkActionType} onBulkSelectionComplete={handleBulkSelectionComplete} refreshKey={mapRefreshKey} />
-            </div>
-            <InstallerTerritoryList
-              assignedZipCodes={selectedMapZipCodes}
-              onZipCodeClick={handleMapZipCodeClick}
-              onAddZipCode={handleAddZipCode}
-              mapClickStates={highlightedZipCodes}
-              installerLocation={memoizedCenterLocation}
-              listDisplayRadius={listDisplayRadius}
-            />
+            {zipsError && (
+              <p className="text-sm text-red-600 mb-2" role="alert">
+                Territory assignments failed to load: {zipsError.message}
+              </p>
+            )}
+            {isLoadingZips ? (
+              <div className="h-[800px] w-full border rounded-lg overflow-hidden flex flex-col items-center justify-center bg-muted/20 gap-3 text-muted-foreground">
+                <Loader2 className="h-10 w-10 animate-spin" />
+                <p className="text-sm font-medium text-center max-w-md px-4">
+                  Loading territory assignments&hellip; Large installers can take up to a minute while rows arrive from the database.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="h-[800px] w-full border rounded-lg overflow-hidden">
+                  <TerritoryMap
+                    country={installerCountry}
+                    isOpen={true}
+                    centerLocation={memoizedCenterLocation}
+                    onZipCodeClick={handleMapZipCodeClick}
+                    selectedZipCodes={selectedMapZipCodes}
+                    currentDisplayRadius={mapDisplayRadius}
+                    showRadiusCircles={true}
+                    territoryStatuses={territoryStatuses}
+                    highlightedZipCodes={highlightedZipCodes}
+                    isBulkSelecting={!!bulkActionType}
+                    onBulkSelectionComplete={handleBulkSelectionComplete}
+                    refreshKey={mapRefreshKey}
+                    canadaDisplayModeStorageKey={installerCountry === 'Canada' ? CANADA_MAP_MODE_STORAGE_ADMIN : undefined}
+                  />
+                </div>
+                <InstallerTerritoryList
+                  assignedZipCodes={selectedMapZipCodes}
+                  onZipCodeClick={handleMapZipCodeClick}
+                  onAddZipCode={handleAddZipCode}
+                  mapClickStates={highlightedZipCodes}
+                  installerLocation={memoizedCenterLocation}
+                  listDisplayRadius={listDisplayRadius}
+                />
+              </>
+            )}
           </div>
         </div>
       </div>
       {isDirty && (
         <div className="fixed bottom-0 left-0 w-full z-[1000] bg-white border-t p-4 flex justify-end gap-2">
-          <Button variant="outline" onClick={() => loadAllData()} disabled={saveMutation.isPending}>Discard</Button>
-          <Button onClick={() => handleSubmit()} disabled={saveMutation.isPending} className="bg-green-600">
+          <Button variant="outline" onClick={loadAllData} disabled={saveMutation.isPending}>Discard</Button>
+          <Button
+            onClick={() => handleSubmit()}
+            disabled={saveMutation.isPending || isLoadingZips || !!zipsError}
+            className="bg-green-600"
+          >
             {saveMutation.isPending ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />} Save
           </Button>
         </div>
