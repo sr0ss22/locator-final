@@ -34,6 +34,7 @@ import {
   useInstallerZipCodes,
   useSaveInstaller,
   useCanadianFsaPostalCounts,
+  fetchCanadianPostalsForFsa,
 } from "@/hooks/useInstallerData";
 
 proj4.defs("EPSG:3857", "+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs");
@@ -260,6 +261,75 @@ const EditInstallerPage: React.FC = () => {
     const zipCodesChanged = JSON.stringify(normalizeZips(selectedMapZipCodes)) !== JSON.stringify(normalizeZips(initialSelectedMapZipCodes));
     setIsDirty(JSON.stringify(formData) !== JSON.stringify(initialFormData) || zipCodesChanged);
   }, [formData, selectedMapZipCodes, initialFormData, initialSelectedMapZipCodes, installerBlockingLoad, sessionLoading]);
+
+  // FSA bulk action: replace every assignment in the FSA with the chosen
+  // status (Free/Paid) or remove them all. Fetches the full postal list
+  // from the precomputed-normalisation RPC so we always reflect what the
+  // FSA polygon actually contains, not just postals we happened to have
+  // already seen via the radius prefetch. Edits stay in component state
+  // and are persisted by the existing Save button.
+  const handleFsaBulkAction = useCallback(
+    async (
+      fsa: string,
+      action: 'free' | 'paid' | 'remove',
+      stateProvinceFromMap: string,
+    ) => {
+      const fsaUpper = fsa.toUpperCase();
+
+      if (action === 'remove') {
+        let removed = 0;
+        setSelectedMapZipCodes(prev => {
+          const next = prev.filter(item => {
+            const matches = item.zipCode.toUpperCase().startsWith(fsaUpper);
+            if (matches) removed += 1;
+            return !matches;
+          });
+          return removed > 0 ? next : prev;
+        });
+        if (removed > 0) {
+          toast.success(`Removed ${removed.toLocaleString()} postals from ${fsa}.`);
+          setMapRefreshKey(p => p + 1);
+        } else {
+          toast.info(`No assignments to remove in ${fsa}.`);
+        }
+        return;
+      }
+
+      let postals;
+      try {
+        postals = await fetchCanadianPostalsForFsa(fsa);
+      } catch (err: any) {
+        console.error('Failed to fetch FSA postals:', err);
+        toast.error(`Could not load postals for ${fsa}: ${err?.message ?? 'unknown error'}`);
+        throw err;
+      }
+      if (!postals.length) {
+        toast.info(`No postals found for ${fsa}.`);
+        return;
+      }
+
+      const newStatus: TerritoryStatus = action === 'free' ? 'Approved' : 'Needs Approval';
+
+      setSelectedMapZipCodes(prev => {
+        const remaining = prev.filter(
+          item => !item.zipCode.toUpperCase().startsWith(fsaUpper),
+        );
+        const additions = postals.map(p => ({
+          zipCode: p.postal_code.toUpperCase(),
+          assignedStatus: newStatus,
+          stateProvince: p.province_abbr || stateProvinceFromMap || 'Unknown',
+          centroid_latitude: p.latitude ?? null,
+          centroid_longitude: p.longitude ?? null,
+        }));
+        return [...remaining, ...additions];
+      });
+      setMapRefreshKey(p => p + 1);
+      toast.success(
+        `Set ${postals.length.toLocaleString()} postals in ${fsa} as ${action === 'free' ? 'Free' : 'Paid'}.`,
+      );
+    },
+    [],
+  );
 
   const handleMapZipCodeClick = useCallback((zipCode: string, stateProvince: string) => {
     setSelectedMapZipCodes(prev => {
@@ -709,6 +779,7 @@ const EditInstallerPage: React.FC = () => {
                     canadaDisplayModeStorageKey={installerCountry === 'Canada' ? CANADA_MAP_MODE_STORAGE_ADMIN : undefined}
                     fsaTotalPostalCounts={fsaTotalPostalCounts}
                     fsaTotalPostalCountsLoading={isFsaTotalPostalCountsLoading}
+                    onFsaBulkAction={installerCountry === 'Canada' ? handleFsaBulkAction : undefined}
                   />
                 </div>
                 <InstallerTerritoryList

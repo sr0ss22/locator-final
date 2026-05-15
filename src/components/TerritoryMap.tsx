@@ -63,6 +63,17 @@ L.Icon.Default.mergeOptions({
    * coverage during the load.
    */
   fsaTotalPostalCountsLoading?: boolean;
+  /**
+   * If set, FSA polygon clicks (Canada, FSA mode) open a popup that lets
+   * the user assign or remove every postal in that FSA in one shot. The
+   * caller is responsible for fetching the FSA's postals (we keep it on
+   * the page so the page already-knows how to update its own state).
+   */
+  onFsaBulkAction?: (
+    fsa: string,
+    action: 'free' | 'paid' | 'remove',
+    stateProvince: string,
+  ) => Promise<void>;
 }
 
 const DEFAULT_DISPLAY_RADIUS_MILES = 25;
@@ -338,6 +349,149 @@ const FsaFillPatternDefs: React.FC = () => (
   </svg>
 );
 
+// Inline UI for the FSA bulk-action popup. Shows the action-focused
+// breakdown (missing / free / paid) and three buttons. Each button has a
+// two-step confirmation so users don't accidentally overwrite a large
+// FSA. The actual write happens in the parent (EditInstallerPage) via
+// the onFsaBulkAction callback so all assignment edits flow through the
+// same Save button.
+const FsaBulkActionPopupContents: React.FC<{
+  fsa: string;
+  stateProvince: string;
+  free: number;
+  paid: number;
+  total: number | undefined;
+  onAction: (action: 'free' | 'paid' | 'remove') => Promise<void>;
+  onClose: () => void;
+}> = ({ fsa, stateProvince, free, paid, total, onAction, onClose }) => {
+  const assigned = free + paid;
+  const missing = total != null ? Math.max(0, total - assigned) : null;
+
+  const [pending, setPending] = React.useState<'free' | 'paid' | 'remove' | null>(null);
+  const [busy, setBusy] = React.useState(false);
+
+  const totalDisplay = total != null ? total.toLocaleString() : '—';
+  const targetCount = total ?? assigned;
+
+  const confirmCopy = (() => {
+    if (!pending) return null;
+    if (pending === 'remove') {
+      return assigned > 0
+        ? `Remove all ${assigned.toLocaleString()} assignments from ${fsa}?`
+        : `Nothing to remove in ${fsa}.`;
+    }
+    const label = pending === 'free' ? 'Free' : 'Paid';
+    if (total != null) {
+      return `Set all ${total.toLocaleString()} postals in ${fsa} as ${label}? Existing assignments in this FSA will be replaced.`;
+    }
+    return `Set every postal in ${fsa} as ${label}? Existing assignments in this FSA will be replaced.`;
+  })();
+
+  const runConfirmed = async () => {
+    if (!pending) return;
+    if (pending === 'remove' && assigned === 0) {
+      setPending(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      await onAction(pending);
+      onClose();
+    } finally {
+      setBusy(false);
+      setPending(null);
+    }
+  };
+
+  return (
+    <div className="text-sm w-[260px]">
+      <div className="font-semibold text-gray-900">
+        FSA: {fsa}
+        {stateProvince && stateProvince !== 'Unknown' && (
+          <span className="text-gray-500 font-normal"> ({stateProvince})</span>
+        )}
+      </div>
+
+      <div className="mt-2 space-y-0.5">
+        {missing != null && missing === 0 ? (
+          <div className="text-emerald-700 font-medium">
+            ✓ All {totalDisplay} postals assigned
+          </div>
+        ) : missing != null ? (
+          <div>
+            <span className="font-semibold text-gray-900">{missing.toLocaleString()} unassigned</span>
+            <span className="text-gray-500"> of {totalDisplay}</span>
+          </div>
+        ) : (
+          <div className="text-gray-500">{assigned.toLocaleString()} assigned</div>
+        )}
+        <div className="text-gray-600 text-xs">
+          {free > 0 && <span>{free.toLocaleString()} free</span>}
+          {free > 0 && paid > 0 && <span> · </span>}
+          {paid > 0 && <span>{paid.toLocaleString()} paid</span>}
+          {free === 0 && paid === 0 && <span>No assignments yet</span>}
+        </div>
+      </div>
+
+      {pending ? (
+        <div className="mt-3 border-t border-gray-200 pt-3">
+          <div className="text-gray-800 text-xs leading-snug">{confirmCopy}</div>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={runConfirmed}
+              disabled={busy || (pending === 'remove' && assigned === 0)}
+              className={
+                'flex-1 px-2.5 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-50 ' +
+                (pending === 'remove'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : pending === 'free'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-orange-600 hover:bg-orange-700')
+              }
+            >
+              {busy ? 'Working…' : 'Confirm'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPending(null)}
+              disabled={busy}
+              className="flex-1 px-2.5 py-1.5 rounded text-xs font-medium bg-gray-100 text-gray-800 hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 border-t border-gray-200 pt-3 space-y-1.5">
+          <button
+            type="button"
+            onClick={() => setPending('free')}
+            className="w-full px-2.5 py-1.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+          >
+            Set all {targetCount > 0 ? targetCount.toLocaleString() : ''} to Free
+          </button>
+          <button
+            type="button"
+            onClick={() => setPending('paid')}
+            className="w-full px-2.5 py-1.5 rounded text-xs font-semibold bg-orange-50 text-orange-800 border border-orange-200 hover:bg-orange-100"
+          >
+            Set all {targetCount > 0 ? targetCount.toLocaleString() : ''} to Paid
+          </button>
+          <button
+            type="button"
+            onClick={() => setPending('remove')}
+            disabled={assigned === 0}
+            className="w-full px-2.5 py-1.5 rounded text-xs font-medium text-red-700 border border-red-200 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Remove all from FSA
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Module-level cache for Canadian postal-code fetches. Keyed by
 // `${lat}-${lng}-${radius}`. Survives across:
 //   * toggling FSA <-> Postal codes inside the same map instance
@@ -493,6 +647,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   canadaDisplayModeStorageKey,
   fsaTotalPostalCounts,
   fsaTotalPostalCountsLoading = false,
+  onFsaBulkAction,
 }) => {
   const resolvedCanadaModeKey =
     canadaDisplayModeStorageKey && canadaDisplayModeStorageKey.length > 0
@@ -536,6 +691,25 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   useEffect(() => {
     onZipCodeClickRef.current = onZipCodeClick;
   }, [onZipCodeClick]);
+
+  // FSA bulk-action popup. Opened when the user clicks an FSA polygon in
+  // FSA mode and the parent provided an onFsaBulkAction callback. The
+  // ref-indirection keeps the click handler attached to each Leaflet
+  // layer (memoised across renders) able to call into the latest opener.
+  const [fsaBulkPopup, setFsaBulkPopup] = useState<{
+    fsa: string;
+    stateProvince: string;
+    latlng: L.LatLng;
+  } | null>(null);
+  const openFsaBulkPopupRef = useRef<
+    ((fsa: string, stateProvince: string, latlng: L.LatLng | null) => void) | null
+  >(null);
+  useEffect(() => {
+    openFsaBulkPopupRef.current = (fsa, stateProvince, latlng) => {
+      if (!latlng) return;
+      setFsaBulkPopup({ fsa, stateProvince, latlng });
+    };
+  }, []);
 
   // Process the static Canada FSA GeoJSON once. Used by both display modes,
   // so it runs independently of the postal-code DB fetch.
@@ -941,11 +1115,18 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
     const stateProvince = getRegion(feature, isCanada);
+    const isFsaBulkClickable =
+      isCanada && canadaDisplayMode === 'fsa' && !!onFsaBulkAction;
     layer.off('click');
     layer.on({
-      click: (e) => {
+      click: (e: any) => {
         L.DomEvent.stopPropagation(e);
-        if (!isBulkSelecting) onZipCodeClickRef.current(zipCode, stateProvince);
+        if (isBulkSelecting) return;
+        if (isFsaBulkClickable) {
+          openFsaBulkPopupRef.current?.(zipCode, stateProvince, e?.latlng ?? null);
+          return;
+        }
+        onZipCodeClickRef.current(zipCode, stateProvince);
       },
     });
     const label = isCanada ? 'FSA' : 'ZIP';
@@ -953,28 +1134,49 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     if (stateProvince && stateProvince !== 'Unknown') tooltipHtml += ` (${stateProvince})`;
     tooltipHtml += `</div>`;
 
-    // Coverage breakdown for Canadian FSAs. Helps the user verify why an
-    // FSA is solid vs. striped without guessing.
+    // Action-focused coverage breakdown for Canadian FSAs. Headlines the
+    // missing count (the most useful number for the bulk-action popup),
+    // then breaks down free / paid below. Hover for a quick read; click
+    // to open the bulk-action popup.
     if (isCanada) {
       const sel = fsaSelectionAggregates?.get(zipCode);
+      const total = fsaTotalPostalCounts?.get(zipCode);
       if (sel) {
         const assigned = sel.free + sel.paid;
-        const total = fsaTotalPostalCounts?.get(zipCode);
-        const breakdownParts: string[] = [];
-        if (sel.free > 0) breakdownParts.push(`${sel.free.toLocaleString()} free`);
-        if (sel.paid > 0) breakdownParts.push(`${sel.paid.toLocaleString()} paid`);
-        const breakdown = breakdownParts.length > 0 ? ` (${breakdownParts.join(', ')})` : '';
         if (total != null && total > 0) {
-          const pct = Math.min(100, Math.round((assigned / total) * 1000) / 10);
-          tooltipHtml += `<div>${assigned.toLocaleString()} / ${total.toLocaleString()} postals assigned (${pct}%)${breakdown}</div>`;
+          const missing = Math.max(0, total - assigned);
+          if (missing === 0) {
+            const statusLine =
+              sel.free > 0 && sel.paid > 0
+                ? `${sel.free.toLocaleString()} free &middot; ${sel.paid.toLocaleString()} paid`
+                : sel.free > 0
+                  ? 'All assigned are Free'
+                  : 'All assigned are Paid';
+            tooltipHtml += `<div style="margin-top:2px">&#10003; All ${total.toLocaleString()} postals assigned</div>`;
+            tooltipHtml += `<div style="color:#475569">${statusLine}</div>`;
+          } else {
+            tooltipHtml += `<div style="margin-top:2px"><strong>${missing.toLocaleString()} unassigned</strong> of ${total.toLocaleString()}</div>`;
+            const partsAssigned: string[] = [];
+            if (sel.free > 0) partsAssigned.push(`${sel.free.toLocaleString()} free`);
+            if (sel.paid > 0) partsAssigned.push(`${sel.paid.toLocaleString()} paid`);
+            tooltipHtml += `<div style="color:#475569">${partsAssigned.join(' &middot; ')}</div>`;
+          }
         } else {
-          tooltipHtml += `<div>${assigned.toLocaleString()} postals assigned${breakdown}</div>`;
+          const partsAssigned: string[] = [];
+          if (sel.free > 0) partsAssigned.push(`${sel.free.toLocaleString()} free`);
+          if (sel.paid > 0) partsAssigned.push(`${sel.paid.toLocaleString()} paid`);
+          tooltipHtml += `<div style="margin-top:2px">${assigned.toLocaleString()} assigned (${partsAssigned.join(' &middot; ')})</div>`;
         }
-      } else if (isTerritoryManagementPage) {
+      } else if (total != null && total > 0) {
+        tooltipHtml += `<div style="margin-top:2px;color:#475569">${total.toLocaleString()} postals &middot; none assigned</div>`;
+      }
+      if (isFsaBulkClickable) {
+        tooltipHtml += `<div style="margin-top:4px;color:#64748b;font-size:0.7rem">Click to bulk-assign</div>`;
+      }
+      if (isTerritoryManagementPage && !sel) {
         const t = fsaTerritoryAggregates?.get(zipCode);
         if (t) {
           const assigned = t.free + t.paid;
-          const total = fsaTotalPostalCounts?.get(zipCode);
           if (total != null && total > 0) {
             const pct = Math.min(100, Math.round((assigned / total) * 1000) / 10);
             tooltipHtml += `<div>${assigned.toLocaleString()} / ${total.toLocaleString()} postals assigned globally (${pct}%)</div>`;
@@ -1100,6 +1302,31 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       )}
       <MapUpdater centerLocation={centerLocation} isOpen={isOpen} country={country} />
       <MapInteractionHandler isBulkSelecting={isBulkSelecting} geoJsonData={allGeoJsonData} onBulkSelectionComplete={onBulkSelectionComplete} isCanada={isCanada} publicAuth={publicAuth} />
+      {fsaBulkPopup && onFsaBulkAction && (
+        <Popup
+          position={fsaBulkPopup.latlng}
+          eventHandlers={{ remove: () => setFsaBulkPopup(null) }}
+          autoPan
+          closeButton
+          minWidth={260}
+        >
+          <FsaBulkActionPopupContents
+            fsa={fsaBulkPopup.fsa}
+            stateProvince={fsaBulkPopup.stateProvince}
+            free={fsaSelectionAggregates?.get(fsaBulkPopup.fsa)?.free ?? 0}
+            paid={fsaSelectionAggregates?.get(fsaBulkPopup.fsa)?.paid ?? 0}
+            total={fsaTotalPostalCounts?.get(fsaBulkPopup.fsa)}
+            onAction={async (action) => {
+              await onFsaBulkAction(
+                fsaBulkPopup.fsa,
+                action,
+                fsaBulkPopup.stateProvince,
+              );
+            }}
+            onClose={() => setFsaBulkPopup(null)}
+          />
+        </Popup>
+      )}
     </MapContainer>
     {isCanada && canadaDisplayMode === 'fsa' && fsaTotalPostalCountsLoading && (
       <div

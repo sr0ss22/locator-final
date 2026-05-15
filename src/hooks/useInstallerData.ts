@@ -82,6 +82,27 @@ export const useCanadianFsaPostalCounts = (enabled: boolean) => {
   });
 };
 
+export type CanadianPostalForFsa = {
+  postal_code: string;
+  province_abbr: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+// Fetches the distinct, normalized postal codes for a single Canadian FSA.
+// Used by the FSA bulk-action popup so a user can mark every postal in an
+// FSA as Free, Paid, or remove all of them with one click.
+export const fetchCanadianPostalsForFsa = async (
+  fsa: string,
+): Promise<CanadianPostalForFsa[]> => {
+  const { data, error } = await supabase.rpc('get_canadian_postals_for_fsa', {
+    p_fsa: fsa,
+  });
+  if (error) throw error;
+  if (!Array.isArray(data)) return [];
+  return data as CanadianPostalForFsa[];
+};
+
 // --- Mutation ---
 
 const fromBooleanToSupabase = (value: boolean): number => {
