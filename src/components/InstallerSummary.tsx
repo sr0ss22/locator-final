@@ -12,6 +12,10 @@ interface InstallerSummaryProps {
   selectedStatesProvinces: string[];
   searchRadius: number;
   isPublicView?: boolean; // New prop to distinguish between public and internal views
+  // Optional override for the radius shown in the summary text. Lets the
+  // caller display a "rough equivalent" label (e.g. "70" in km) that may
+  // not exactly match the converted miles value.
+  displayRadiusOverride?: number;
 }
 
 const InstallerSummary: React.FC<InstallerSummaryProps> = ({
@@ -22,12 +26,15 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
   selectedStatesProvinces,
   searchRadius,
   isPublicView = false, // Default to false
+  displayRadiusOverride,
 }) => {
   const { distanceUnit } = useCountrySettings();
 
   if (installers.length === 0) return null;
 
-  const displayRadius = distanceUnit === 'km' ? Math.round(searchRadius * 1.60934) : searchRadius;
+  const displayRadius = displayRadiusOverride !== undefined
+    ? displayRadiusOverride
+    : (distanceUnit === 'km' ? Math.round(searchRadius * 1.60934) : searchRadius);
 
   const processSummaryData = (installerList: Installer[]) => {
     const brandData = [
@@ -61,21 +68,51 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
 
   return (
     <Card className="shadow-sm">
-      <CardHeader className="flex flex-row items-start justify-between gap-3 pt-3 pb-2 px-4">
-        <div className="min-w-0">
-          <CardTitle className="text-lg font-semibold">Installer Summary</CardTitle>
-          {!showAdditionalFilters && (
-            <p className="text-xs text-gray-600 mt-0.5">
-              Showing {installers.length} installers within {displayRadius} {distanceUnit} of {searchedZipCode || "your search location"}.
-            </p>
-          )}
-        </div>
+      <CardHeader
+        className={
+          isPublicView
+            // Public locator: title + subtitle on one side, label + count on
+            // the other, all on a single row. Saves vertical space and the
+            // page is wide enough below the map to fit comfortably.
+            ? "flex flex-row items-center justify-between gap-4 pt-3 pb-2 px-4"
+            : "flex flex-row items-start justify-between gap-3 pt-3 pb-2 px-4"
+        }
+      >
+        {isPublicView ? (
+          <>
+            <div className="flex items-baseline gap-3 min-w-0">
+              <CardTitle className="text-lg font-semibold whitespace-nowrap">Installer Summary</CardTitle>
+              {!showAdditionalFilters && (
+                <p className="text-xs text-gray-600 truncate">
+                  Showing {installers.length} installers within {displayRadius} {distanceUnit} of {searchedZipCode || "your search location"}.
+                </p>
+              )}
+            </div>
+            {!showAdditionalFilters && (
+              <div className="flex items-baseline gap-2 flex-shrink-0">
+                <span className="text-xs font-medium text-gray-600">Total Installers</span>
+                <span className="text-2xl font-bold text-sky-500 leading-none">{installers.length}</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="min-w-0">
+              <CardTitle className="text-lg font-semibold">Installer Summary</CardTitle>
+              {!showAdditionalFilters && (
+                <p className="text-xs text-gray-600 mt-0.5">
+                  Showing {installers.length} installers within {displayRadius} {distanceUnit} of {searchedZipCode || "your search location"}.
+                </p>
+              )}
+            </div>
 
-        {!showAdditionalFilters && (
-          <div className="text-right flex-shrink-0">
-            <p className="text-xs font-medium text-gray-600">Total Installers</p>
-            <p className="text-2xl font-bold text-sky-500 leading-none">{installers.length}</p>
-          </div>
+            {!showAdditionalFilters && (
+              <div className="text-right flex-shrink-0">
+                <p className="text-xs font-medium text-gray-600">Total Installers</p>
+                <p className="text-2xl font-bold text-sky-500 leading-none">{installers.length}</p>
+              </div>
+            )}
+          </>
         )}
       </CardHeader>
       <CardContent className="pt-0 pb-3 px-3">
@@ -106,7 +143,16 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
             })}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-2 pt-2">
+          <div
+            className={
+              // Public locator gets the full page width, so lay donuts out
+              // horizontally to reduce vertical scroll. Internal locator keeps
+              // its narrower stacked layout.
+              isPublicView
+                ? "grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2"
+                : "grid grid-cols-1 gap-2 pt-2"
+            }
+          >
             <DonutChartComponent data={processSummaryData(installers).brandData} title="Brands" colors={chartColors} />
             <DonutChartComponent data={processSummaryData(installers).productData} title="Skills" colors={chartColors} />
             {isPublicView && searchedZipCode ? (

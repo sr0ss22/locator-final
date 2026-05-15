@@ -1,9 +1,39 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { MapPin, Star } from 'lucide-react'; // Import MapPin and Star icons
 import { Installer } from '@/types/installer';
 import { useCountrySettings } from "@/hooks/useCountrySettings";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SKILL_ICON_MAP } from "@/lib/skillIcons";
+
+// Small inline version of the numbered map pin, used inside the popup header
+// so the popup visually matches the marker the user just clicked.
+const NumberedPinGlyph: React.FC<{ number: number; size?: number }> = ({ number, size = 28 }) => {
+  const badgeSize = Math.round(size * 0.5);
+  const fontSize = Math.round(size * 0.32);
+  return (
+    <span
+      className="relative inline-flex items-center justify-center flex-shrink-0"
+      style={{ width: size, height: size }}
+      aria-label={`Pin ${number}`}
+    >
+      <svg viewBox="0 0 24 24" width={size} height={size} fill="#000000" aria-hidden="true">
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z" />
+      </svg>
+      <span
+        className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center rounded-full bg-black text-white font-bold leading-none"
+        style={{
+          top: Math.round(size * 0.08),
+          width: badgeSize,
+          height: badgeSize,
+          fontSize,
+        }}
+      >
+        {number}
+      </span>
+    </span>
+  );
+};
 
 // Fix for default Leaflet icons with Webpack/Vite
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -124,21 +154,85 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
         const displayDistance = installer.distance !== undefined && installer.distance !== null && installer.distance !== Infinity
           ? (distanceUnit === 'km' ? (installer.distance * 1.60934).toFixed(1) : installer.distance.toFixed(1))
           : undefined;
-        const formattedDistance = displayDistance ? `Distance: ${displayDistance} ${distanceUnit}` : undefined;
+        const distanceUnitLabel = distanceUnit === 'km' ? 'km' : 'mi';
+        const formattedDistanceFull = displayDistance ? `Distance: ${displayDistance} ${distanceUnit}` : undefined;
+        const formattedDistanceShort = displayDistance ? `${displayDistance} ${distanceUnitLabel}` : undefined;
         const simplifiedAddress = `${installer.rawSupabaseData?.city || ''}, ${installer.rawSupabaseData?.state || ''} ${installer.zipCode || ''}`.trim();
+        const pinNumber = index + 1;
 
         return installer.latitude && installer.longitude && (
           <Marker
             key={installer.id}
             position={[installer.latitude, installer.longitude]}
-            icon={createNumberedIcon(index + 1, installer.id, selectedInstallerId)}
-            interactive={!isPublicView}
+            icon={createNumberedIcon(pinNumber, installer.id, selectedInstallerId)}
           >
-            {!isPublicView && (
+            {isPublicView ? (
+              // Public view: anonymized capabilities only. Header shows the
+              // numbered pin glyph + distance; below it brands / skills /
+              // certs. Skills use lucide icons. No name, no address, no
+              // phone, no city/state.
+              <Popup
+                className="public-installer-popup"
+                maxWidth={280}
+                minWidth={220}
+                closeButton={false}
+              >
+                <div className="py-0.5">
+                  <div className="flex items-center justify-between border-b border-gray-200 pb-1.5 mb-1.5">
+                    <NumberedPinGlyph number={pinNumber} />
+                    {formattedDistanceShort && (
+                      <span className="text-sm font-medium text-gray-700">{formattedDistanceShort}</span>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 text-xs leading-snug">
+                    {installer.brands && installer.brands.length > 0 && (
+                      <div>
+                        <span className="font-medium text-gray-700">Brands: </span>
+                        <span className="text-gray-600">{installer.brands.join(", ")}</span>
+                      </div>
+                    )}
+                    {installer.skills && installer.skills.length > 0 && (
+                      <div>
+                        <span className="font-medium text-gray-700 block mb-1">Skills</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {installer.skills.map((skill) => {
+                            const Icon = SKILL_ICON_MAP[skill];
+                            if (!Icon) return null;
+                            return (
+                              <Tooltip key={skill}>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    title={skill}
+                                    aria-label={skill}
+                                    className="inline-flex items-center justify-center h-7 w-7 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                                  >
+                                    <Icon className="h-4 w-4" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={6}>
+                                  {skill}
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {installer.certifications && installer.certifications.length > 0 && (
+                      <div>
+                        <span className="font-medium text-gray-700">Certs: </span>
+                        <span className="text-gray-600">{installer.certifications.join(", ")}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Popup>
+            ) : (
               <Popup>
                 <strong>{installer.name}</strong><br />
                 {simplifiedAddress}<br />
-                {formattedDistance}
+                {formattedDistanceFull}
               </Popup>
             )}
           </Marker>
