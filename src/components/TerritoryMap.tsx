@@ -1265,7 +1265,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       {isCanada && canadaDisplayMode === 'postal-codes' && renderedCanadaPoints.length > 0 && (
         renderedCanadaPoints.map(point => {
           const postalCode = point.POSTAL_CODE;
-          const status = highlightedZipCodes.get(postalCode);
+          // Normalize for the highlight lookup so a stored "T4X2J3" matches
+          // a point whose POSTAL_CODE is "T4X 2J3" (and vice versa).
+          const status = highlightedZipCodes.get(
+            (postalCode ?? '').toUpperCase().replace(/\s+/g, ''),
+          );
           let color = '#3b82f6';
           let fillOpacity = 0.5;
           let pointRadius = 2;

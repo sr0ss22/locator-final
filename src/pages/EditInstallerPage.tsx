@@ -180,10 +180,16 @@ const EditInstallerPage: React.FC = () => {
     return null;
   }, [currentInstaller?.latitude, currentInstaller?.longitude]);
 
+  // Canadian postals come from the database as e.g. "T4X 2J3" (with a
+  // space) but the FSA bulk-add path stores them as "T4X2J3". Normalize
+  // both sides so the postal-codes layer colours every dot whose
+  // canonical form has been assigned, regardless of stored whitespace
+  // or case.
   const highlightedZipCodes = useMemo(() => {
     const highlights = new Map<string, 'green' | 'orange'>();
     selectedMapZipCodes.forEach(item => {
-      highlights.set(item.zipCode, item.assignedStatus === 'Approved' ? 'green' : 'orange');
+      const key = item.zipCode.toUpperCase().replace(/\s+/g, '');
+      highlights.set(key, item.assignedStatus === 'Approved' ? 'green' : 'orange');
     });
     return highlights;
   }, [selectedMapZipCodes]);
@@ -286,7 +292,11 @@ const EditInstallerPage: React.FC = () => {
     ) => {
       if (!installerId) return;
       const fsaUpper = fsa.toUpperCase();
-      const startsWithFsa = (z: string) => z.toUpperCase().startsWith(fsaUpper);
+      // Normalize: uppercase + strip all whitespace. Existing rows in
+      // the DB tend to be "T4X 2J3"; fresh ones from the FSA RPC are
+      // "T4X2J3". Always match on the normalized form.
+      const norm = (s: string) => (s ?? '').toUpperCase().replace(/\s+/g, '');
+      const startsWithFsa = (z: string) => norm(z).startsWith(fsaUpper);
 
       let nextEntries: Array<{
         zipCode: string;
@@ -322,25 +332,31 @@ const EditInstallerPage: React.FC = () => {
       }
 
       // Diff against the persisted baseline so we only push what
-      // actually changed for THIS FSA.
+      // actually changed for THIS FSA. Both maps are keyed by the
+      // normalized postal code so e.g. "T4X 1A1" (existing) and
+      // "T4X1A1" (incoming) match cleanly.
       const baselineForFsa = new Map(
         initialSelectedMapZipCodes
           .filter(z => startsWithFsa(z.zipCode))
-          .map(z => [z.zipCode.toUpperCase(), z]),
+          .map(z => [norm(z.zipCode), z]),
       );
-      const nextForFsa = new Map(nextEntries.map(z => [z.zipCode.toUpperCase(), z]));
+      const nextForFsa = new Map(nextEntries.map(z => [norm(z.zipCode), z]));
 
       const addedZips = nextEntries
-        .filter(z => !baselineForFsa.has(z.zipCode.toUpperCase()))
+        .filter(z => !baselineForFsa.has(norm(z.zipCode)))
         .map(z => ({ zip_code: z.zipCode, state_province: z.stateProvince, assigned_status: z.assignedStatus }));
+      // Status updates: use the BASELINE's stored zipCode string so we
+      // hit the right row in the DB (the table column is the raw text,
+      // including any space).
       const updatedZips = nextEntries
-        .filter(z => {
-          const b = baselineForFsa.get(z.zipCode.toUpperCase());
-          return b && b.assignedStatus !== z.assignedStatus;
+        .map(z => {
+          const b = baselineForFsa.get(norm(z.zipCode));
+          if (!b || b.assignedStatus === z.assignedStatus) return null;
+          return { zip_code: b.zipCode, assigned_status: z.assignedStatus };
         })
-        .map(z => ({ zip_code: z.zipCode, assigned_status: z.assignedStatus }));
+        .filter((x): x is { zip_code: string; assigned_status: TerritoryStatus } => x !== null);
       const removedZips = Array.from(baselineForFsa.values())
-        .filter(z => !nextForFsa.has(z.zipCode.toUpperCase()))
+        .filter(z => !nextForFsa.has(norm(z.zipCode)))
         .map(z => ({ zipCode: z.zipCode }));
 
       if (addedZips.length === 0 && updatedZips.length === 0 && removedZips.length === 0) {
@@ -388,11 +404,22 @@ const EditInstallerPage: React.FC = () => {
       // Apply the same diff to both the working copy and the persisted
       // baseline so the form's dirty state stays accurate (only the
       // user's other unrelated edits remain pending).
+      // For postals already in the baseline we keep the BASELINE's
+      // zipCode string (preserves whatever format is in the DB) and
+      // only swap the assignedStatus. New postals carry the normalized
+      // string from the FSA RPC.
       const applyDiff = (
         prev: typeof selectedMapZipCodes,
       ): typeof selectedMapZipCodes => {
         const remaining = prev.filter(item => !startsWithFsa(item.zipCode));
-        return [...remaining, ...nextEntries];
+        const merged = nextEntries.map(next => {
+          const b = baselineForFsa.get(norm(next.zipCode));
+          if (b) {
+            return { ...b, assignedStatus: next.assignedStatus };
+          }
+          return next;
+        });
+        return [...remaining, ...merged];
       };
       setSelectedMapZipCodes(applyDiff);
       setInitialSelectedMapZipCodes(prev => applyDiff(prev));
