@@ -28,21 +28,15 @@ export const useInstaller = (installerId: string) => {
 };
 
 const fetchInstallerZipCodes = async (installerId: string) => {
-  let allZipData: any[] = [];
-  let page = 0;
-  let hasMore = true;
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from('installer_zip_codes')
-      .select('zip_code, status, state_province')
-      .eq('installer_id', installerId)
-      .range(page * 1000, (page + 1) * 1000 - 1);
-    if (error) throw error;
-    if (data) allZipData = allZipData.concat(data);
-    if (!data || data.length < 1000) hasMore = false;
-    else page++;
-  }
-  return allZipData;
+  // Uses a SECURITY DEFINER RPC instead of paginating PostgREST. PostgREST
+  // caps table-API results at 1000 rows, which forced a sequential loop —
+  // ~90 round-trips for installers with ~90K assignments, taking 30+
+  // seconds on every page load. The RPC returns the full set in one call.
+  const { data, error } = await supabase.rpc('get_installer_zip_codes_admin', {
+    p_installer_id: installerId,
+  });
+  if (error) throw error;
+  return (data ?? []) as Array<{ zip_code: string; status: string; state_province: string }>;
 };
 
 export const useInstallerZipCodes = (installerId: string) => {
