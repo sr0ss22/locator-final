@@ -369,6 +369,17 @@ const FsaBulkActionPopupContents: React.FC<{
 
   const [pending, setPending] = React.useState<'free' | 'paid' | 'remove' | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Inside Leaflet popups, native click/scroll events bubble to the map
+  // and can swallow React's button clicks. Stop Leaflet from handling
+  // them so onClick handlers fire normally.
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+  }, []);
 
   const totalDisplay = total != null ? total.toLocaleString() : '—';
   const targetCount = total ?? assigned;
@@ -404,7 +415,7 @@ const FsaBulkActionPopupContents: React.FC<{
   };
 
   return (
-    <div className="text-sm w-[260px]">
+    <div ref={containerRef} className="text-sm w-[260px]">
       <div className="font-semibold text-gray-900">
         FSA: {fsa}
         {stateProvince && stateProvince !== 'Unknown' && (
@@ -1308,6 +1319,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           eventHandlers={{ remove: () => setFsaBulkPopup(null) }}
           autoPan
           closeButton
+          closeOnClick={false}
           minWidth={260}
         >
           <FsaBulkActionPopupContents
