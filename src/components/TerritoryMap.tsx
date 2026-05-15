@@ -274,6 +274,33 @@ const LoadingOverlay = ({
   </div>
 );
 
+// Hidden SVG <defs> mounted once per TerritoryMap. Browsers resolve
+// `fill="url(#id)"` against any <defs> in the same document, so the Leaflet
+// SVG renderer can reference these patterns even though they live in a
+// separate inline SVG element. Kept tiny and aria-hidden.
+const FsaFillPatternDefs: React.FC = () => (
+  <svg
+    width="0"
+    height="0"
+    style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
+    aria-hidden="true"
+    focusable="false"
+  >
+    <defs>
+      <pattern
+        id="fsa-mixed-pattern"
+        patternUnits="userSpaceOnUse"
+        width="8"
+        height="8"
+        patternTransform="rotate(45)"
+      >
+        <rect width="8" height="8" fill="#F97316" fillOpacity={0.45} />
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} />
+      </pattern>
+    </defs>
+  </svg>
+);
+
 // Display modes for the Canadian map. FSA mode renders only the static
 // 3-character FSA polygons; "postal-codes" additionally fetches and renders
 // the ~6-character postal code dots from the database. Persisted in
@@ -334,6 +361,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
   const isCanada = country === 'Canada';
   const isTerritoryManagementPage = !isOpen;
+
+  // Stable SVG renderer for the Canadian FSA polygon layer. We need SVG (not
+  // canvas) here because canvas cannot reference SVG patterns; the FSA "mixed"
+  // fill (`url(#fsa-mixed-pattern)`) requires SVG paint servers. ~1,600 FSAs
+  // is well within SVG's comfort zone — the heavy 160k postal-code dots stay
+  // on the MapContainer's default canvas renderer.
+  const svgPolygonRenderer = useMemo(() => L.svg({ pane: 'polygons' }), []);
 
   const onZipCodeClickRef = useRef(onZipCodeClick);
   useEffect(() => {
@@ -512,36 +546,88 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     return { ...geoJsonToUse, features: filteredFeatures };
   }, [allGeoJsonData, allCanadaGeoJsonData, isCanada, centerLocation, currentDisplayRadius, isTerritoryManagementPage]);
 
-  const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
-    let isHighlighted: 'green' | 'orange' | undefined = highlightedZipCodes.get(zipCode);
-    let isSelected = selectedZipCodes.some(z => z.zipCode === zipCode);
-    let status = isSelected ? selectedZipCodes.find(z => z.zipCode === zipCode)?.assignedStatus : territoryStatuses.get(zipCode);
-
-    // For Canada, zipCode is the FSA (3 chars). We need to check if any 6-char code matches this FSA.
-    if (isCanada) {
-      // Find if any highlighted zip code starts with this FSA
-      for (const [key, value] of highlightedZipCodes.entries()) {
-        if (key.startsWith(zipCode)) {
-          isHighlighted = value;
-          break;
-        }
+  // Per-FSA aggregates of THIS installer's selected postals. Lets us paint
+  // each Canadian FSA based on whether all of its assigned postals are
+  // free, all are paid, or it's a mix — and replaces the old O(N) scan that
+  // ran inside getGeoJsonStyle for every FSA polygon, every restyle.
+  const fsaSelectionAggregates = useMemo(() => {
+    if (!isCanada) return null;
+    const map = new Map<string, { free: number; paid: number }>();
+    for (const sel of selectedZipCodes) {
+      const fsa = sel.zipCode.substring(0, 3).toUpperCase();
+      let entry = map.get(fsa);
+      if (!entry) {
+        entry = { free: 0, paid: 0 };
+        map.set(fsa, entry);
       }
-      
-      const selectedMatch = selectedZipCodes.find(z => z.zipCode.startsWith(zipCode));
-      if (selectedMatch) {
-        isSelected = true;
-        status = selectedMatch.assignedStatus;
-      }
-      
-      if (!status) {
-        for (const [key, value] of territoryStatuses.entries()) {
-          if (key.startsWith(zipCode)) {
-            status = value as TerritoryStatus;
-            break;
-          }
-        }
-      }
+      if (sel.assignedStatus === 'Approved') entry.free++;
+      else if (sel.assignedStatus === 'Needs Approval') entry.paid++;
     }
+    return map;
+  }, [isCanada, selectedZipCodes]);
+
+  // Same shape, but for the global heatmap on /territories. Keyed off
+  // territoryStatuses (which is global across all installers there).
+  const fsaTerritoryAggregates = useMemo(() => {
+    if (!isCanada || !isTerritoryManagementPage) return null;
+    const map = new Map<string, { free: number; paid: number }>();
+    territoryStatuses.forEach((status, postal) => {
+      const fsa = postal.substring(0, 3).toUpperCase();
+      let entry = map.get(fsa);
+      if (!entry) {
+        entry = { free: 0, paid: 0 };
+        map.set(fsa, entry);
+      }
+      if (status === 'Approved') entry.free++;
+      else if (status === 'Needs Approval') entry.paid++;
+    });
+    return map;
+  }, [isCanada, isTerritoryManagementPage, territoryStatuses]);
+
+  const getGeoJsonStyle = useCallback((zipCode: string): L.PathOptions => {
+    // ---- Canada branch (FSA polygons) ---------------------------------------
+    // FSAs aggregate many postal codes. Style decision is based on the precomputed
+    // per-FSA counts so it is O(1) per polygon (was O(N) per polygon × O(N) polygons).
+    if (isCanada) {
+      const sel = fsaSelectionAggregates?.get(zipCode);
+      if (sel) {
+        const allFree = sel.free > 0 && sel.paid === 0;
+        const allPaid = sel.paid > 0 && sel.free === 0;
+        const isMixed = sel.free > 0 && sel.paid > 0;
+
+        if (allFree) {
+          return { fillColor: '#22C55E', fillOpacity: 0.45, color: '#166534', weight: 1.5, opacity: 0.7, interactive: true };
+        }
+        if (allPaid) {
+          return { fillColor: '#F97316', fillOpacity: 0.45, color: '#9A3412', weight: 1.5, opacity: 0.7, interactive: true };
+        }
+        if (isMixed) {
+          // SVG paint server defined in <FsaFillPatternDefs/> below.
+          return { fillColor: 'url(#fsa-mixed-pattern)', fillOpacity: 1, color: '#9A3412', weight: 1.5, opacity: 0.85, interactive: true };
+        }
+      }
+
+      if (isTerritoryManagementPage) {
+        const t = fsaTerritoryAggregates?.get(zipCode);
+        if (t) {
+          const allFree = t.free > 0 && t.paid === 0;
+          const allPaid = t.paid > 0 && t.free === 0;
+          const isMixed = t.free > 0 && t.paid > 0;
+          if (allFree) return { fillColor: '#D4EDDA', fillOpacity: 0.5, color: '#166534', weight: 1, opacity: 0.5, interactive: true };
+          if (allPaid) return { fillColor: '#FFF3CD', fillOpacity: 0.5, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
+          if (isMixed) return { fillColor: 'url(#fsa-mixed-pattern)', fillOpacity: 0.55, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
+        }
+      }
+
+      return { fillColor: '#F0F0F0', weight: 1, opacity: 0.15, color: '#94a3b8', fillOpacity: 0, interactive: true };
+    }
+
+    // ---- US branch (ZCTA polygons) ------------------------------------------
+    // Each ZCTA is one zip code, so per-postal lookups are exact, no aggregation.
+    const isHighlighted = highlightedZipCodes.get(zipCode);
+    const selectedMatch = selectedZipCodes.find(z => z.zipCode === zipCode);
+    const isSelected = !!selectedMatch;
+    const status = isSelected ? selectedMatch?.assignedStatus : territoryStatuses.get(zipCode);
 
     let fillColor = '#F0F0F0';
     let color = '#94a3b8';
@@ -551,13 +637,13 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
     if (isHighlighted === 'green' || (isSelected && status === 'Approved')) {
       fillColor = '#22C55E';
-      fillOpacity = 0.3; // Increased visibility
+      fillOpacity = 0.3;
       color = '#166534';
       weight = 2;
       opacity = 0.6;
     } else if (isHighlighted === 'orange' || (isSelected && status === 'Needs Approval')) {
       fillColor = '#F97316';
-      fillOpacity = 0.3; // Increased visibility
+      fillOpacity = 0.3;
       color = '#9A3412';
       weight = 2;
       opacity = 0.6;
@@ -575,7 +661,15 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       }
     }
     return { fillColor, weight, opacity, color, fillOpacity, interactive: true };
-  }, [highlightedZipCodes, selectedZipCodes, territoryStatuses, isTerritoryManagementPage]);
+  }, [
+    isCanada,
+    isTerritoryManagementPage,
+    fsaSelectionAggregates,
+    fsaTerritoryAggregates,
+    highlightedZipCodes,
+    selectedZipCodes,
+    territoryStatuses,
+  ]);
 
   const onEachFeature = (feature: any, layer: L.Layer) => {
     const zipCode = getPostalCode(feature, isCanada);
@@ -612,8 +706,19 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     );
   }
 
+  // Whether the new FSA aggregate styling has anything to show. Used to
+  // decide whether to render the small legend in the corner.
+  const hasAggregateColoredFsas = useMemo(() => {
+    if (!isCanada) return false;
+    const sel = fsaSelectionAggregates;
+    if (sel && sel.size > 0) return true;
+    const t = fsaTerritoryAggregates;
+    return !!t && t.size > 0;
+  }, [isCanada, fsaSelectionAggregates, fsaTerritoryAggregates]);
+
   return (
     <div className="relative h-full w-full">
+    <FsaFillPatternDefs />
     <MapContainer
       center={isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795]}
       zoom={4}
@@ -657,7 +762,19 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         })
       )}
       {filteredGeoJsonData && !(isCanada && canadaDisplayMode === 'postal-codes') && (
-        <GeoJSON key={geoJsonStyleKey} ref={geoJsonLayerRef} data={filteredGeoJsonData as any} style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))} onEachFeature={onEachFeature} pane="polygons" />
+        <GeoJSON
+          key={geoJsonStyleKey}
+          ref={geoJsonLayerRef}
+          data={filteredGeoJsonData as any}
+          style={(feature) => getGeoJsonStyle(getPostalCode(feature, isCanada))}
+          onEachFeature={onEachFeature}
+          pane="polygons"
+          // Canadian FSA fills can be SVG paint servers (the "mixed" stripe
+          // pattern). Patterns require an SVG renderer; the canvas renderer
+          // would silently drop them. US ZCTAs don't use patterns and can
+          // ride the MapContainer's default canvas renderer, which is faster.
+          {...(isCanada ? { renderer: svgPolygonRenderer } : {})}
+        />
       )}
       {centerLocation?.lat != null && centerLocation?.lng != null && (
         <Marker position={[centerLocation.lat, centerLocation.lng]} icon={createStarIcon()}><Popup>Installer Location</Popup></Marker>
@@ -680,6 +797,47 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       <MapUpdater centerLocation={centerLocation} isOpen={isOpen} country={country} />
       <MapInteractionHandler isBulkSelecting={isBulkSelecting} geoJsonData={allGeoJsonData} onBulkSelectionComplete={onBulkSelectionComplete} isCanada={isCanada} publicAuth={publicAuth} />
     </MapContainer>
+    {isCanada && canadaDisplayMode === 'fsa' && hasAggregateColoredFsas && (
+      <div
+        className="absolute bottom-3 left-3 z-[1000] bg-white/95 backdrop-blur-sm rounded-md shadow-md border border-gray-200 px-3 py-2 text-xs text-gray-800 max-w-xs"
+        role="note"
+        aria-label="FSA color legend"
+      >
+        <p className="font-semibold mb-1.5">FSA color key</p>
+        <ul className="space-y-1">
+          <li className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="inline-block h-3 w-5 rounded-sm border border-green-700"
+              style={{ backgroundColor: '#22C55E', opacity: 0.6 }}
+            />
+            <span>All postal codes free</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="inline-block h-3 w-5 rounded-sm border border-orange-700"
+              style={{ backgroundColor: '#F97316', opacity: 0.6 }}
+            />
+            <span>All postal codes paid</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <svg
+              width="20"
+              height="12"
+              viewBox="0 0 20 12"
+              aria-hidden="true"
+              className="rounded-sm border border-orange-700"
+            >
+              <rect width="20" height="12" fill="#F97316" fillOpacity={0.45} />
+              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#16A34A" strokeWidth={2.5} />
+              <line x1="-2" y1="6" x2="22" y2="22" stroke="#16A34A" strokeWidth={2.5} />
+            </svg>
+            <span>Mix of free and paid</span>
+          </li>
+        </ul>
+      </div>
+    )}
     {isCanada && (
       <div
         className="absolute top-3 right-3 z-[1000] bg-white rounded-md shadow-md border border-gray-200 p-1 flex gap-1 text-xs"
