@@ -310,7 +310,7 @@ const FsaFillPatternDefs: React.FC = () => (
         patternTransform="rotate(45)"
       >
         <rect width="8" height="8" fill="#F97316" fillOpacity={0.45} />
-        <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} />
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
       </pattern>
       {/* Partial coverage, all assigned are Free. */}
       <pattern
@@ -321,7 +321,7 @@ const FsaFillPatternDefs: React.FC = () => (
         patternTransform="rotate(45)"
       >
         <rect width="8" height="8" fill="#FFFFFF" fillOpacity={0.85} />
-        <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} />
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
       </pattern>
       {/* Partial coverage, all assigned are Paid. */}
       <pattern
@@ -332,7 +332,7 @@ const FsaFillPatternDefs: React.FC = () => (
         patternTransform="rotate(45)"
       >
         <rect width="8" height="8" fill="#FFFFFF" fillOpacity={0.85} />
-        <line x1="0" y1="0" x2="0" y2="8" stroke="#F97316" strokeWidth={2.5} />
+        <line x1="0" y1="0" x2="0" y2="8" stroke="#F97316" strokeWidth={2.5} strokeOpacity={0.5} />
       </pattern>
     </defs>
   </svg>
@@ -1029,8 +1029,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
               className="rounded-sm border border-orange-700"
             >
               <rect width="20" height="12" fill="#F97316" fillOpacity={0.45} />
-              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#16A34A" strokeWidth={2.5} />
-              <line x1="-2" y1="6" x2="22" y2="22" stroke="#16A34A" strokeWidth={2.5} />
+              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
+              <line x1="-2" y1="6" x2="22" y2="22" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
             </svg>
             <span>Mix of free and paid</span>
           </li>
@@ -1043,8 +1043,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
               className="rounded-sm border border-green-700"
             >
               <rect width="20" height="12" fill="#FFFFFF" />
-              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#16A34A" strokeWidth={2.5} />
-              <line x1="-2" y1="6" x2="22" y2="22" stroke="#16A34A" strokeWidth={2.5} />
+              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
+              <line x1="-2" y1="6" x2="22" y2="22" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
             </svg>
             <span>Partial coverage &mdash; assigned ones are free</span>
           </li>
@@ -1057,8 +1057,8 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
               className="rounded-sm border border-orange-700"
             >
               <rect width="20" height="12" fill="#FFFFFF" />
-              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#F97316" strokeWidth={2.5} />
-              <line x1="-2" y1="6" x2="22" y2="22" stroke="#F97316" strokeWidth={2.5} />
+              <line x1="-2" y1="-2" x2="22" y2="14" stroke="#F97316" strokeWidth={2.5} strokeOpacity={0.5} />
+              <line x1="-2" y1="6" x2="22" y2="22" stroke="#F97316" strokeWidth={2.5} strokeOpacity={0.5} />
             </svg>
             <span>Partial coverage &mdash; assigned ones are paid</span>
           </li>
