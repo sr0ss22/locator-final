@@ -8,9 +8,12 @@ interface InstallerSearchProps {
   onSearch: () => void;
   value: string;
   onChange: (value: string) => void;
+  // When true, the search button renders as an icon-only square button with
+  // an aria-label. Used by the public locator where vertical space is tight.
+  iconOnly?: boolean;
 }
 
-const InstallerSearch: React.FC<InstallerSearchProps> = ({ onSearch, value, onChange }) => {
+const InstallerSearch: React.FC<InstallerSearchProps> = ({ onSearch, value, onChange, iconOnly = false }) => {
   const { postalCodeLabel } = useCountrySettings();
 
   const handleSearch = () => {
@@ -31,8 +34,19 @@ const InstallerSearch: React.FC<InstallerSearchProps> = ({ onSearch, value, onCh
         }}
         className="flex-grow"
       />
-      <Button type="button" onClick={handleSearch}>
-        <Search className="h-4 w-4 mr-2" /> Search
+      <Button
+        type="button"
+        onClick={handleSearch}
+        size={iconOnly ? "icon" : "default"}
+        aria-label={iconOnly ? "Search" : undefined}
+      >
+        {iconOnly ? (
+          <Search className="h-4 w-4" />
+        ) : (
+          <>
+            <Search className="h-4 w-4 mr-2" /> Search
+          </>
+        )}
       </Button>
     </div>
   );

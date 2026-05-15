@@ -4,13 +4,20 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 
+interface DistanceOption {
+  miles: number; // canonical value stored as state / used for filtering
+  km: number;   // displayed label when in Canada mode
+}
+
 interface DistanceFilterProps {
   selectedRadius: number; // Always in miles
   onRadiusChange: (radius: number) => void; // Emits radius in miles
+  options?: DistanceOption[];
 }
 
-// Define distance options with both mile and kilometer values
-const distanceOptions = [
+// Default options match the internal locator's existing behavior so callers
+// that don't pass `options` get unchanged UI.
+const defaultDistanceOptions: DistanceOption[] = [
   { miles: 50, km: 80 },
   { miles: 100, km: 150 },
   { miles: 250, km: 400 },
@@ -20,8 +27,10 @@ const distanceOptions = [
 const DistanceFilter: React.FC<DistanceFilterProps> = ({
   selectedRadius,
   onRadiusChange,
+  options = defaultDistanceOptions,
 }) => {
   const { isCanada, distanceUnit } = useCountrySettings();
+  const distanceOptions = options;
 
   return (
     <div className="space-y-4">
