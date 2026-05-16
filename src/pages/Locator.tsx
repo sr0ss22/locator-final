@@ -344,7 +344,16 @@ const Locator: React.FC = () => {
                   skills: filterProductSkills,
                   certifications: filterCertifications,
                   acceptsShipments: filterAcceptsShipments === 'yes',
-                  installerIds: coverageInstallerId ? [coverageInstallerId] : null,
+                  // Sync coverage with the pin list: only paint
+                  // territories of installers we're actually showing
+                  // on the map. Without this, far-away installers
+                  // whose territories extend INTO the radius would
+                  // paint polygons here with no corresponding pin —
+                  // confusing at large radii where the polygon centroid
+                  // is in range but the installer's home isn't.
+                  installerIds: coverageInstallerId
+                    ? [coverageInstallerId]
+                    : filteredAndSortedInstallers.map((i) => i.id),
                   filterLabel: coverageFilterLabel,
                   onClearFilter: handleClearCoverageFilter,
                 }}

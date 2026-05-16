@@ -35,9 +35,16 @@ interface UseCoverageAggregateArgs {
   skills: InstallerSkill[];
   certifications: InstallerCertification[];
   acceptsShipments: boolean;
-  // When set, restrict the aggregate to JUST these installers (powers
-  // the internal locator's per-card "View coverage" filter). Null /
-  // empty means "all matching installers" (the default overlay).
+  // Restricts the aggregate to specific installers. Tri-state:
+  //   * undefined / null → no installer restriction (return all
+  //     matching installers — the legacy default).
+  //   * []               → explicitly NO installers (returns an
+  //     empty coverage set; useful when the visible list is empty).
+  //   * ["a", "b"]       → only those installers.
+  // Today the locator pages always pass a concrete array (either the
+  // visible-pin list, or [singleId] for the per-card "View coverage"
+  // icon) so the polygons match the pins; the null fallback is kept
+  // for safety / future callers.
   installerIds?: string[] | null;
 }
 
@@ -61,7 +68,14 @@ export function useCoverageAggregate({
   acceptsShipments,
   installerIds,
 }: UseCoverageAggregateArgs) {
-  const installerIdsFiltered = installerIds && installerIds.length > 0 ? installerIds : null;
+  // IMPORTANT: don't coerce [] → null here. The RPC treats them
+  // differently (null = no restriction, [] = match nothing), and the
+  // locator wants the latter when the visible installer list is
+  // empty so the overlay clears instead of falling back to "all".
+  const installerIdsPassthrough = installerIds === undefined ? null : installerIds;
+  // Empty array yields a coverage hit-rate of zero — skip the network
+  // round trip entirely and return an empty payload synchronously.
+  const skipBecauseEmpty = Array.isArray(installerIdsPassthrough) && installerIdsPassthrough.length === 0;
   return useQuery<CoverageAggregateResponse>({
     queryKey: [
       "coverageAggregate",
@@ -73,9 +87,16 @@ export function useCoverageAggregate({
       [...skills].sort().join(","),
       [...certifications].sort().join(","),
       acceptsShipments,
-      installerIdsFiltered ? [...installerIdsFiltered].sort().join(",") : null,
+      installerIdsPassthrough === null
+        ? null
+        : [...installerIdsPassthrough].sort().join(","),
     ],
-    enabled: enabled && center.lat != null && center.lng != null && radiusMiles > 0,
+    enabled:
+      enabled &&
+      center.lat != null &&
+      center.lng != null &&
+      radiusMiles > 0 &&
+      !skipBecauseEmpty,
     queryFn: async () => {
       const { data, error } = await supabase.rpc("get_zip_coverage_aggregate", {
         p_country: country,
@@ -89,11 +110,12 @@ export function useCoverageAggregate({
         p_skills: nullIfEmpty(skills),
         p_certifications: nullIfEmpty(certifications),
         p_accepts_shipments: acceptsShipments ? true : null,
-        p_installer_ids: installerIdsFiltered,
+        p_installer_ids: installerIdsPassthrough,
       });
       if (error) throw error;
       return (data as CoverageAggregateResponse) ?? { country, items: [] };
     },
+    placeholderData: skipBecauseEmpty ? { country, items: [] } : undefined,
     // Coverage data is comparatively static (driven by territory
     // assignments that rarely change mid-session); a generous stale time
     // keeps repeated zoom/pan from refetching.

@@ -429,6 +429,12 @@ const PublicLocator: React.FC = () => {
                   skills: selectedProductSkills,
                   certifications: selectedCertifications,
                   acceptsShipments: filterAcceptsShipments,
+                  // Sync coverage with visible pins so we never paint
+                  // polygons for installers that aren't on the map.
+                  // (Preserved here for the moment we re-enable the
+                  // public overlay; today `enabled: false` short-
+                  // circuits it.)
+                  installerIds: filteredAndSortedInstallers.map((i) => i.id),
                 }}
               />
             </div>
