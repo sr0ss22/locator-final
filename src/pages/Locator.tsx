@@ -160,6 +160,20 @@ const Locator: React.FC = () => {
 
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
+
+    // Country boundary filter — admins use a country toggle to switch the
+    // search basemap and distance units; we shouldn't surface cross-border
+    // installers (e.g. Detroit installers showing up for a Windsor, ON
+    // search) since the locator's country is the source of truth for the
+    // session. Installers with a NULL country are treated as USA so we
+    // don't accidentally drop legacy rows from the default-US view.
+    const expectedCountry = isCanada ? "Canada" : "USA";
+    currentInstallers = currentInstallers.filter((i) => {
+      const c = i.rawSupabaseData?.country;
+      if (!c) return !isCanada;
+      return c === expectedCountry;
+    });
+
     if (filterBrands.length > 0) currentInstallers = currentInstallers.filter(i => filterBrands.every(b => (i.brands ?? []).includes(b)));
     if (filterProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => filterProductSkills.every(s => (i.skills ?? []).includes(s)));
     if (filterCertifications.length > 0) currentInstallers = currentInstallers.filter(i => filterCertifications.every(c => (i.certifications ?? []).includes(c)));
@@ -182,7 +196,7 @@ const Locator: React.FC = () => {
     let installersWithDistance = currentInstallers.map(i => ({ ...i, distance: installerDistancesMap?.get(i.id) ?? Infinity }));
     installersWithDistance.sort((a, b) => a.distance - b.distance);
     return installersWithDistance.filter(i => i.distance <= searchRadius);
-  }, [installers, filterBrands, filterProductSkills, filterCertifications, installerDistancesMap, searchRadius, showAdditionalFilters, filterStates, filterAcceptsShipments]);
+  }, [installers, filterBrands, filterProductSkills, filterCertifications, installerDistancesMap, searchRadius, showAdditionalFilters, filterStates, filterAcceptsShipments, isCanada]);
 
   const handleBrandChange = (brand: InstallerBrand, checked: boolean) => setFilterBrands(p => checked ? [...p, brand] : p.filter(b => b !== brand));
   const handleProductSkillChange = (skill: InstallerSkill, checked: boolean) => setFilterProductSkills(p => checked ? [...p, skill] : p.filter(s => s !== skill));

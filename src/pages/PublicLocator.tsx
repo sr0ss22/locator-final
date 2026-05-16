@@ -164,13 +164,27 @@ const PublicLocator: React.FC = () => {
 
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
+
+    // Country boundary filter — the public locator's country toggle
+    // controls the basemap, distance units, and now also which
+    // installers can appear. Without this, e.g. a Windsor, ON search
+    // would surface Detroit installers (they're well within the
+    // haversine radius). Null country defaults to USA so legacy rows
+    // don't disappear from US searches.
+    const expectedCountry = isCanada ? "Canada" : "USA";
+    currentInstallers = currentInstallers.filter((i) => {
+      const c = i.rawSupabaseData?.country;
+      if (!c) return !isCanada;
+      return c === expectedCountry;
+    });
+
     if (selectedBrands.length > 0) currentInstallers = currentInstallers.filter(i => selectedBrands.every(b => (i.brands ?? []).includes(b)));
     if (selectedProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => selectedProductSkills.every(s => (i.skills ?? []).includes(s)));
     if (selectedCertifications.length > 0) currentInstallers = currentInstallers.filter(i => selectedCertifications.every(c => (i.certifications ?? []).includes(c)));
     if (filterAcceptsShipments) currentInstallers = currentInstallers.filter(i => i.acceptsShipments === true);
     if (filterMileageCovered) currentInstallers = currentInstallers.filter(i => i.is_local_service_area === true);
     return currentInstallers;
-  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications, filterAcceptsShipments, filterMileageCovered]);
+  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications, filterAcceptsShipments, filterMileageCovered, isCanada]);
 
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingLocation;

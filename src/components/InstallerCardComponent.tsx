@@ -27,7 +27,7 @@ interface InstallerCardComponentProps {
 const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
   installer,
   distance,
-  pinNumber: _pinNumber,
+  pinNumber,
   isSelected,
   onInstallerCardClick,
   isPublicView = false,
@@ -59,10 +59,16 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
   // so the icon would just paint an empty overlay. Hide it instead of
   // pretending it'll do something.
   const isActiveInstaller = installer.rawSupabaseData?.is_active === 1;
+  const isInactiveInstaller = !isActiveInstaller;
   const showViewCoverageButton =
     !isPublicView && !!onViewCoverage && isActiveInstaller;
   const isCoverageActiveForThisRow =
     !!activeCoverageInstallerId && activeCoverageInstallerId === installer.id;
+
+  // Internal locator only: render the pin number that matches the map
+  // marker so admins can easily correlate a card to its pin. Public
+  // popups already show pin info as the marker itself.
+  const showPinBadge = !isPublicView && typeof pinNumber === "number";
 
   return (
     <Card
@@ -80,6 +86,32 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
         <div className="flex items-start gap-x-4">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 flex-1 min-w-0">
             <div className="flex items-baseline gap-2 min-w-0">
+              {showPinBadge && (
+                <span
+                  // MapPin glyph + number — visually mirrors the map marker
+                  // so an admin scanning the list can match card → pin at
+                  // a glance. Inactive cards mirror the gray pin color
+                  // from InstallerMapComponent for visual consistency.
+                  className={cn(
+                    "relative inline-flex items-center justify-center flex-shrink-0",
+                    "h-7 w-7 self-center",
+                  )}
+                  aria-label={`Map pin ${pinNumber}`}
+                  title={`Map pin ${pinNumber}`}
+                >
+                  <MapPin
+                    className={cn(
+                      "h-7 w-7",
+                      isInactiveInstaller ? "text-gray-400 fill-gray-400" : "text-black fill-black",
+                    )}
+                    strokeWidth={1.25}
+                    aria-hidden="true"
+                  />
+                  <span className="absolute top-0.5 left-1/2 -translate-x-1/2 text-[10px] font-bold leading-none text-white">
+                    {pinNumber}
+                  </span>
+                </span>
+              )}
               <h3 className="font-semibold text-lg leading-tight">{installer.name}</h3>
               {formattedDistance && (
                 <span className="text-gray-600 whitespace-nowrap">
@@ -123,18 +155,33 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
               </span>
             )}
           </div>
-          {showMileageBadge && (
-            <Badge
-              variant="default"
-              className={cn(
-                "flex-shrink-0 border-transparent",
-                installer.is_local_service_area
-                  ? "bg-green-100 text-green-800 hover:bg-green-200"
-                  : "bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
+          {(showMileageBadge || (isInactiveInstaller && !isPublicView)) && (
+            <div className="flex flex-row items-center gap-1.5 flex-shrink-0">
+              {showMileageBadge && (
+                <Badge
+                  variant="default"
+                  className={cn(
+                    "border-transparent",
+                    installer.is_local_service_area
+                      ? "bg-green-100 text-green-800 hover:bg-green-200"
+                      : "bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
+                  )}
+                >
+                  {installer.is_local_service_area ? "Mileage Covered" : "Mileage Charged"}
+                </Badge>
               )}
-            >
-              {installer.is_local_service_area ? "Mileage Covered" : "Mileage Charged"}
-            </Badge>
+              {isInactiveInstaller && !isPublicView && (
+                // Gray on purpose — matches the gray pin color (#9CA3AF)
+                // used in InstallerMapComponent so the badge and pin
+                // read as the same "inactive" signal.
+                <Badge
+                  variant="default"
+                  className="border-transparent bg-gray-200 text-gray-700 hover:bg-gray-300"
+                >
+                  Inactive
+                </Badge>
+              )}
+            </div>
           )}
         </div>
 
