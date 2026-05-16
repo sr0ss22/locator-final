@@ -1,19 +1,26 @@
 import React from "react";
-import { COVERAGE_COLORS, COVERAGE_PATTERN_IDS } from "@/lib/coverageStyle";
+import {
+  COVERAGE_COLORS,
+  COVERAGE_PATTERN_IDS,
+  PARTIAL_DENSITIES,
+  DENSITY_STROKE_WIDTH,
+  type PartialDensity,
+} from "@/lib/coverageStyle";
 
 /**
  * Hidden SVG <defs> mounted once per CoverageOverlay. Browsers resolve
  * `fill="url(#id)"` against any <defs> in the same document, so the
- * Leaflet SVG renderer can reference these patterns even though they live
- * in a separate inline SVG. Mirrors the FsaFillPatternDefs pattern in
- * TerritoryMap.tsx but with a clearer "majority + minority diagonal"
- * encoding for the public-facing overlay.
+ * Leaflet SVG renderer can reference these patterns even though they
+ * live in a separate inline SVG.
  *
- * Pattern recipe:
- *   * Solid base of the majority color at very-opaque alpha.
- *   * A second diagonal line in the minority color so the polygon still
- *     reads as the majority status at a glance, but conveys "we have some
- *     of the other kind too".
+ * Partial-coverage patterns come in four density buckets (5/10/15/20%)
+ * so the stripe spacing visually encodes the coverage percentage:
+ *   1–25%   → very sparse  (5%)
+ *   26–50%  → sparse       (10%)
+ *   51–74%  → medium       (15%)
+ *   75–99%  → dense        (20%)
+ * All use a 20-unit-wide pattern; strokeWidth = density/5 gives the
+ * correct coverage ratio (e.g. strokeWidth=2 in width=20 → 10%).
  */
 export const CoverageFillPatternDefs: React.FC = () => (
   <svg
@@ -24,6 +31,7 @@ export const CoverageFillPatternDefs: React.FC = () => (
     focusable="false"
   >
     <defs>
+      {/* ── Fully-covered mixed patterns (unchanged) ─────────────── */}
       <pattern
         id={COVERAGE_PATTERN_IDS.freeMajority}
         patternUnits="userSpaceOnUse"
@@ -32,15 +40,8 @@ export const CoverageFillPatternDefs: React.FC = () => (
         patternTransform="rotate(45)"
       >
         <rect width="10" height="10" fill={COVERAGE_COLORS.free.fill} fillOpacity={0.15} />
-        <line
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="10"
-          stroke={COVERAGE_COLORS.paid.fill}
-          strokeWidth={3}
-          strokeOpacity={0.25}
-        />
+        <line x1="0" y1="0" x2="0" y2="10"
+          stroke={COVERAGE_COLORS.paid.fill} strokeWidth={3} strokeOpacity={0.25} />
       </pattern>
       <pattern
         id={COVERAGE_PATTERN_IDS.paidMajority}
@@ -50,89 +51,66 @@ export const CoverageFillPatternDefs: React.FC = () => (
         patternTransform="rotate(45)"
       >
         <rect width="10" height="10" fill={COVERAGE_COLORS.paid.fill} fillOpacity={0.15} />
-        <line
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="10"
-          stroke={COVERAGE_COLORS.free.fill}
-          strokeWidth={3}
-          strokeOpacity={0.25}
-        />
+        <line x1="0" y1="0" x2="0" y2="10"
+          stroke={COVERAGE_COLORS.free.fill} strokeWidth={3} strokeOpacity={0.25} />
       </pattern>
 
-      {/* Partial-coverage variants: transparent base + colored
-          diagonal stripes. Reads as "we're only here in some of this
-          FSA's postal codes" vs the solid look of fully-covered ones.
-          Stripe opacity is intentionally a hair higher than the
-          full-coverage patterns so partial polygons stay legible
-          against the basemap when they're surrounded by solid ones. */}
-      <pattern
-        id={COVERAGE_PATTERN_IDS.partialFree}
-        patternUnits="userSpaceOnUse"
-        width="10"
-        height="10"
-        patternTransform="rotate(45)"
-      >
-        <rect width="10" height="10" fill="#ffffff" fillOpacity={0.0} />
-        <line
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="10"
-          stroke={COVERAGE_COLORS.free.fill}
-          strokeWidth={4}
-          strokeOpacity={0.45}
-        />
-      </pattern>
-      <pattern
-        id={COVERAGE_PATTERN_IDS.partialPaid}
-        patternUnits="userSpaceOnUse"
-        width="10"
-        height="10"
-        patternTransform="rotate(45)"
-      >
-        <rect width="10" height="10" fill="#ffffff" fillOpacity={0.0} />
-        <line
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="10"
-          stroke={COVERAGE_COLORS.paid.fill}
-          strokeWidth={4}
-          strokeOpacity={0.45}
-        />
-      </pattern>
-      <pattern
-        id={COVERAGE_PATTERN_IDS.partialMixed}
-        patternUnits="userSpaceOnUse"
-        width="10"
-        height="10"
-        patternTransform="rotate(45)"
-      >
-        <rect width="10" height="10" fill="#ffffff" fillOpacity={0.0} />
-        {/* Two stripes per cycle: green + orange, alternating, so the
-            partial-AND-mixed case reads as both "partial" and
-            "mixed status" at a glance. */}
-        <line
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="10"
-          stroke={COVERAGE_COLORS.free.fill}
-          strokeWidth={3}
-          strokeOpacity={0.45}
-        />
-        <line
-          x1="5"
-          y1="0"
-          x2="5"
-          y2="10"
-          stroke={COVERAGE_COLORS.paid.fill}
-          strokeWidth={3}
-          strokeOpacity={0.45}
-        />
-      </pattern>
+      {/* ── Partial-coverage variants, one per density bucket ────── */}
+      {PARTIAL_DENSITIES.map((d: PartialDensity) => {
+        const sw = DENSITY_STROKE_WIDTH[d];
+        return (
+          <React.Fragment key={d}>
+            {/* partial-free: transparent base + green diagonal */}
+            <pattern
+              id={COVERAGE_PATTERN_IDS.partialFree(d)}
+              patternUnits="userSpaceOnUse"
+              width="20"
+              height="20"
+              patternTransform="rotate(45)"
+            >
+              <rect width="20" height="20" fill="#ffffff" fillOpacity={0} />
+              <line x1="0" y1="0" x2="0" y2="20"
+                stroke={COVERAGE_COLORS.free.fill}
+                strokeWidth={sw}
+                strokeOpacity={0.55} />
+            </pattern>
+
+            {/* partial-paid: transparent base + orange diagonal */}
+            <pattern
+              id={COVERAGE_PATTERN_IDS.partialPaid(d)}
+              patternUnits="userSpaceOnUse"
+              width="20"
+              height="20"
+              patternTransform="rotate(45)"
+            >
+              <rect width="20" height="20" fill="#ffffff" fillOpacity={0} />
+              <line x1="0" y1="0" x2="0" y2="20"
+                stroke={COVERAGE_COLORS.paid.fill}
+                strokeWidth={sw}
+                strokeOpacity={0.55} />
+            </pattern>
+
+            {/* partial-mixed: transparent base + alternating green/orange */}
+            <pattern
+              id={COVERAGE_PATTERN_IDS.partialMixed(d)}
+              patternUnits="userSpaceOnUse"
+              width="20"
+              height="20"
+              patternTransform="rotate(45)"
+            >
+              <rect width="20" height="20" fill="#ffffff" fillOpacity={0} />
+              <line x1="0" y1="0" x2="0" y2="20"
+                stroke={COVERAGE_COLORS.free.fill}
+                strokeWidth={sw}
+                strokeOpacity={0.55} />
+              <line x1="10" y1="0" x2="10" y2="20"
+                stroke={COVERAGE_COLORS.paid.fill}
+                strokeWidth={sw}
+                strokeOpacity={0.55} />
+            </pattern>
+          </React.Fragment>
+        );
+      })}
     </defs>
   </svg>
 );

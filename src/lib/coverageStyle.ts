@@ -119,6 +119,26 @@ const FILL_OPACITY = 0.15;
 const STROKE_OPACITY = 0.35;
 
 /**
+ * Converts a coverage ratio (0–1) to one of four stripe-density
+ * buckets, per product spec:
+ *   1–25%   →  5%  density (very sparse)
+ *   26–50%  → 10%
+ *   51–74%  → 15%
+ *   75–100% → 20%  (densest, but still clearly partial vs solid full)
+ *
+ * Returns the density as a string so it can be used directly in a
+ * pattern ID suffix.
+ */
+export type PartialDensity = "5" | "10" | "15" | "20";
+
+export function partialDensityFromRatio(ratio: number): PartialDensity {
+  if (ratio >= 0.75) return "20";
+  if (ratio >= 0.51) return "15";
+  if (ratio >= 0.26) return "10";
+  return "5";
+}
+
+/**
  * SVG <pattern> ids referenced via fill="url(#...)" for mixed-/partial-
  * state polygons. Mounted once per overlay by
  * `<CoverageFillPatternDefs>`.
@@ -126,22 +146,45 @@ const STROKE_OPACITY = 0.35;
 export const COVERAGE_PATTERN_IDS = {
   freeMajority: "coverage-free-majority-stripes",
   paidMajority: "coverage-paid-majority-stripes",
-  // Partial-coverage variants: white background + colored diagonal
-  // stripes so the polygon clearly reads as "only some postal codes
-  // here are covered" vs the solid "all covered" look.
-  partialFree: "coverage-partial-free-stripes",
-  partialPaid: "coverage-partial-paid-stripes",
-  // Partial AND mixed status: green + orange stripes on white.
-  partialMixed: "coverage-partial-mixed-stripes",
+  // Partial-coverage variants come in four density buckets (5/10/15/20%)
+  // so the stripe spacing visually encodes "how much of the FSA is covered".
+  partialFree: (d: PartialDensity) => `coverage-partial-free-stripes-${d}`,
+  partialPaid: (d: PartialDensity) => `coverage-partial-paid-stripes-${d}`,
+  partialMixed: (d: PartialDensity) => `coverage-partial-mixed-stripes-${d}`,
 } as const;
 
+/** All density levels — used by CoverageFillPatternDefs to render all variants. */
+export const PARTIAL_DENSITIES: PartialDensity[] = ["5", "10", "15", "20"];
+
 /**
- * Map a coverage state to Leaflet PathOptions. `none` returns a fully
- * transparent style; the overlay layer skips rendering those features
- * entirely (cheaper than painting invisible polygons), so this branch
- * exists mostly for completeness / safety.
+ * strokeWidth for each density level, in a pattern of width=20.
+ * Gives visual coverage: 1/20=5%, 2/20=10%, 3/20=15%, 4/20=20%.
  */
-export function styleForCoverageState(state: CoverageState): PathOptions {
+export const DENSITY_STROKE_WIDTH: Record<PartialDensity, number> = {
+  "5": 1,
+  "10": 2,
+  "15": 3,
+  "20": 4,
+};
+
+/**
+ * Map a coverage state to Leaflet PathOptions.
+ *
+ * For partial states, pass `coverageRatio` (0–1, assigned/total postal
+ * codes) so the stripe density matches the coverage level. When omitted
+ * the densest bucket (20%) is used as a safe fallback.
+ *
+ * `none` returns fully transparent; the overlay skips those features
+ * entirely, so this branch exists mostly for completeness / safety.
+ */
+export function styleForCoverageState(
+  state: CoverageState,
+  coverageRatio?: number,
+): PathOptions {
+  const density = coverageRatio != null
+    ? partialDensityFromRatio(coverageRatio)
+    : "20";
+
   switch (state) {
     case "all-free":
       return {
@@ -162,8 +205,8 @@ export function styleForCoverageState(state: CoverageState): PathOptions {
     case "mixed-free-majority":
       return {
         fillColor: `url(#${COVERAGE_PATTERN_IDS.freeMajority})`,
-        // Pattern fills carry their own opacity in the <rect>/<line>; keep
-        // the layer fillOpacity at 1 so we don't double-attenuate it.
+        // Pattern fills carry their own opacity; keep fillOpacity at 1
+        // so we don't double-attenuate.
         fillOpacity: 1,
         color: COVERAGE_COLORS.free.stroke,
         weight: 1,
@@ -179,7 +222,7 @@ export function styleForCoverageState(state: CoverageState): PathOptions {
       };
     case "partial-free":
       return {
-        fillColor: `url(#${COVERAGE_PATTERN_IDS.partialFree})`,
+        fillColor: `url(#${COVERAGE_PATTERN_IDS.partialFree(density)})`,
         fillOpacity: 1,
         color: COVERAGE_COLORS.free.stroke,
         weight: 1,
@@ -187,7 +230,7 @@ export function styleForCoverageState(state: CoverageState): PathOptions {
       };
     case "partial-paid":
       return {
-        fillColor: `url(#${COVERAGE_PATTERN_IDS.partialPaid})`,
+        fillColor: `url(#${COVERAGE_PATTERN_IDS.partialPaid(density)})`,
         fillOpacity: 1,
         color: COVERAGE_COLORS.paid.stroke,
         weight: 1,
@@ -195,18 +238,14 @@ export function styleForCoverageState(state: CoverageState): PathOptions {
       };
     case "partial-mixed":
       return {
-        fillColor: `url(#${COVERAGE_PATTERN_IDS.partialMixed})`,
+        fillColor: `url(#${COVERAGE_PATTERN_IDS.partialMixed(density)})`,
         fillOpacity: 1,
         color: COVERAGE_COLORS.paid.stroke,
         weight: 1,
         opacity: STROKE_OPACITY,
       };
     case "none":
-      return {
-        fillOpacity: 0,
-        opacity: 0,
-        weight: 0,
-      };
+      return { fillOpacity: 0, opacity: 0, weight: 0 };
   }
 }
 

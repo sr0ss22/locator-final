@@ -244,18 +244,27 @@ const CoverageOverlayInner: React.FC<CoverageOverlayProps> = ({
             // coverage paints with the striped pattern instead of
             // solid green.
             let state: CoverageState;
+            let coverageRatio: number | undefined;
             if (country === "Canada") {
+              const freePostalCodes = counts.free_postal_codes ?? counts.free;
+              const paidPostalCodes = counts.paid_postal_codes ?? counts.paid;
+              const totalPostalCodes = fsaTotalPostalCounts?.get(zip!) ?? null;
               state = classifyFsaCoverage({
                 free: counts.free,
                 paid: counts.paid,
-                freePostalCodes: counts.free_postal_codes ?? counts.free,
-                paidPostalCodes: counts.paid_postal_codes ?? counts.paid,
-                totalPostalCodes: fsaTotalPostalCounts?.get(zip!) ?? null,
+                freePostalCodes,
+                paidPostalCodes,
+                totalPostalCodes,
               });
+              // Compute the ratio for density-graduated stripe patterns.
+              // Only used for partial states; ignored for full/mixed.
+              if (totalPostalCodes != null && totalPostalCodes > 0) {
+                coverageRatio = (freePostalCodes + paidPostalCodes) / totalPostalCodes;
+              }
             } else {
               state = classifyCoverage(counts);
             }
-            return styleForCoverageState(state);
+            return styleForCoverageState(state, coverageRatio);
           }}
           onEachFeature={(feature, layer) => {
             const zip = getFeatureZip(feature, country);

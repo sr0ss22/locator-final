@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, 
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
 import { Star, Loader2, Pencil, X } from 'lucide-react';
+import { partialDensityFromRatio } from '@/lib/coverageStyle';
 import { calculateDistance } from '@/utils/distance';
 import { TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
@@ -374,6 +375,12 @@ const LoadingOverlay = ({
   </div>
 );
 
+// Density buckets (5/10/15/20%) for partial FSA coverage.
+// Stroke width in a 20-unit pattern gives the target coverage ratio:
+//   1/20 = 5%, 2/20 = 10%, 3/20 = 15%, 4/20 = 20%.
+const FSA_PARTIAL_DENSITIES = ['5', '10', '15', '20'] as const;
+const FSA_DENSITY_STROKE: Record<string, number> = { '5': 1, '10': 2, '15': 3, '20': 4 };
+
 // Hidden SVG <defs> mounted once per TerritoryMap. Browsers resolve
 // `fill="url(#id)"` against any <defs> in the same document, so the Leaflet
 // SVG renderer can reference these patterns even though they live in a
@@ -398,28 +405,40 @@ const FsaFillPatternDefs: React.FC = () => (
         <rect width="8" height="8" fill="#F97316" fillOpacity={0.45} />
         <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
       </pattern>
-      {/* Partial coverage, all assigned are Free. */}
-      <pattern
-        id="fsa-partial-free-pattern"
-        patternUnits="userSpaceOnUse"
-        width="8"
-        height="8"
-        patternTransform="rotate(45)"
-      >
-        <rect width="8" height="8" fill="#FFFFFF" fillOpacity={0.85} />
-        <line x1="0" y1="0" x2="0" y2="8" stroke="#16A34A" strokeWidth={2.5} strokeOpacity={0.5} />
-      </pattern>
-      {/* Partial coverage, all assigned are Paid. */}
-      <pattern
-        id="fsa-partial-paid-pattern"
-        patternUnits="userSpaceOnUse"
-        width="8"
-        height="8"
-        patternTransform="rotate(45)"
-      >
-        <rect width="8" height="8" fill="#FFFFFF" fillOpacity={0.85} />
-        <line x1="0" y1="0" x2="0" y2="8" stroke="#F97316" strokeWidth={2.5} strokeOpacity={0.5} />
-      </pattern>
+
+      {/* Partial-coverage variants — 4 density buckets per color so
+          stripe spacing encodes "how covered" the FSA is:
+            1–25%  → 5% density (very sparse)
+            26–50% → 10%
+            51–74% → 15%
+            75–99% → 20% */}
+      {FSA_PARTIAL_DENSITIES.map((d) => {
+        const sw = FSA_DENSITY_STROKE[d];
+        return (
+          <React.Fragment key={d}>
+            <pattern
+              id={`fsa-partial-free-pattern-${d}`}
+              patternUnits="userSpaceOnUse"
+              width="20"
+              height="20"
+              patternTransform="rotate(45)"
+            >
+              <rect width="20" height="20" fill="#FFFFFF" fillOpacity={0.85} />
+              <line x1="0" y1="0" x2="0" y2="20" stroke="#16A34A" strokeWidth={sw} strokeOpacity={0.55} />
+            </pattern>
+            <pattern
+              id={`fsa-partial-paid-pattern-${d}`}
+              patternUnits="userSpaceOnUse"
+              width="20"
+              height="20"
+              patternTransform="rotate(45)"
+            >
+              <rect width="20" height="20" fill="#FFFFFF" fillOpacity={0.85} />
+              <line x1="0" y1="0" x2="0" y2="20" stroke="#F97316" strokeWidth={sw} strokeOpacity={0.55} />
+            </pattern>
+          </React.Fragment>
+        );
+      })}
     </defs>
   </svg>
 );
@@ -1280,13 +1299,15 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
 
         // Anything else is a "miss" of some kind: partial coverage and/or
         // mixed statuses. Pattern conveys the kind.
+        const partialRatio = total != null && total > 0 ? assigned / total : 0.5;
+        const pd = partialDensityFromRatio(partialRatio);
         if (isMixed) {
           return { fillColor: 'url(#fsa-mixed-pattern)', fillOpacity: 1, color: '#9A3412', weight: 1.5, opacity: 0.85, interactive: true };
         }
         if (sel.free > 0) {
-          return { fillColor: 'url(#fsa-partial-free-pattern)', fillOpacity: 1, color: '#166534', weight: 1.5, opacity: 0.75, interactive: true };
+          return { fillColor: `url(#fsa-partial-free-pattern-${pd})`, fillOpacity: 1, color: '#166534', weight: 1.5, opacity: 0.75, interactive: true };
         }
-        return { fillColor: 'url(#fsa-partial-paid-pattern)', fillOpacity: 1, color: '#9A3412', weight: 1.5, opacity: 0.75, interactive: true };
+        return { fillColor: `url(#fsa-partial-paid-pattern-${pd})`, fillOpacity: 1, color: '#9A3412', weight: 1.5, opacity: 0.75, interactive: true };
       }
 
       if (isTerritoryManagementPage) {
@@ -1303,9 +1324,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
             if (t.free > 0) return { fillColor: '#D4EDDA', fillOpacity: 0.5, color: '#166534', weight: 1, opacity: 0.5, interactive: true };
             return { fillColor: '#FFF3CD', fillOpacity: 0.5, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
           }
+          const tPartialRatio = total != null && total > 0 ? assigned / total : 0.5;
+          const tpd = partialDensityFromRatio(tPartialRatio);
           if (isMixed) return { fillColor: 'url(#fsa-mixed-pattern)', fillOpacity: 0.55, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
-          if (t.free > 0) return { fillColor: 'url(#fsa-partial-free-pattern)', fillOpacity: 0.7, color: '#166534', weight: 1, opacity: 0.5, interactive: true };
-          return { fillColor: 'url(#fsa-partial-paid-pattern)', fillOpacity: 0.7, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
+          if (t.free > 0) return { fillColor: `url(#fsa-partial-free-pattern-${tpd})`, fillOpacity: 0.7, color: '#166534', weight: 1, opacity: 0.5, interactive: true };
+          return { fillColor: `url(#fsa-partial-paid-pattern-${tpd})`, fillOpacity: 0.7, color: '#9A3412', weight: 1, opacity: 0.5, interactive: true };
         }
       }
 
