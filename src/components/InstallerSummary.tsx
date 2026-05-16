@@ -83,7 +83,11 @@ const InstallerSummary: React.FC<InstallerSummaryProps> = ({
             <div className="flex items-baseline gap-3 min-w-0">
               <CardTitle className="text-lg font-semibold whitespace-nowrap">Installer Summary</CardTitle>
               {!showAdditionalFilters && (
-                <p className="text-xs text-gray-600 truncate">
+                // Subtitle is desktop-only on the public locator — on
+                // mobile the card is already narrow and the total-count
+                // tile to the right plus the donut titles below carry
+                // the same information.
+                <p className="hidden sm:block text-xs text-gray-600 truncate">
                   Showing {installers.length} installers within {displayRadius} {distanceUnit} of {searchedZipCode || "your search location"}.
                 </p>
               )}

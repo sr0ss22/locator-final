@@ -24,7 +24,7 @@ const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, 
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
     return (
-      <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" className="font-bold text-sm">
+      <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" className="font-bold text-base">
         {value}
       </text>
     );
@@ -37,10 +37,10 @@ const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, 
   return (
     <Card>
       <CardHeader className="pt-3 pb-1 px-3">
-        <CardTitle className="text-center text-sm font-medium">{title}</CardTitle>
+        <CardTitle className="text-center text-base font-semibold">{title}</CardTitle>
       </CardHeader>
       <CardContent className="pt-0 pb-3 px-3">
-        <div className="w-full h-32 relative">
+        <div className="w-full h-40 relative">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Tooltip
@@ -56,8 +56,8 @@ const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, 
                 cy="50%"
                 labelLine={false}
                 label={renderCustomizedLabel}
-                innerRadius={36}
-                outerRadius={58}
+                innerRadius={44}
+                outerRadius={70}
                 fill="#8884d8"
                 paddingAngle={4}
                 dataKey="value"
@@ -70,11 +70,11 @@ const DonutChartComponent: React.FC<DonutChartComponentProps> = ({ data, title, 
           </ResponsiveContainer>
         </div>
         {totalValue > 0 && legendItems.length > 0 && (
-          <ul className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px] leading-tight text-gray-700">
+          <ul className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs leading-tight text-gray-700">
             {legendItems.map((item) => (
-              <li key={item.name} className="inline-flex items-center gap-1">
+              <li key={item.name} className="inline-flex items-center gap-1.5">
                 <span
-                  className="inline-block h-2 w-2 rounded-sm flex-shrink-0"
+                  className="inline-block h-2.5 w-2.5 rounded-sm flex-shrink-0"
                   style={{ backgroundColor: item.color }}
                   aria-hidden="true"
                 />

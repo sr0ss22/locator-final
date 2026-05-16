@@ -280,7 +280,21 @@ const Locator: React.FC = () => {
               is stacked. */}
           <div className="lg:col-start-2 lg:col-span-2 lg:row-start-1 lg:h-full">
             <div className="h-[500px] lg:h-full w-full rounded-lg overflow-hidden shadow-sm">
-              <InstallerMapComponent userLocation={userLocation} installers={filteredAndSortedInstallers} selectedInstallerId={selectedInstallerId} />
+              <InstallerMapComponent
+                userLocation={userLocation}
+                installers={filteredAndSortedInstallers}
+                selectedInstallerId={selectedInstallerId}
+                coverageOverlay={{
+                  enabled: true,
+                  defaultVisible: false,
+                  searchCenter: userLocation,
+                  searchRadiusMiles: searchRadius,
+                  brands: filterBrands,
+                  skills: filterProductSkills,
+                  certifications: filterCertifications,
+                  acceptsShipments: filterAcceptsShipments === 'yes',
+                }}
+              />
             </div>
           </div>
 

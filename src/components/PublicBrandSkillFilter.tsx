@@ -17,13 +17,18 @@ const ALL_BRANDS: InstallerBrand[] = ["Hunter Douglas", "Alta", "Carole", "Archi
 const ALL_PRODUCT_SKILLS: InstallerSkill[] = ["Blinds & Shades", "Shutters", "Drapery", "Automation", "Tall Window"];
 const ALL_CERTIFICATIONS: InstallerCertification[] = ["Motorization Pro", "Certified Installer", "Master Installer", "Shutter Pro", "Drapery Pro"];
 
-// Compact small-text pill that slots into our wrapping ToggleGroup. Selected
-// state uses a soft sky background so it reads "active" without shouting.
+// Pill that slots into our wrapping ToggleGroup. Selected state uses a
+// soft sky background so it reads "active" without shouting. Sizes are
+// the public-locator filter's standard pill — keep PublicLocator's
+// inline Distance/Other pills in sync if you tune this. The
+// non-standard 30px / 13.5px sit between Tailwind's h-7/h-8 and
+// text-xs/text-sm: just a hair smaller than the round numbers, picked
+// to keep the filter content from overflowing its locked 540 px card.
 const pillClass =
-  "h-7 px-2.5 text-xs rounded-full border border-input bg-transparent text-gray-700 " +
+  "h-[30px] px-[11px] text-[13.5px] rounded-full border border-input bg-transparent text-gray-700 " +
   "hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300";
 
-const sectionLabelClass = "text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5";
+const sectionLabelClass = "text-[13px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5";
 const groupClass = "flex flex-wrap items-center justify-start gap-1.5";
 
 const PublicBrandSkillFilter: React.FC<PublicBrandSkillFilterProps> = ({
@@ -70,7 +75,7 @@ const PublicBrandSkillFilter: React.FC<PublicBrandSkillFilterProps> = ({
                 aria-label={skill}
                 className={`${pillClass} gap-1`}
               >
-                {Icon && <Icon className="h-3.5 w-3.5" />}
+                {Icon && <Icon className="h-4 w-4" />}
                 <span>{skill}</span>
               </ToggleGroupItem>
             );
