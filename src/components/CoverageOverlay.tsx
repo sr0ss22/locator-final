@@ -60,7 +60,15 @@ interface CoverageOverlayProps {
   // installers. Powers the per-card "View coverage" mode on the
   // internal locator.
   installerIds?: string[] | null;
-  onZipClick?: (zip: string, counts: CoverageCounts) => void;
+  // Forwarded to the parent on polygon click. `totalPostalCodes` is
+  // populated only for Canadian FSAs (where we know the FSA → postal
+  // count from the precomputed map) and lets the parent show an
+  // accurate ratio in the drill-down panel without re-fetching it.
+  onZipClick?: (
+    zip: string,
+    counts: CoverageCounts,
+    meta: { country: "USA" | "Canada"; totalPostalCodes: number | null },
+  ) => void;
   // Optional callback so the parent can surface a "loading coverage"
   // indicator next to its existing search/loading state.
   onLoadingChange?: (isLoading: boolean) => void;
@@ -256,11 +264,45 @@ const CoverageOverlayInner: React.FC<CoverageOverlayProps> = ({
             if (!counts) return;
             const total = counts.free + counts.paid;
             const label = country === "USA" ? `ZIP ${zip}` : `FSA ${zip}`;
+            // For Canadian FSAs we also show an "X / Y postal codes
+            // covered (Z%)" line — exposes partial-coverage at a glance
+            // instead of requiring the user to decode the striped
+            // pattern. US ZIPs are atomic (one polygon = one postal
+            // code) so the same line would always be "1 / 1 (100%)"
+            // and is suppressed.
+            let coverageRatioLine = "";
+            if (country === "Canada") {
+              const totalPostals = fsaTotalPostalCounts?.get(zip) ?? null;
+              const coveredPostals =
+                (counts.free_postal_codes ?? 0) + (counts.paid_postal_codes ?? 0);
+              if (totalPostals != null && totalPostals > 0) {
+                const pct = Math.max(
+                  0,
+                  Math.min(100, Math.round((coveredPostals / totalPostals) * 100)),
+                );
+                const displayPct = pct === 0 && coveredPostals > 0 ? "<1" : `${pct}`;
+                coverageRatioLine = `
+                  <div class="text-[11px] text-gray-700 mt-0.5">
+                    <span class="font-medium">${coveredPostals}</span> / ${totalPostals} postal codes (${displayPct}%)
+                  </div>`;
+              } else if (coveredPostals > 0) {
+                coverageRatioLine = `
+                  <div class="text-[11px] text-gray-700 mt-0.5">
+                    <span class="font-medium">${coveredPostals}</span> postal code${coveredPostals === 1 ? "" : "s"} covered
+                  </div>`;
+              }
+            }
+            const installerLine = `<div class="text-[10px] text-gray-500 mt-0.5">${total} installer${total === 1 ? "" : "s"}</div>`;
+            const interactionHint = interactive
+              ? `<div class="text-[10px] text-sky-600 mt-1">Click to see postal codes</div>`
+              : "";
             const tooltipHtml = `
               <div class="text-xs leading-snug">
                 <div class="font-semibold mb-0.5">${label}</div>
                 <div><span class="font-medium">${counts.free}</span> free · <span class="font-medium">${counts.paid}</span> paid</div>
-                <div class="text-[10px] text-gray-500 mt-0.5">${total} installer${total === 1 ? "" : "s"}</div>
+                ${coverageRatioLine}
+                ${installerLine}
+                ${interactionHint}
               </div>
             `;
             layer.bindTooltip(tooltipHtml, {
@@ -271,7 +313,13 @@ const CoverageOverlayInner: React.FC<CoverageOverlayProps> = ({
             });
             if (interactive) {
               layer.on("click", () => {
-                onZipClick?.(zip, { free: counts.free, paid: counts.paid });
+                const totalPostalCodes =
+                  country === "Canada" ? fsaTotalPostalCounts?.get(zip) ?? null : null;
+                onZipClick?.(
+                  zip,
+                  { free: counts.free, paid: counts.paid },
+                  { country, totalPostalCodes },
+                );
               });
             }
             (layer as L.Path).on?.("mouseover", () => {

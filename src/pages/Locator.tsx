@@ -22,6 +22,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery } from "@tanstack/react-query";
 import { useAllInstallers, useDrivingDistances, useInstallersInLocalArea } from "@/hooks/useInstallerData";
 import CountryFlagToggle from "@/components/CountryFlagToggle";
+import CoverageDetailPanel, {
+  type CoverageDetailPanelTarget,
+} from "@/components/CoverageDetailPanel";
 
 const Locator: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,6 +44,11 @@ const Locator: React.FC = () => {
   // "View coverage" map icon on a card. Null means the overlay shows
   // every matching installer (the default).
   const [coverageInstallerId, setCoverageInstallerId] = useState<string | null>(null);
+  // Drives the click-to-inspect side panel. Cleared via Sheet close or
+  // by clicking the same polygon a second time (handled inside the
+  // click callback below).
+  const [coverageDetailTarget, setCoverageDetailTarget] =
+    useState<CoverageDetailPanelTarget | null>(null);
   const [allStatesProvinces, setAllStatesProvinces] = useState<string[]>([]);
   const navigate = useNavigate();
   const { isCanada, distanceUnit, setIsCanada } = useCountrySettings();
@@ -220,6 +228,29 @@ const Locator: React.FC = () => {
     setCoverageInstallerId(null);
   }, []);
 
+  const handleZipClick = useCallback(
+    (
+      zip: string,
+      _counts: { free: number; paid: number },
+      meta: { country: "USA" | "Canada"; totalPostalCodes: number | null },
+    ) => {
+      setCoverageDetailTarget((prev) =>
+        prev && prev.zipOrFsa === zip && prev.country === meta.country
+          ? null
+          : {
+              country: meta.country,
+              zipOrFsa: zip,
+              totalPostalCodes: meta.totalPostalCodes,
+            },
+      );
+    },
+    [],
+  );
+
+  const handleCloseDetailPanel = useCallback(() => {
+    setCoverageDetailTarget(null);
+  }, []);
+
   // Resolve the human-readable label for the active filter chip. We pull
   // from the (already-loaded) installers list so we don't need an extra
   // round trip — if the user switches search location and the installer
@@ -236,6 +267,25 @@ const Locator: React.FC = () => {
   useEffect(() => {
     setCoverageInstallerId(null);
   }, [filterBrands, filterProductSkills, filterCertifications, filterStates, filterAcceptsShipments]);
+
+  // Auto-close the drill-down panel whenever the country changes — the
+  // open target's zip/FSA almost certainly won't exist in the other
+  // country and the panel would otherwise render an empty "no coverage"
+  // state until the user dismissed it.
+  useEffect(() => {
+    setCoverageDetailTarget(null);
+  }, [isCanada]);
+
+  // The installer-id list passed to the coverage overlay (and reused
+  // when fetching the drill-down detail). Memoized so the panel's
+  // query doesn't re-fire on every render.
+  const overlayInstallerIds = useMemo(
+    () =>
+      coverageInstallerId
+        ? [coverageInstallerId]
+        : filteredAndSortedInstallers.map((i) => i.id),
+    [coverageInstallerId, filteredAndSortedInstallers],
+  );
 
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingUserLocation || loadingOrs;
@@ -354,11 +404,10 @@ const Locator: React.FC = () => {
                   // paint polygons here with no corresponding pin —
                   // confusing at large radii where the polygon centroid
                   // is in range but the installer's home isn't.
-                  installerIds: coverageInstallerId
-                    ? [coverageInstallerId]
-                    : filteredAndSortedInstallers.map((i) => i.id),
+                  installerIds: overlayInstallerIds,
                   filterLabel: coverageFilterLabel,
                   onClearFilter: handleClearCoverageFilter,
+                  onZipClick: handleZipClick,
                 }}
               />
             </div>
@@ -387,6 +436,11 @@ const Locator: React.FC = () => {
           )}
         </div>
       </div>
+      <CoverageDetailPanel
+        target={coverageDetailTarget}
+        onClose={handleCloseDetailPanel}
+        installerIds={overlayInstallerIds}
+      />
     </div>
   );
 };

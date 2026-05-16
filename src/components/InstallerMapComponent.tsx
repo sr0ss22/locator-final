@@ -58,7 +58,11 @@ interface CoverageOverlayConfig {
   filterLabel?: string | null;
   // Called when the user clicks the "X" on the filter chip.
   onClearFilter?: () => void;
-  onZipClick?: (zip: string, counts: CoverageCounts) => void;
+  onZipClick?: (
+    zip: string,
+    counts: CoverageCounts,
+    meta: { country: "USA" | "Canada"; totalPostalCodes: number | null },
+  ) => void;
 }
 
 interface InstallerMapProps {

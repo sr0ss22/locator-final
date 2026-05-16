@@ -103,6 +103,67 @@ export const fetchCanadianPostalsForFsa = async (
   return data as CanadianPostalForFsa[];
 };
 
+// --- Coverage drill-down (internal locator click-to-inspect) ---
+
+export type CoverageDetailRow = {
+  postal_code: string;
+  installer_id: string;
+  installer_name: string;
+  status: string;
+};
+
+export type CoverageDetailResponse = {
+  country: 'USA' | 'Canada';
+  zip_or_fsa: string;
+  rows: CoverageDetailRow[];
+};
+
+// Fetches the per-postal, per-installer coverage breakdown for a single
+// ZIP (USA) or FSA (Canada). Admin only; powers the click-an-FSA detail
+// panel on the internal locator.
+const fetchCoverageDetail = async (args: {
+  country: 'USA' | 'Canada';
+  zipOrFsa: string;
+  installerIds: string[] | null;
+}): Promise<CoverageDetailResponse> => {
+  const { data, error } = await supabase.rpc('get_coverage_detail', {
+    p_country: args.country,
+    p_zip_or_fsa: args.zipOrFsa,
+    p_installer_ids: args.installerIds,
+  });
+  if (error) throw error;
+  if (!data || typeof data !== 'object') {
+    return { country: args.country, zip_or_fsa: args.zipOrFsa, rows: [] };
+  }
+  return data as CoverageDetailResponse;
+};
+
+export const useCoverageDetail = (args: {
+  country: 'USA' | 'Canada';
+  zipOrFsa: string | null;
+  installerIds: string[] | null;
+  enabled: boolean;
+}) => {
+  // Sort the installer-id list so different orderings of the same set
+  // hit the React Query cache. Null/undefined collapse to a single key.
+  const installerIdsKey =
+    args.installerIds === null || args.installerIds === undefined
+      ? null
+      : [...args.installerIds].sort().join(',');
+  return useQuery<CoverageDetailResponse>({
+    queryKey: ['coverageDetail', args.country, args.zipOrFsa, installerIdsKey],
+    queryFn: () =>
+      fetchCoverageDetail({
+        country: args.country,
+        zipOrFsa: args.zipOrFsa!,
+        installerIds: args.installerIds,
+      }),
+    enabled: args.enabled && !!args.zipOrFsa,
+    refetchOnWindowFocus: false,
+    staleTime: 1000 * 60 * 5,
+  });
+};
+
 // --- Mutation ---
 
 const fromBooleanToSupabase = (value: boolean): number => {
