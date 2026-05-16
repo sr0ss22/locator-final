@@ -10,6 +10,7 @@ import { run as getIpLocation } from "@/functions/getIpLocation";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
+import { detectCountryFromPostalCode } from "@/lib/detectCountry";
 import InstallerSummary from "@/components/InstallerSummary";
 import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { useNavigate } from "react-router-dom";
@@ -32,7 +33,7 @@ const PublicLocator: React.FC = () => {
   const [filterAcceptsShipments, setFilterAcceptsShipments] = useState<boolean>(() => searchParams.get('shipments') === 'yes');
   const [filterMileageCovered, setFilterMileageCovered] = useState<boolean>(() => searchParams.get('mileage') === 'yes');
 
-  const { isCanada, distanceUnit, toggleCountry } = useCountrySettings();
+  const { isCanada, distanceUnit, toggleCountry, setIsCanada } = useCountrySettings();
   const navigate = useNavigate();
   const { user, loading: sessionLoading } = useSession();
 
@@ -90,6 +91,19 @@ const PublicLocator: React.FC = () => {
   }), [locationData]);
 
   const searchedZipCode = useMemo(() => locationData?.zipCode || "", [locationData]);
+
+  // Auto-switch country based on the geocoded postal code so a search
+  // for a Canadian city/postal flips the app into Canada mode (and
+  // surfaces FSA polygons, km units, etc.) without the user having
+  // to hit the manual toggle first.
+  useEffect(() => {
+    const detected = detectCountryFromPostalCode(locationData?.zipCode ?? null);
+    if (!detected) return;
+    const detectedIsCanada = detected === "Canada";
+    if (detectedIsCanada !== isCanada) {
+      setIsCanada(detectedIsCanada);
+    }
+  }, [locationData?.zipCode, isCanada, setIsCanada]);
 
   const { data: rawInstallers, isLoading: loadingInstallers } = usePublicInstallers(
     userSearchLocation,

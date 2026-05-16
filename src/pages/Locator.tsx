@@ -21,6 +21,7 @@ import LoadingSayings from "@/components/LoadingSayings";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery } from "@tanstack/react-query";
 import { useAllInstallers, useDrivingDistances, useInstallersInLocalArea } from "@/hooks/useInstallerData";
+import { detectCountryFromPostalCode } from "@/lib/detectCountry";
 
 const Locator: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -42,7 +43,7 @@ const Locator: React.FC = () => {
   const [coverageInstallerId, setCoverageInstallerId] = useState<string | null>(null);
   const [allStatesProvinces, setAllStatesProvinces] = useState<string[]>([]);
   const navigate = useNavigate();
-  const { isCanada, distanceUnit, toggleCountry } = useCountrySettings();
+  const { isCanada, distanceUnit, toggleCountry, setIsCanada } = useCountrySettings();
 
   const handleSearch = () => {
     setSearchedZipCode(inputValue);
@@ -82,6 +83,21 @@ const Locator: React.FC = () => {
     lat: locationData?.lat || null,
     lng: locationData?.lng || null,
   }), [locationData]);
+
+  // Auto-switch country mode based on the geocoded postal code from
+  // the search. So typing "toronto" (or "M5V 3A8") flips the app to
+  // Canada — which in turn drives the coverage overlay to fetch the
+  // Canadian-FSA aggregate and paint FSA polygons instead of US
+  // ZIPs. Ambiguous / unparseable postal codes leave the setting
+  // alone so the manual toggle still wins for edge cases.
+  useEffect(() => {
+    const detected = detectCountryFromPostalCode(locationData?.zipCode ?? null);
+    if (!detected) return;
+    const detectedIsCanada = detected === "Canada";
+    if (detectedIsCanada !== isCanada) {
+      setIsCanada(detectedIsCanada);
+    }
+  }, [locationData?.zipCode, isCanada, setIsCanada]);
 
   const { data: allInstallersData, isLoading: loadingInstallers } = useAllInstallers();
   const { data: localAreaInstallerIds } = useInstallersInLocalArea(searchedZipCode);

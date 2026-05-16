@@ -5,6 +5,11 @@ interface CountrySettings {
   distanceUnit: 'miles' | 'km';
   postalCodeLabel: 'Zip Code' | 'Postal Code';
   toggleCountry: () => void;
+  // Imperative setter so the locator pages can auto-switch country
+  // after a search resolves (e.g. typing "toronto" should flip the
+  // app to Canada mode so the FSA coverage overlay can paint). The
+  // toggle button still works manually.
+  setIsCanada: (value: boolean) => void;
 }
 
 const CountrySettingsContext = createContext<CountrySettings | undefined>(undefined);
@@ -36,6 +41,7 @@ export const CountrySettingsProvider: React.FC<{ children: ReactNode }> = ({ chi
     distanceUnit,
     postalCodeLabel,
     toggleCountry,
+    setIsCanada,
   };
 
   return (
