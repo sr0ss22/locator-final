@@ -42,6 +42,12 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
   };
 
   const showMileageBadge = !!searchedZipCode && installer.is_local_service_area !== undefined;
+  // Inactive flag lives on the raw row (is_active = 0|1). Only surfaced
+  // to admins — public visitors never see installer state. Coverage
+  // overlay already excludes inactive installers at the RPC level, so
+  // this badge is purely a visual signal that the row exists but won't
+  // be picked up by territory aggregation.
+  const isInactive = !isPublicView && installer.rawSupabaseData?.is_active !== 1;
   const hasBrands = installer.brands && installer.brands.length > 0;
   const hasSkills = installer.skills && installer.skills.length > 0;
 
@@ -75,18 +81,30 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
               </span>
             )}
           </div>
-          {showMileageBadge && (
-            <Badge
-              variant="default"
-              className={cn(
-                "flex-shrink-0 border-transparent",
-                installer.is_local_service_area
-                  ? "bg-green-100 text-green-800 hover:bg-green-200"
-                  : "bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
+          {(isInactive || showMileageBadge) && (
+            <div className="flex flex-row items-center gap-1.5 flex-shrink-0">
+              {showMileageBadge && (
+                <Badge
+                  variant="default"
+                  className={cn(
+                    "border-transparent",
+                    installer.is_local_service_area
+                      ? "bg-green-100 text-green-800 hover:bg-green-200"
+                      : "bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
+                  )}
+                >
+                  {installer.is_local_service_area ? "Mileage Covered" : "Mileage Charged"}
+                </Badge>
               )}
-            >
-              {installer.is_local_service_area ? "Mileage Covered" : "Mileage Charged"}
-            </Badge>
+              {isInactive && (
+                <Badge
+                  variant="default"
+                  className="border-transparent bg-pink-100 text-red-700 hover:bg-pink-200"
+                >
+                  Inactive
+                </Badge>
+              )}
+            </div>
           )}
         </div>
 
