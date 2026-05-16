@@ -5,9 +5,9 @@ const Footer: React.FC = () => (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
       <div className="flex items-center gap-3">
         <img
-          src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg"
+          src="/hd-logo-white.png"
           alt="Hunter Douglas"
-          className="h-5 brightness-0 invert opacity-70"
+          className="h-6 opacity-80"
         />
         <span className="text-gray-500">&copy; {new Date().getFullYear()} Hunter Douglas</span>
       </div>
