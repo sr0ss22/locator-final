@@ -1,24 +1,23 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import InstallerSearch from "@/components/InstallerSearch";
-import BrandSkillFilter from "@/components/BrandSkillFilter";
+import PublicBrandSkillFilter from "@/components/PublicBrandSkillFilter";
 import InstallerList from "@/components/InstallerList";
 import InstallerMapComponent from "@/components/InstallerMapComponent";
 import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { Separator } from "@/components/ui/separator";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { run as getCoordinates } from "@/functions/getCoordinates";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import DistanceFilter from "@/components/DistanceFilter";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import MultiSelect from "@/components/MultiSelect";
 import InstallerSummary from "@/components/InstallerSummary";
 import LoadingSayings from "@/components/LoadingSayings";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery } from "@tanstack/react-query";
 import { useAllInstallers, useDrivingDistances, useInstallersInLocalArea } from "@/hooks/useInstallerData";
 import CountryFlagToggle from "@/components/CountryFlagToggle";
@@ -212,9 +211,27 @@ const Locator: React.FC = () => {
     return installersWithDistance.filter(i => i.distance <= searchRadius);
   }, [installers, filterBrands, filterProductSkills, filterCertifications, installerDistancesMap, searchRadius, showAdditionalFilters, filterStates, filterAcceptsShipments]);
 
-  const handleBrandChange = (brand: InstallerBrand, checked: boolean) => setFilterBrands(p => checked ? [...p, brand] : p.filter(b => b !== brand));
-  const handleProductSkillChange = (skill: InstallerSkill, checked: boolean) => setFilterProductSkills(p => checked ? [...p, skill] : p.filter(s => s !== skill));
-  const handleCertificationChange = (certification: InstallerCertification, checked: boolean) => setFilterCertifications(p => checked ? [...p, certification] : p.filter(c => c !== certification));
+  // Array-based handlers wired directly into PublicBrandSkillFilter
+  // (and the inline "Other" pill ToggleGroup further below). Matches
+  // the public locator's filter shape so both pages now share the same
+  // pill-button look and the same component for brands/skills/certs.
+  const handleBrandsChange = (brands: InstallerBrand[]) => setFilterBrands(brands);
+  const handleProductSkillsChange = (skills: InstallerSkill[]) => setFilterProductSkills(skills);
+  const handleCertificationsChange = (certifications: InstallerCertification[]) => setFilterCertifications(certifications);
+
+  // Distance options preserve the internal locator's wider radii
+  // (admins often need to see further than end-users). Stored in
+  // miles for downstream math; the km column is shown when the
+  // country toggle is set to Canada.
+  const distanceOptions = useMemo(
+    () => [
+      { miles: 50, km: 80 },
+      { miles: 100, km: 150 },
+      { miles: 250, km: 400 },
+      { miles: 500, km: 800 },
+    ],
+    [],
+  );
   
   const handleInstallerCardClick = useCallback((installerId: string) => {
     navigate(`/installers/edit/${installerId}`);
@@ -303,43 +320,81 @@ const Locator: React.FC = () => {
           </h1>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-6 lg:auto-rows-min">
-          {/* 1. Filters card — mobile #1, desktop col 1 row 1 */}
+          {/* 1. Filters card — mobile #1, desktop col 1 row 1.
+              Pill-button styling matches /public-locator so admins and
+              end users see the same filter aesthetic. Section labels
+              use the same small uppercase treatment; the pill class
+              itself is reused from PublicBrandSkillFilter and the
+              public locator's inline distance/other pill rows. */}
           <div className="lg:col-start-1 lg:col-span-1 lg:row-start-1">
             <div className="p-4 border rounded-lg shadow-sm bg-card space-y-3">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <h2 className="text-xl font-semibold">Find Installers</h2>
                 <CountryFlagToggle isCanada={isCanada} onChange={setIsCanada} />
               </div>
-              {!showAdditionalFilters && (<>
-                <InstallerSearch value={inputValue} onChange={setInputValue} onSearch={handleSearch} />
-                <DistanceFilter selectedRadius={searchRadius} onRadiusChange={handleRadiusChange} />
-                <Separator />
-              </>)}
-              <BrandSkillFilter
+              {!showAdditionalFilters && (
+                <>
+                  <InstallerSearch value={inputValue} onChange={setInputValue} onSearch={handleSearch} />
+                  <div>
+                    <div className="text-[13px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+                      Distance ({distanceUnit})
+                    </div>
+                    <ToggleGroup
+                      type="single"
+                      value={String(searchRadius)}
+                      onValueChange={(value) => {
+                        if (value) handleRadiusChange(Number(value));
+                      }}
+                      className="flex flex-wrap items-center justify-start gap-1.5"
+                    >
+                      {distanceOptions.map((option) => (
+                        <ToggleGroupItem
+                          key={option.miles}
+                          value={String(option.miles)}
+                          aria-label={`${isCanada ? option.km : option.miles} ${distanceUnit}`}
+                          className="h-[30px] px-[11px] text-[13.5px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+                        >
+                          {isCanada ? option.km : option.miles}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </div>
+                </>
+              )}
+              <PublicBrandSkillFilter
                 selectedBrands={filterBrands}
                 selectedProductSkills={filterProductSkills}
                 selectedCertifications={filterCertifications}
-                onBrandChange={handleBrandChange}
-                onProductSkillChange={handleProductSkillChange}
-                onCertificationChange={handleCertificationChange}
+                onBrandsChange={handleBrandsChange}
+                onProductSkillsChange={handleProductSkillsChange}
+                onCertificationsChange={handleCertificationsChange}
                 brandsToShow={["Hunter Douglas", "Alta"]}
               />
-              <Separator />
               <div>
-                <h3 className="font-semibold text-lg mb-2">Other</h3>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="filter-accepts-shipments"
-                    checked={filterAcceptsShipments === 'yes'}
-                    onCheckedChange={(checked) => setFilterAcceptsShipments(checked ? 'yes' : 'any')}
-                  />
-                  <Label htmlFor="filter-accepts-shipments">Accepts Shipments</Label>
+                <div className="text-[13px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+                  Other
                 </div>
+                <ToggleGroup
+                  type="multiple"
+                  value={filterAcceptsShipments === 'yes' ? ['shipments'] : []}
+                  onValueChange={(value) =>
+                    setFilterAcceptsShipments(value.includes('shipments') ? 'yes' : 'any')
+                  }
+                  className="flex flex-wrap items-center justify-start gap-1.5"
+                >
+                  <ToggleGroupItem
+                    value="shipments"
+                    aria-label="Accepts Shipments"
+                    className="h-[30px] px-[11px] text-[13.5px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+                  >
+                    Accepts Shipments
+                  </ToggleGroupItem>
+                </ToggleGroup>
               </div>
               <Separator />
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-lg">Additional Filters</h3>
+                  <h3 className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">Additional Filters</h3>
                   <Switch id="additional-filters-toggle" checked={showAdditionalFilters} onCheckedChange={setShowAdditionalFilters} />
                 </div>
                 {showAdditionalFilters && (
