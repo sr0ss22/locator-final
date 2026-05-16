@@ -1863,7 +1863,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
                         <span className="text-gray-300 mx-1">·</span>
                         <span
                           className="text-gray-400"
-                          title={`${fsaEditOffMapCount.toLocaleString()} postals (likely PO boxes) have coordinates outside this FSA's polygon and aren't drawn. Use "Bulk actions…" to include them.`}
+                          title={`${fsaEditOffMapCount.toLocaleString()} postals (likely PO boxes) have coordinates outside this FSA's polygon and aren't shown on the map.`}
                         >
                           {fsaEditOffMapCount.toLocaleString()} off-map
                         </span>
@@ -1875,27 +1875,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* Reopens the bulk-action popup at the FSA centroid so a
-                user who lands here by mistake can still flip to bulk
-                Free / Paid / Remove without leaving edit mode. */}
-            {onFsaBulkAction && fsaEditFeature?.properties?.calculated_centroid && (
-              <button
-                type="button"
-                onClick={() => {
-                  const c = fsaEditFeature.properties.calculated_centroid;
-                  setFsaEditTarget(null);
-                  setFsaBulkPopup({
-                    fsa: fsaEditTarget.fsa,
-                    stateProvince: fsaEditTarget.stateProvince,
-                    latlng: L.latLng(c.lat, c.lng),
-                  });
-                }}
-                className="hidden sm:inline-flex h-7 px-2.5 items-center rounded text-xs font-medium text-gray-700 border border-gray-200 hover:bg-gray-100"
-                title="Switch to bulk add/remove for this FSA"
-              >
-                Bulk actions…
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setFsaEditTarget(null)}
