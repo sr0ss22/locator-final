@@ -325,16 +325,27 @@ const Locator: React.FC = () => {
   return (
     <div className="flex flex-col min-h-screen">
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow">
-        <div className="flex flex-col sm:flex-row items-center justify-center mb-8 text-center sm:text-left">
-          <img src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg" alt="Hunter Douglas Logo" className="h-12 mb-4 sm:mb-0 sm:mr-4" />
-          <h1
-            className="text-3xl font-bold text-[#5b676f]"
-            style={{ fontFamily: 'Lato, system-ui, sans-serif' }}
-          >
-            Installer Locator
-          </h1>
+        {/* Page header — logo + title on the left, action buttons on
+            the right. Moved out of the grid (was previously a row 2
+            cell) so the map and the installer list can stack
+            directly under each other in the right column with no
+            dead vertical space waiting on the buttons to clear. */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 text-center sm:text-left">
+          <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-3">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg" alt="Hunter Douglas Logo" className="h-10 sm:h-12" />
+            <h1
+              className="text-2xl sm:text-3xl font-bold text-[#5b676f]"
+              style={{ fontFamily: 'Lato, system-ui, sans-serif' }}
+            >
+              Installer Locator
+            </h1>
+          </div>
+          <div className="flex flex-wrap justify-center sm:justify-end gap-2">
+            <Button onClick={() => navigate("/public-locator")} variant="outline" size="sm">Public Locator View</Button>
+            <Button onClick={() => navigate("/installers")} size="sm">Installer Management</Button>
+          </div>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-6 lg:auto-rows-min">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-4 lg:auto-rows-min">
           {/* 1. Filters card — mobile #1, desktop col 1 row 1.
               Pill-button styling matches /public-locator so admins and
               end users see the same filter aesthetic. Section labels
@@ -424,34 +435,10 @@ const Locator: React.FC = () => {
             </div>
           </div>
 
-          {/* 2. Installer list — mobile #2, desktop col 2-3 row 3 */}
-          <div className="lg:col-start-2 lg:col-span-2 lg:row-start-3">
-            {isLoadingData ? (
-              <div className="text-center text-gray-500 mt-8">
-                <LoadingSayings />
-              </div>
-            ) : (
-              <InstallerList
-                installers={filteredAndSortedInstallers}
-                searchedZipCode={searchedZipCode}
-                selectedInstallerId={selectedInstallerId}
-                onInstallerCardClick={handleInstallerCardClick}
-                searchRadius={searchRadius}
-                distanceUnit={distanceUnit}
-                onViewCoverage={handleViewCoverage}
-                activeCoverageInstallerId={coverageInstallerId}
-              />
-            )}
-            {searchedZipCode && (!userLocation || userLocation.lat === null) && !loadingUserLocation && (!showAdditionalFilters || filterStates.length === 0) && (
-              <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
-            )}
-          </div>
-
-          {/* 3. Map — mobile #3, desktop col 2-3 row 1.
-              On lg screens the map stretches to match the height of the
-              "Find Installers" filter card (the tallest item in row 1).
-              On mobile it falls back to a fixed height since the layout
-              is stacked. */}
+          {/* 2. Map — mobile #2, desktop col 2-3 row 1.
+              Map height matches the filter card on lg+ so the two
+              row-1 cells stay aligned and there's no gap underneath
+              while the row resolves to the taller of the two. */}
           <div className="lg:col-start-2 lg:col-span-2 lg:row-start-1 lg:h-full">
             <div className="h-[500px] lg:h-full w-full rounded-lg overflow-hidden shadow-sm">
               <InstallerMapComponent
@@ -484,17 +471,35 @@ const Locator: React.FC = () => {
             </div>
           </div>
 
-          {/* 4. Action buttons — mobile #4, desktop col 2-3 row 2 */}
+          {/* 3. Installer list — mobile #3, desktop col 2-3 row 2.
+              Flows directly under the map in the right column so
+              there's no dead vertical space waiting on the action-
+              button row (those buttons moved up to the page header). */}
           <div className="lg:col-start-2 lg:col-span-2 lg:row-start-2">
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button onClick={() => navigate("/public-locator")} variant="outline">Public Locator View</Button>
-              <Button onClick={() => navigate("/installers")}>Installer Management</Button>
-            </div>
+            {isLoadingData ? (
+              <div className="text-center text-gray-500 mt-8">
+                <LoadingSayings />
+              </div>
+            ) : (
+              <InstallerList
+                installers={filteredAndSortedInstallers}
+                searchedZipCode={searchedZipCode}
+                selectedInstallerId={selectedInstallerId}
+                onInstallerCardClick={handleInstallerCardClick}
+                searchRadius={searchRadius}
+                distanceUnit={distanceUnit}
+                onViewCoverage={handleViewCoverage}
+                activeCoverageInstallerId={coverageInstallerId}
+              />
+            )}
+            {searchedZipCode && (!userLocation || userLocation.lat === null) && !loadingUserLocation && (!showAdditionalFilters || filterStates.length === 0) && (
+              <p className="text-center text-sm text-red-500 mt-4">Could not get coordinates for the entered zip code. Please try another.</p>
+            )}
           </div>
 
-          {/* 5. Installer summary — mobile #5, desktop col 1 row 2 (under filters) */}
+          {/* 4. Installer summary — mobile #4, desktop col 1 row 2 (under filters) */}
           {!isLoadingData && filteredAndSortedInstallers.length > 0 && (
-            <div className="lg:col-start-1 lg:col-span-1 lg:row-start-2 lg:row-span-2">
+            <div className="lg:col-start-1 lg:col-span-1 lg:row-start-2">
               <InstallerSummary
                 installers={filteredAndSortedInstallers}
                 searchedZipCode={searchedZipCode}

@@ -10,7 +10,6 @@ import { run as getIpLocation } from "@/functions/getIpLocation";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
-import CountryFlagToggle from "@/components/CountryFlagToggle";
 import InstallerSummary from "@/components/InstallerSummary";
 import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { useNavigate } from "react-router-dom";
@@ -61,29 +60,84 @@ const PublicLocator: React.FC = () => {
         if (coords.lat === null || coords.lng === null) {
           toast.error("Could not find a location for your search. Please try again.");
         }
-        return { ...coords, zipCode: coords.zipCode || "" };
+        return {
+          lat: coords.lat,
+          lng: coords.lng,
+          zipCode: coords.zipCode || "",
+          countryCode: coords.countryCode ?? null,
+        };
       } else {
-        let coords: { lat: number | null, lng: number | null } = { lat: null, lng: null };
+        // Initial load: try browser geolocation (most accurate), then
+        // IP. Country is taken from IP because the browser geolocation
+        // API gives lat/lng only — we fall back to a lat/lng heuristic
+        // if even that fails.
+        let coords: { lat: number | null; lng: number | null } = { lat: null, lng: null };
+        let countryCode: string | null = null;
         if (navigator.geolocation) {
           try {
-            const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 }));
+            const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+              navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 }),
+            );
             coords = { lat: position.coords.latitude, lng: position.coords.longitude };
-            toast.info("Your location detected via browser.");
-          } catch (error: any) {
-            toast.info("Could not get location from browser. Trying IP-based location...");
+          } catch (_error) {
+            // Suppressed: silently fall through to IP location. The
+            // previous version surfaced these as toasts but they fire
+            // routinely on browsers with location prompts dismissed,
+            // creating noise on first load.
           }
         }
         if (coords.lat === null || coords.lng === null) {
-          coords = await getIpLocation();
-          if (coords.lat !== null && coords.lng !== null) toast.info("Your location detected via IP address.");
-          else toast.info("Could not determine your location. Please enter a location.");
+          const ip = await getIpLocation();
+          coords = { lat: ip.lat, lng: ip.lng };
+          countryCode = ip.countryCode;
+        } else {
+          // Browser geolocation succeeded but doesn't carry a country;
+          // ask the IP service for the country code only so we still
+          // pick the right US/CA mode.
+          const ip = await getIpLocation();
+          countryCode = ip.countryCode;
         }
-        return { ...coords, zipCode: "" };
+        return {
+          lat: coords.lat,
+          lng: coords.lng,
+          zipCode: "",
+          countryCode,
+        };
       }
     },
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
+
+  // Single source of truth for country mode: prefer the explicit
+  // ISO country code returned by the geocoder / IP service, fall
+  // back to a coarse lat/lng heuristic (Canada is everything above
+  // roughly the 49th parallel within longitudes -141..-52, with a
+  // little slack for southernmost Ontario which dips below 42°).
+  // Updates the shared isCanada setting whenever a fresh location
+  // resolves — replaces the previous US/CA flag toggle on this page.
+  useEffect(() => {
+    if (!locationData) return;
+    const cc = locationData.countryCode?.toLowerCase();
+    if (cc === 'ca') {
+      if (!isCanada) setIsCanada(true);
+      return;
+    }
+    if (cc === 'us') {
+      if (isCanada) setIsCanada(false);
+      return;
+    }
+    // No reliable country code — heuristic from coordinates.
+    const lat = locationData.lat;
+    const lng = locationData.lng;
+    if (lat == null || lng == null) return;
+    const looksCanadian =
+      lng >= -141 && lng <= -52 && (lat >= 49 || (lat >= 41.7 && lng >= -83 && lng <= -74));
+    if (looksCanadian !== isCanada) setIsCanada(looksCanadian);
+    // We intentionally don't depend on `isCanada` to avoid a feedback
+    // loop where setting isCanada re-triggers this effect.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationData, setIsCanada]);
 
   const userSearchLocation = useMemo(() => ({
     lat: locationData?.lat || null,
@@ -277,11 +331,9 @@ const PublicLocator: React.FC = () => {
                 <CardHeader className="pb-2 pt-4">
                   {/* Mobile: clickable header acts as the collapse toggle and
                       shows a 1-line summary of the current filter state.
-                      Country flag toggle sits between the title and the
-                      filter-count badge so the user can switch countries
-                      without expanding the filters first. The wrapping
-                      <div> intercepts pointer events so tapping a flag
-                      doesn't also toggle the collapse. */}
+                      No country toggle — the US/CA mode is derived from
+                      the user's IP / browser geolocation and from any
+                      location they search for. */}
                   <div className="lg:hidden w-full flex items-center justify-between gap-2">
                     <button
                       type="button"
@@ -296,7 +348,6 @@ const PublicLocator: React.FC = () => {
                       )}
                     </button>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <CountryFlagToggle isCanada={isCanada} onChange={setIsCanada} />
                       {activeFilterCount > 0 && !isFiltersOpen && (
                         <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-sky-500 text-white text-xs font-semibold">
                           {activeFilterCount}
@@ -315,14 +366,11 @@ const PublicLocator: React.FC = () => {
                       </button>
                     </div>
                   </div>
-                  {/* Desktop: static title + the country flag toggle inline
-                      to the right. Replaces the previous auto-detect logic
-                      with an explicit, always-visible choice so border
-                      cities (Niagara, Detroit/Windsor, etc.) and bare
-                      city-name searches both behave predictably. */}
+                  {/* Desktop: static title; country auto-detects from
+                      the user's location so end users never see a
+                      US/CA toggle. */}
                   <div className="hidden lg:flex items-center justify-between gap-2">
                     <CardTitle className="text-xl font-semibold">Find Installers</CardTitle>
-                    <CountryFlagToggle isCanada={isCanada} onChange={setIsCanada} />
                   </div>
                 </CardHeader>
                 {/* Search bar lives outside the collapsible body so it stays

@@ -66,10 +66,19 @@ serve(async (req) => {
     }
 
     const result = data.results[0];
+    // `country_code` is OpenCage's ISO-3166-1 alpha-2 lowercase code
+    // (e.g. "us", "ca"). Returned so the public locator can auto-
+    // detect the country from the geocode result instead of asking
+    // the end user to flip a US/CA toggle.
+    const countryCode: string | null =
+      typeof result.components?.country_code === 'string'
+        ? String(result.components.country_code).toLowerCase()
+        : null;
     const out = {
       lat: result.geometry.lat,
       lng: result.geometry.lng,
       zipCode: result.components.postcode || null,
+      countryCode,
     };
 
     return new Response(JSON.stringify(out), {
