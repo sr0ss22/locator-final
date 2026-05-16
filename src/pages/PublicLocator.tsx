@@ -313,7 +313,7 @@ const PublicLocator: React.FC = () => {
                 >
                   {/* Distance — single-select pill row matching the brand/skill aesthetic. */}
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+                    <div className="text-[13px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
                       Distance ({distanceUnit})
                     </div>
                     <ToggleGroup
@@ -329,7 +329,7 @@ const PublicLocator: React.FC = () => {
                           key={option.miles}
                           value={String(option.miles)}
                           aria-label={`${isCanada ? option.km : option.miles} ${distanceUnit}`}
-                          className="h-7 px-2.5 text-xs rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+                          className="h-8 px-3 text-sm rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
                         >
                           {isCanada ? option.km : option.miles}
                         </ToggleGroupItem>
@@ -349,7 +349,7 @@ const PublicLocator: React.FC = () => {
 
                   {/* Other — multi-select pills mirror the rest of the filter pattern. */}
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+                    <div className="text-[13px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
                       Other
                     </div>
                     <ToggleGroup
@@ -367,14 +367,14 @@ const PublicLocator: React.FC = () => {
                       <ToggleGroupItem
                         value="shipments"
                         aria-label="Accepts Shipments"
-                        className="h-7 px-2.5 text-xs rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+                        className="h-8 px-3 text-sm rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
                       >
                         Accepts Shipments
                       </ToggleGroupItem>
                       <ToggleGroupItem
                         value="mileage"
                         aria-label="Mileage Covered"
-                        className="h-7 px-2.5 text-xs rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+                        className="h-8 px-3 text-sm rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
                       >
                         Mileage Covered
                       </ToggleGroupItem>
