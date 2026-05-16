@@ -276,10 +276,10 @@ const PublicLocator: React.FC = () => {
                     aria-controls="public-locator-filters"
                     className="lg:hidden w-full flex items-center justify-between gap-3 text-left"
                   >
-                    <div className="min-w-0">
-                      <CardTitle className="text-xl font-semibold">Find Installers</CardTitle>
+                    <div className="min-w-0 flex items-baseline gap-2">
+                      <CardTitle className="text-xl font-semibold whitespace-nowrap">Find Installers</CardTitle>
                       {!isFiltersOpen && (
-                        <p className="text-xs text-gray-500 mt-0.5 truncate">{collapsedSummary}</p>
+                        <span className="text-xs text-gray-500 truncate">{collapsedSummary}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
