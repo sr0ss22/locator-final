@@ -3,37 +3,33 @@
 --
 -- An FSA (e.g. "M5V") contains dozens or hundreds of 6-character postal
 -- codes. The Canada path of get_zip_coverage_aggregate already counts
--- installers per FSA (free / paid), but treating an FSA as "covered"
--- whenever any postal inside it is covered hides a really common case:
--- an installer who only services a handful of postal codes inside an
--- otherwise-uncovered FSA. The overlay then paints the whole FSA
--- polygon solid green, which reads as "fully covered" even though
--- 95% of the FSA has no service.
+-- installers per FSA, but treating an FSA as "covered" whenever any
+-- postal inside it is covered hides a really common case: an installer
+-- who only services a handful of postal codes inside an otherwise-
+-- uncovered FSA. The overlay then paints the whole FSA polygon solid
+-- green, which reads as "fully covered" even though 95% of the FSA has
+-- no service.
 --
--- TerritoryMap.tsx solves this for the admin editor by also counting
--- distinct postal codes assigned in each FSA and comparing against the
--- FSA total. This migration brings the same data shape to the public
--- coverage aggregate so the overlay can distinguish "fully covered"
--- from "partial coverage" the same way:
+-- This migration adds two new fields to the per-FSA aggregate so the
+-- frontend can distinguish "fully covered" from "partial coverage":
 --
 --   * free_postal_codes  -- distinct postals in this FSA covered as Approved
 --                           by ANY matching installer
 --   * paid_postal_codes  -- distinct postals in this FSA covered as
 --                           Needs Approval by ANY matching installer
 --
--- The frontend already loads the canonical FSA -> total_postal_count
--- map via `useCanadianFsaPostalCounts`, so once these counts are in
--- the response it can compute (free + paid) / total and pick a
--- "partial" pattern when the ratio is under 99%.
+-- IMPORTANT: We keep the original join order from migration 0175
+-- (fsa_centroids -> installer_zip_codes) instead of pre-aggregating
+-- the entire installer_zip_codes table. A blanket pre-aggregate of
+-- every row (millions across US + CA) blew the statement-timeout
+-- budget on production — the join-from-fsa_centroids approach lets
+-- the planner restrict the scan to just the postal codes that share
+-- a 3-char prefix with the in-radius FSAs, which is dramatically
+-- cheaper.
 --
--- For US ZIPs the same fields are returned for shape consistency but
--- they're effectively 0/1 per row (each zip IS one postal code), so
+-- For US ZIPs the same two fields are returned for shape consistency
+-- (effectively 0/1 per row since each zip IS one postal code), so
 -- nothing about US rendering changes.
---
--- Postgres can't add columns to the JSONB shape via CREATE OR REPLACE
--- alone when the function body changes, but we don't need to drop the
--- function this time (the parameter list is unchanged). CREATE OR
--- REPLACE is enough.
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.get_zip_coverage_aggregate(
@@ -162,6 +158,13 @@ BEGIN
     WHERE a.free_count + a.paid_count > 0;
 
   ELSE
+    -- Canada path. The join order here is critical: fsa_centroids is
+    -- ~thousands of rows (only the FSAs whose postals fall within
+    -- p_radius_miles of the search point), so joining FROM that side
+    -- into installer_zip_codes lets the planner constrain the scan
+    -- to a handful of FSA prefixes. Flipping the order (pre-aggregating
+    -- the entire installer_zip_codes table by FSA prefix first) blows
+    -- the 30s statement-timeout budget in production. Keep it this way.
     WITH matching_installers AS (
       SELECT i.id
       FROM public.installers i
@@ -227,37 +230,25 @@ BEGIN
       FROM candidate_postals
       GROUP BY fsa
     ),
-    -- Per-FSA postal-code aggregation. We normalize installer_zip_codes
-    -- to the same shape canadian_postal_codes uses (trimmed + upper)
-    -- before counting distinct postals, otherwise "m5v 1a1" and
-    -- "M5V 1A1" would double-count.
-    fsa_postal_aggregates AS (
-      SELECT
-        upper(left(replace(izc.zip_code, ' ', ''), 3)) AS fsa,
-        count(DISTINCT izc.installer_id)
-          FILTER (WHERE izc.status = 'Approved')                                AS free_installers,
-        count(DISTINCT izc.installer_id)
-          FILTER (WHERE izc.status = 'Needs Approval')                          AS paid_installers,
-        count(DISTINCT upper(replace(izc.zip_code, ' ', '')))
-          FILTER (WHERE izc.status = 'Approved')                                AS free_postal_codes,
-        count(DISTINCT upper(replace(izc.zip_code, ' ', '')))
-          FILTER (WHERE izc.status = 'Needs Approval')                          AS paid_postal_codes
-      FROM public.installer_zip_codes izc
-      JOIN matching_installers mi ON mi.id = izc.installer_id
-      GROUP BY upper(left(replace(izc.zip_code, ' ', ''), 3))
-    ),
     aggregated AS (
       SELECT
         f.fsa            AS zip_code,
         f.province_abbr  AS state_province,
         f.lat,
         f.lng,
-        COALESCE(fpa.free_installers,    0) AS free_count,
-        COALESCE(fpa.paid_installers,    0) AS paid_count,
-        COALESCE(fpa.free_postal_codes,  0) AS free_postal_codes,
-        COALESCE(fpa.paid_postal_codes,  0) AS paid_postal_codes
+        count(DISTINCT izc.installer_id)
+          FILTER (WHERE izc.status = 'Approved')                                AS free_count,
+        count(DISTINCT izc.installer_id)
+          FILTER (WHERE izc.status = 'Needs Approval')                          AS paid_count,
+        count(DISTINCT upper(replace(izc.zip_code, ' ', '')))
+          FILTER (WHERE izc.status = 'Approved')                                AS free_postal_codes,
+        count(DISTINCT upper(replace(izc.zip_code, ' ', '')))
+          FILTER (WHERE izc.status = 'Needs Approval')                          AS paid_postal_codes
       FROM fsa_centroids f
-      JOIN fsa_postal_aggregates fpa ON fpa.fsa = f.fsa
+      JOIN public.installer_zip_codes izc
+             ON upper(left(replace(izc.zip_code, ' ', ''), 3)) = f.fsa
+      JOIN matching_installers mi ON mi.id = izc.installer_id
+      GROUP BY f.fsa, f.province_abbr, f.lat, f.lng
     )
     SELECT jsonb_build_object(
       'country', 'Canada',

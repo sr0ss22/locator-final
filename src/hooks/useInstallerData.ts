@@ -209,7 +209,22 @@ export const useAllInstallers = () => {
 // Returns the set of installer IDs whose territory has the given zip approved.
 // Used by the admin Locator to surface the "Mileage Covered" badge on cards
 // when the admin searches by zip (mirrors the public locator behavior).
+//
+// Only fires for inputs that actually look like a postal code (US ZIP or
+// Canadian 6-char). Free-form city searches like "toronto" used to pass
+// straight through to `zip_code=eq.toronto`, which produced an avalanche
+// of meaningless 500s in the network panel.
+const looksLikePostalCode = (raw: string): boolean => {
+  const trimmed = raw.trim();
+  // US ZIP (5 digits, optional +4)
+  if (/^\d{5}(-?\d{4})?$/.test(trimmed)) return true;
+  // Canadian postal code (A1A 1A1 or A1A1A1), space optional
+  if (/^[A-Za-z]\d[A-Za-z][ ]?\d[A-Za-z]\d$/.test(trimmed)) return true;
+  return false;
+};
+
 export const useInstallersInLocalArea = (zip: string | null | undefined) => {
+  const enabled = !!zip && looksLikePostalCode(zip);
   return useQuery({
     queryKey: ['installersInLocalArea', zip],
     queryFn: async () => {
@@ -232,7 +247,7 @@ export const useInstallersInLocalArea = (zip: string | null | undefined) => {
       }
       return new Set(allRows.map((r) => r.installer_id));
     },
-    enabled: !!zip,
+    enabled,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: false,
   });
