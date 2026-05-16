@@ -493,6 +493,12 @@ const PublicLocator: React.FC = () => {
                   // public overlay; today `enabled: false` short-
                   // circuits it.)
                   installerIds: filteredAndSortedInstallers.map((i) => i.id),
+                  // Public locator: default the legend OPEN so first-
+                  // time visitors immediately see what the colours
+                  // mean. Persisted per page so once they collapse it
+                  // their preference sticks for the session.
+                  legendDefaultExpanded: true,
+                  legendPersistKey: 'hdis:coverage-legend-expanded:public-locator',
                 }}
               />
             </div>

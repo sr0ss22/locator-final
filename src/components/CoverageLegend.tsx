@@ -1,5 +1,5 @@
 import React from "react";
-import { Eye, EyeOff, Search, Wrench, X } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, Search, Wrench, X } from "lucide-react";
 import { COVERAGE_COLORS } from "@/lib/coverageStyle";
 import { cn } from "@/lib/utils";
 
@@ -7,6 +7,8 @@ interface CoverageLegendProps {
   visible: boolean;
   onToggle: () => void;
   // Optional: rendered loading state, e.g. while RPC is in flight.
+  // The spinner is rendered in the header so it stays visible even
+  // when the user collapses the legend body.
   isLoading?: boolean;
   // When set, indicates the overlay is currently scoped to a single
   // installer (or small subset). Rendered as a removable chip with an
@@ -18,6 +20,13 @@ interface CoverageLegendProps {
   // "search mode" so an admin can look up a specific ZIP / FSA /
   // postal code without first finding it on the map.
   onSearchClick?: () => void;
+  // Controls whether the swatch list + filter chip render. The
+  // overlay's on/off state (`visible`) is independent — when the
+  // overlay is off but the legend is expanded we still hide the
+  // swatch list since the swatches would no longer describe what's
+  // drawn on the map.
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
   className?: string;
 }
 
@@ -74,8 +83,19 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
   filterLabel,
   onClearFilter,
   onSearchClick,
+  expanded = true,
+  onToggleExpanded,
   className,
 }) => {
+  // Body (swatches + filter chip) only renders when the overlay is
+  // actually on AND the user hasn't collapsed the legend. The header
+  // (eye + label + search + spinner) is always present so the user
+  // has a stable hit-target to expand/collapse and so the loading
+  // spinner keeps showing while a query is in flight even if the
+  // legend is collapsed.
+  const bodyOpen = visible && expanded;
+  const canCollapse = typeof onToggleExpanded === "function";
+
   return (
     <div
       className={cn(
@@ -106,18 +126,37 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
             <Search className="h-4 w-4" />
           </button>
         )}
-        {isLoading && visible && (
+        {isLoading && (
           <Wrench
             // Matches the LoadingSayings spinner the rest of the app
             // uses, just sized for the legend pill and tinted blue to
             // match the sky-500 accent used by the selected pin and
-            // other primary actions.
+            // other primary actions. Rendered regardless of expanded
+            // state so the user always knows when coverage is loading.
             className="h-3.5 w-3.5 animate-spin text-sky-500 ml-0.5"
             aria-label="Loading coverage"
           />
         )}
+        {canCollapse && (
+          <button
+            type="button"
+            onClick={onToggleExpanded}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Collapse coverage legend" : "Expand coverage legend"}
+            title={expanded ? "Collapse legend" : "Expand legend"}
+            className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-gray-100 text-gray-700 ml-0.5"
+          >
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 transition-transform duration-200",
+                expanded ? "" : "-rotate-90",
+              )}
+              aria-hidden="true"
+            />
+          </button>
+        )}
       </div>
-      {visible && filterLabel && (
+      {bodyOpen && filterLabel && (
         <div className="px-2 pb-1.5 -mt-0.5">
           <div
             className="inline-flex items-center gap-1 max-w-[220px] rounded-full bg-blue-50 text-blue-800 border border-blue-200 pl-2 pr-1 py-0.5"
@@ -139,7 +178,7 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
           </div>
         </div>
       )}
-      {visible && (
+      {bodyOpen && (
         <ul className="px-2 pb-2 pt-0 space-y-1 text-gray-700">
           <li className="flex items-center gap-2">
             <SwatchSolid color={COVERAGE_COLORS.free.fill} />

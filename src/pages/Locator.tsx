@@ -569,6 +569,11 @@ const Locator: React.FC = () => {
                   onClearFilter: handleClearCoverageFilter,
                   onZipClick: handleZipClick,
                   onSearchClick: handleOpenCoverageSearch,
+                  // Internal locator: keep the legend collapsed by
+                  // default so the map area stays uncluttered for
+                  // admins who already know what the colours mean.
+                  legendDefaultExpanded: false,
+                  legendPersistKey: 'hdis:coverage-legend-expanded:locator',
                 }}
               />
             </div>

@@ -67,6 +67,16 @@ interface CoverageOverlayConfig {
   // (opens the coverage detail panel in "search mode"). Optional;
   // when omitted the legend hides the button.
   onSearchClick?: () => void;
+  // Initial state of the legend body (swatch list + filter chip).
+  // Persisted per page via sessionStorage when `legendPersistKey` is
+  // also provided. Defaults to `true` (expanded) so callers that
+  // don't care get the legacy behaviour.
+  legendDefaultExpanded?: boolean;
+  // sessionStorage key for the legend's expanded/collapsed state.
+  // When set, the legend remembers the user's choice for the rest
+  // of the session. Different keys per page so /locator and
+  // /public-locator can have independent defaults.
+  legendPersistKey?: string;
 }
 
 interface InstallerMapProps {
@@ -86,6 +96,31 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
   // the overlay isn't configured at all so this hook always runs.
   const [coverageVisible, setCoverageVisible] = useState<boolean>(coverageOverlay?.defaultVisible ?? false);
   const [coverageLoading, setCoverageLoading] = useState<boolean>(false);
+
+  // Legend body expanded/collapsed. Persisted to sessionStorage when
+  // a key is provided so the user's choice survives page navigations
+  // within the same tab (but not across tabs / browser restarts).
+  const legendPersistKey = coverageOverlay?.legendPersistKey;
+  const legendDefaultExpanded = coverageOverlay?.legendDefaultExpanded ?? true;
+  const [legendExpanded, setLegendExpanded] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !legendPersistKey) return legendDefaultExpanded;
+    try {
+      const stored = window.sessionStorage.getItem(legendPersistKey);
+      if (stored === "1") return true;
+      if (stored === "0") return false;
+    } catch {
+      // sessionStorage can throw in privacy modes; just fall back.
+    }
+    return legendDefaultExpanded;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || !legendPersistKey) return;
+    try {
+      window.sessionStorage.setItem(legendPersistKey, legendExpanded ? "1" : "0");
+    } catch {
+      // Best-effort persistence; failures are non-fatal.
+    }
+  }, [legendPersistKey, legendExpanded]);
 
   // When the parent activates a per-installer filter, auto-show the
   // overlay so the user actually sees the result of the action. We
@@ -371,6 +406,8 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
           filterLabel={coverageOverlay?.filterLabel ?? null}
           onClearFilter={coverageOverlay?.onClearFilter}
           onSearchClick={coverageOverlay?.onSearchClick}
+          expanded={legendExpanded}
+          onToggleExpanded={() => setLegendExpanded((e) => !e)}
           className="top-3 right-3"
         />
       )}
