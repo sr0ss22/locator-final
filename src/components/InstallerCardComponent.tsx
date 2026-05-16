@@ -82,15 +82,7 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
             )}
           </div>
           {(isInactive || showMileageBadge) && (
-            <div className="flex flex-col items-end gap-1 flex-shrink-0">
-              {isInactive && (
-                <Badge
-                  variant="default"
-                  className="border-transparent bg-pink-100 text-red-700 hover:bg-pink-200"
-                >
-                  Inactive
-                </Badge>
-              )}
+            <div className="flex flex-row items-center gap-1.5 flex-shrink-0">
               {showMileageBadge && (
                 <Badge
                   variant="default"
@@ -102,6 +94,14 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
                   )}
                 >
                   {installer.is_local_service_area ? "Mileage Covered" : "Mileage Charged"}
+                </Badge>
+              )}
+              {isInactive && (
+                <Badge
+                  variant="default"
+                  className="border-transparent bg-pink-100 text-red-700 hover:bg-pink-200"
+                >
+                  Inactive
                 </Badge>
               )}
             </div>
