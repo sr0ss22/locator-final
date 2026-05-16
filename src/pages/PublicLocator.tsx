@@ -244,10 +244,14 @@ const PublicLocator: React.FC = () => {
   return (
     <div className="flex flex-col min-h-screen">
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 lg:pt-4 flex-grow">
-        <div className="flex flex-col sm:flex-row items-center justify-center mb-4 text-center sm:text-left">
-          <img src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg" alt="Hunter Douglas Logo" className="h-9 mb-2 sm:mb-0 sm:mr-3" />
+        <div className="flex flex-row items-center justify-center gap-2 sm:gap-3 mb-4 text-left">
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg"
+            alt="Hunter Douglas Logo"
+            className="h-7 sm:h-9 flex-shrink-0"
+          />
           <h1
-            className="text-2xl font-bold text-[#5b676f]"
+            className="text-lg sm:text-2xl font-bold text-[#5b676f] whitespace-nowrap"
             style={{ fontFamily: 'Lato, system-ui, sans-serif' }}
           >
             Installer Locator
@@ -390,9 +394,14 @@ const PublicLocator: React.FC = () => {
                 installers={filteredAndSortedInstallers}
                 selectedInstallerId={null}
                 isPublicView={true}
+                // Coverage overlay intentionally disabled on the public
+                // locator for now — leaves the underlying machinery in place
+                // (and still active on /locator for admins) but hides both
+                // the polygons and the legend from end users. Flip
+                // `enabled: true` and set `defaultVisible` to expose it again.
                 coverageOverlay={{
-                  enabled: true,
-                  defaultVisible: true,
+                  enabled: false,
+                  defaultVisible: false,
                   searchCenter: userSearchLocation ?? { lat: null, lng: null },
                   searchRadiusMiles: searchRadius,
                   brands: selectedBrands,
