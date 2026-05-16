@@ -145,9 +145,17 @@ const Locator: React.FC = () => {
         latitude: rawInstaller.latitude, longitude: rawInstaller.longitude,
         installerVendorId: rawInstaller.installer_vendor_id?.toString(),
         acceptsShipments: toBoolean(rawInstaller.shipment),
-        is_local_service_area: searchedZipCode
-          ? localAreaInstallerIds?.has(rawInstaller.id) ?? false
-          : undefined,
+        // Only stamp a real true/false when we actually have a local-area
+        // lookup to consult. The hook deliberately skips itself for
+        // free-form searches like "Calgary" (no eq.calgary against
+        // installer_zip_codes), so `localAreaInstallerIds` will be
+        // undefined in that case and we leave `is_local_service_area`
+        // undefined too — that hides the mileage badge instead of
+        // falsely tagging every installer as "Mileage Charged".
+        is_local_service_area:
+          searchedZipCode && localAreaInstallerIds
+            ? localAreaInstallerIds.has(rawInstaller.id)
+            : undefined,
         rawSupabaseData: rawInstaller,
       };
     });
