@@ -18,12 +18,14 @@ const ALL_PRODUCT_SKILLS: InstallerSkill[] = ["Blinds & Shades", "Shutters", "Dr
 const ALL_CERTIFICATIONS: InstallerCertification[] = ["Motorization Pro", "Certified Installer", "Master Installer", "Shutter Pro", "Drapery Pro"];
 
 // Pill that slots into our wrapping ToggleGroup. Selected state uses a
-// soft sky background so it reads "active" without shouting. Sizes
-// (h-8 + text-sm + px-3) are also the public-locator filter's standard
-// pill — keep PublicLocator's inline Distance/Other pills in sync if
-// you tune this.
+// soft sky background so it reads "active" without shouting. Sizes are
+// the public-locator filter's standard pill — keep PublicLocator's
+// inline Distance/Other pills in sync if you tune this. The
+// non-standard 30px / 13.5px sit between Tailwind's h-7/h-8 and
+// text-xs/text-sm: just a hair smaller than the round numbers, picked
+// to keep the filter content from overflowing its locked 540 px card.
 const pillClass =
-  "h-8 px-3 text-sm rounded-full border border-input bg-transparent text-gray-700 " +
+  "h-[30px] px-[11px] text-[13.5px] rounded-full border border-input bg-transparent text-gray-700 " +
   "hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300";
 
 const sectionLabelClass = "text-[13px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5";

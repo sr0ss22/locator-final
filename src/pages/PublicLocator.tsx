@@ -329,7 +329,7 @@ const PublicLocator: React.FC = () => {
                           key={option.miles}
                           value={String(option.miles)}
                           aria-label={`${isCanada ? option.km : option.miles} ${distanceUnit}`}
-                          className="h-8 px-3 text-sm rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+                          className="h-[30px] px-[11px] text-[13.5px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
                         >
                           {isCanada ? option.km : option.miles}
                         </ToggleGroupItem>
@@ -367,14 +367,14 @@ const PublicLocator: React.FC = () => {
                       <ToggleGroupItem
                         value="shipments"
                         aria-label="Accepts Shipments"
-                        className="h-8 px-3 text-sm rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+                        className="h-[30px] px-[11px] text-[13.5px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
                       >
                         Accepts Shipments
                       </ToggleGroupItem>
                       <ToggleGroupItem
                         value="mileage"
                         aria-label="Mileage Covered"
-                        className="h-8 px-3 text-sm rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+                        className="h-[30px] px-[11px] text-[13.5px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
                       >
                         Mileage Covered
                       </ToggleGroupItem>
