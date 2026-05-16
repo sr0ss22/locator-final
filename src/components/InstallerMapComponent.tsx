@@ -113,9 +113,22 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
     popupAnchor: [0, -35], // Adjust popup to appear above the star
   });
 
-  // Custom icon for numbered installers (colored MapPin with circular number)
-  const createNumberedIcon = (number: number, installerId: string, currentSelectedInstallerId: string | null) => {
-    const fillColor = installerId === currentSelectedInstallerId ? '#0EA5E9' : '#000000'; // Sky Blue if selected, black otherwise
+  // Custom icon for numbered installers (colored MapPin with circular number).
+  // Selected → sky blue; inactive → gray (so admins can spot which pins are
+  // dormant at a glance); otherwise → black. Selected wins over inactive
+  // so the user's click feedback isn't masked.
+  const createNumberedIcon = (
+    number: number,
+    installerId: string,
+    currentSelectedInstallerId: string | null,
+    isInactive: boolean,
+  ) => {
+    let fillColor = '#000000';
+    if (installerId === currentSelectedInstallerId) {
+      fillColor = '#0EA5E9';
+    } else if (isInactive) {
+      fillColor = '#9CA3AF';
+    }
     return L.divIcon({
       html: `<div class="relative flex items-center justify-center" style="width: 48px; height: 48px;">
               <svg stroke="currentColor" fill="${fillColor}" stroke-width="0" viewBox="0 0 24 24" height="48px" width="48px" xmlns="http://www.w3.org/2000/svg">
@@ -232,7 +245,15 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
           <Marker
             key={installer.id}
             position={[installer.latitude, installer.longitude]}
-            icon={createNumberedIcon(pinNumber, installer.id, selectedInstallerId)}
+            icon={createNumberedIcon(
+              pinNumber,
+              installer.id,
+              selectedInstallerId,
+              // Public locator already excludes inactive installers via the
+              // server-side RPC, so isInactive only ever flips true on the
+              // internal locator. Safe to evaluate either way.
+              installer.rawSupabaseData?.is_active !== 1,
+            )}
           >
             {isPublicView ? (
               // Public view: anonymized capabilities only. No header (pin

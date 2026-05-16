@@ -125,10 +125,23 @@ const CoverageOverlayInner: React.FC<CoverageOverlayProps> = ({
     installerIds,
   });
 
+  // Feed the aggregate's zip list into the geometry RPC so it only
+  // returns polygons we'll actually render. This bypasses the radius-
+  // based 5000-row cap that was silently dropping outer ZIPs at large
+  // radii (e.g. 500 miles from a central-US city), AND keeps the
+  // payload tightly bounded by the number of populated ZIPs rather
+  // than every ZIP inside the circle.
+  const targetZipCodes = useMemo<string[] | null>(() => {
+    if (country !== "USA") return null;
+    if (!aggregate.data) return null;
+    return aggregate.data.items.map((i) => i.zip);
+  }, [country, aggregate.data]);
+
   const usGeo = useUsZipGeometries({
-    enabled: country === "USA",
+    enabled: country === "USA" && aggregate.data != null,
     center,
     radiusMiles,
+    zipCodes: targetZipCodes,
   });
 
   const caGeo = useCanadaFsaGeometries({
