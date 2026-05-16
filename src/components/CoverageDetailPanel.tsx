@@ -4,8 +4,11 @@ import { Loader2, MapPin, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { useCoverageDetail, type CoverageDetailRow } from "@/hooks/useInstallerData";
+
+type StatusFilter = "all" | "free" | "paid";
 
 /**
  * Slide-in side panel that shows the per-postal-code coverage breakdown
@@ -67,6 +70,17 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
 
   const [searchError, setSearchError] = useState<string | null>(null);
 
+  // Status pill filter — restricts the rendered postal-code list to
+  // Free (status = Approved) or Paid (status = Needs Approval). The
+  // colour/label scheme mirrors the legend swatches and the row
+  // badges below. Resets to "all" whenever the user opens a new
+  // target so an old filter doesn't accidentally hide everything on
+  // a fresh lookup.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  useEffect(() => {
+    setStatusFilter("all");
+  }, [target?.country, target?.zipOrFsa]);
+
   // Auto-focus the input the first time the panel opens — covers both
   // polygon clicks (so the input is ready for a follow-up search) and
   // the search-mode entry (where it's the only thing to interact with).
@@ -98,29 +112,59 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
     enabled,
   });
 
+  // Bucket counts off the unfiltered row set so the tab labels
+  // always show the underlying totals (filtering shouldn't make the
+  // counts in the tabs themselves move).
+  const totalRowCount = data?.rows.length ?? 0;
+  const freeRowCount = useMemo(
+    () => (data?.rows ?? []).filter((r) => r.status === "Approved").length,
+    [data],
+  );
+  const paidRowCount = useMemo(
+    () => (data?.rows ?? []).filter((r) => r.status === "Needs Approval").length,
+    [data],
+  );
+
+  // Rows after the status pill is applied — drives the rendered list
+  // and the "X covering this area" header subtitle.
+  const filteredRows = useMemo<CoverageDetailRow[]>(() => {
+    if (!data?.rows) return [];
+    if (statusFilter === "all") return data.rows;
+    const wanted = statusFilter === "free" ? "Approved" : "Needs Approval";
+    return data.rows.filter((r) => r.status === wanted);
+  }, [data, statusFilter]);
+
   // Group rows by postal code so each postal renders as a small section
   // with the installers covering it. For US ZIPs this collapses to a
   // single section (one polygon = one postal code) which is exactly
   // what we want.
   const grouped = useMemo(() => {
     const map = new Map<string, CoverageDetailRow[]>();
-    if (!data?.rows) return map;
-    for (const row of data.rows) {
+    for (const row of filteredRows) {
       const bucket = map.get(row.postal_code) ?? [];
       bucket.push(row);
       map.set(row.postal_code, bucket);
     }
     return map;
-  }, [data]);
+  }, [filteredRows]);
 
-  const coveredPostalCount = grouped.size;
+  // Count of postals across the WHOLE result set (independent of the
+  // status filter) so the FSA ratio subtitle stays accurate even
+  // while the user is poking at the tabs.
+  const coveredPostalCount = useMemo(() => {
+    if (!data?.rows) return 0;
+    const postals = new Set<string>();
+    for (const row of data.rows) postals.add(row.postal_code);
+    return postals.size;
+  }, [data]);
   const totalPostalCount = target?.totalPostalCodes ?? null;
   const installerCount = useMemo(() => {
-    if (!data?.rows) return 0;
     const ids = new Set<string>();
-    for (const row of data.rows) ids.add(row.installer_id);
+    for (const row of filteredRows) ids.add(row.installer_id);
     return ids.size;
-  }, [data]);
+  }, [filteredRows]);
+
+  const filteredPostalCount = grouped.size;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,16 +210,18 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
 
   return (
     <aside
-      // Anchored to the LEFT edge of the viewport — small enough that
-      // the map (in the centre column of the locator layout) is still
-      // visible to its right, but tall enough to scroll a long postal-
-      // code list. `pointer-events-none` when closed so clicks pass
-      // through to anything underneath.
+      // Anchored to the LEFT edge of the viewport. Full-screen width
+      // on small viewports (a 380 px panel on a 360 px phone leaves a
+      // useless sliver of map behind it and the user can't scroll
+      // through long postal lists with one thumb). Locked at 380 px
+      // from sm+ so on desktop the map and the rest of the layout
+      // stay visible. `pointer-events-none` when closed so clicks
+      // pass through to anything underneath.
       aria-hidden={!open}
       aria-label="Coverage details"
       className={cn(
         "fixed left-0 top-0 bottom-0 z-[1100]",
-        "w-[min(380px,92vw)] sm:w-[380px]",
+        "w-screen sm:w-[380px]",
         "bg-white border-r border-gray-200 shadow-xl",
         "flex flex-col",
         "transform-gpu transition-transform duration-300 ease-out",
@@ -232,6 +278,46 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
         )}
       </form>
 
+      {/* Status pill row — only shown when there are results to filter.
+          Mirrors the Free / Paid colour vocabulary the legend and row
+          badges use so it reads as "filter by the colours you see".
+          Counts come off the unfiltered row set so each pill always
+          shows the true total in its bucket. */}
+      {enabled && !isLoading && totalRowCount > 0 && (
+        <div className="px-5 pb-3">
+          <ToggleGroup
+            type="single"
+            value={statusFilter}
+            onValueChange={(value) => {
+              if (value) setStatusFilter(value as StatusFilter);
+            }}
+            className="flex w-full items-center gap-1.5"
+          >
+            <ToggleGroupItem
+              value="all"
+              aria-label="Show all"
+              className="flex-1 h-7 text-[12px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+            >
+              All <span className="ml-1 text-[10px] text-gray-400">{totalRowCount}</span>
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="free"
+              aria-label="Show free only"
+              className="flex-1 h-7 text-[12px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-green-50 data-[state=on]:text-green-700 data-[state=on]:border-green-300"
+            >
+              Free <span className="ml-1 text-[10px] text-gray-400">{freeRowCount}</span>
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="paid"
+              aria-label="Show paid only"
+              className="flex-1 h-7 text-[12px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-orange-50 data-[state=on]:text-orange-700 data-[state=on]:border-orange-300"
+            >
+              Paid <span className="ml-1 text-[10px] text-gray-400">{paidRowCount}</span>
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      )}
+
       <Separator />
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -249,9 +335,23 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
           </div>
         ) : error ? (
           <div className="text-sm text-red-600">Failed to load coverage details.</div>
-        ) : coveredPostalCount === 0 ? (
+        ) : totalRowCount === 0 ? (
           <div className="text-sm text-gray-500 py-6 text-center">
             No coverage from the currently visible installers.
+          </div>
+        ) : filteredPostalCount === 0 ? (
+          <div className="text-sm text-gray-500 py-6 text-center space-y-2">
+            <p>
+              No {statusFilter === "free" ? "free" : "paid"} coverage from the
+              currently visible installers.
+            </p>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("all")}
+              className="text-xs text-sky-600 hover:text-sky-800 underline-offset-2 hover:underline"
+            >
+              Show all coverage
+            </button>
           </div>
         ) : (
           <ul className="space-y-3">
