@@ -1,8 +1,9 @@
 import React, { memo } from "react";
 import { Card } from "@/components/ui/card";
-import { Phone, MapPin, BadgeCheck, Truck } from "lucide-react";
+import { Phone, MapPin, BadgeCheck, Truck, Map as MapIcon } from "lucide-react";
 import { Installer } from "@/types/installer";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 
@@ -14,6 +15,13 @@ interface InstallerCardComponentProps {
   onInstallerCardClick: (id: string) => void;
   isPublicView?: boolean;
   searchedZipCode?: string;
+  // Internal locator only: when provided, renders the "View coverage"
+  // map icon next to the distance. Clicking it should scope the
+  // coverage overlay to JUST this installer (parent handles state).
+  onViewCoverage?: (installerId: string) => void;
+  // When set and equal to this installer's id, the icon renders in an
+  // active/selected style so it's obvious which row drove the filter.
+  activeCoverageInstallerId?: string | null;
 }
 
 const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
@@ -24,6 +32,8 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
   onInstallerCardClick,
   isPublicView = false,
   searchedZipCode,
+  onViewCoverage,
+  activeCoverageInstallerId,
 }) => {
   const { distanceUnit } = useCountrySettings();
 
@@ -44,6 +54,15 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
   const showMileageBadge = !!searchedZipCode && installer.is_local_service_area !== undefined;
   const hasBrands = installer.brands && installer.brands.length > 0;
   const hasSkills = installer.skills && installer.skills.length > 0;
+
+  // The "View coverage" RPC excludes inactive installers (is_active <> 1)
+  // so the icon would just paint an empty overlay. Hide it instead of
+  // pretending it'll do something.
+  const isActiveInstaller = installer.rawSupabaseData?.is_active === 1;
+  const showViewCoverageButton =
+    !isPublicView && !!onViewCoverage && isActiveInstaller;
+  const isCoverageActiveForThisRow =
+    !!activeCoverageInstallerId && activeCoverageInstallerId === installer.id;
 
   return (
     <Card
@@ -66,6 +85,35 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
                 <span className="text-gray-600 whitespace-nowrap">
                   {formattedDistance}
                 </span>
+              )}
+              {showViewCoverageButton && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      // stopPropagation lets the rest of the card stay
+                      // clickable for opening the installer record.
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewCoverage?.(installer.id);
+                      }}
+                      aria-label="View coverage on map"
+                      aria-pressed={isCoverageActiveForThisRow}
+                      className={cn(
+                        "inline-flex items-center justify-center h-6 w-6 rounded-md flex-shrink-0",
+                        "text-gray-500 hover:text-sky-700 hover:bg-sky-50",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500",
+                        "transition-colors",
+                        isCoverageActiveForThisRow && "text-sky-700 bg-sky-100 hover:bg-sky-100",
+                      )}
+                    >
+                      <MapIcon className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={4}>
+                    {isCoverageActiveForThisRow ? "Showing coverage" : "View coverage"}
+                  </TooltipContent>
+                </Tooltip>
               )}
             </div>
             {cityStateZip && isPublicView && (

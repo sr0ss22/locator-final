@@ -35,6 +35,10 @@ interface UseCoverageAggregateArgs {
   skills: InstallerSkill[];
   certifications: InstallerCertification[];
   acceptsShipments: boolean;
+  // When set, restrict the aggregate to JUST these installers (powers
+  // the internal locator's per-card "View coverage" filter). Null /
+  // empty means "all matching installers" (the default overlay).
+  installerIds?: string[] | null;
 }
 
 /**
@@ -55,7 +59,9 @@ export function useCoverageAggregate({
   skills,
   certifications,
   acceptsShipments,
+  installerIds,
 }: UseCoverageAggregateArgs) {
+  const installerIdsFiltered = installerIds && installerIds.length > 0 ? installerIds : null;
   return useQuery<CoverageAggregateResponse>({
     queryKey: [
       "coverageAggregate",
@@ -67,6 +73,7 @@ export function useCoverageAggregate({
       [...skills].sort().join(","),
       [...certifications].sort().join(","),
       acceptsShipments,
+      installerIdsFiltered ? [...installerIdsFiltered].sort().join(",") : null,
     ],
     enabled: enabled && center.lat != null && center.lng != null && radiusMiles > 0,
     queryFn: async () => {
@@ -82,6 +89,7 @@ export function useCoverageAggregate({
         p_skills: nullIfEmpty(skills),
         p_certifications: nullIfEmpty(certifications),
         p_accepts_shipments: acceptsShipments ? true : null,
+        p_installer_ids: installerIdsFiltered,
       });
       if (error) throw error;
       return (data as CoverageAggregateResponse) ?? { country, items: [] };

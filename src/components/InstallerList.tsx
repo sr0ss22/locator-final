@@ -10,9 +10,13 @@ interface InstallerListProps {
   isPublicView?: boolean;
   searchRadius: number;
   distanceUnit: 'miles' | 'km';
+  // Internal locator only — forwarded straight to each card so the
+  // per-row "View coverage" map icon can drive the overlay filter.
+  onViewCoverage?: (installerId: string) => void;
+  activeCoverageInstallerId?: string | null;
 }
 
-const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCode, selectedInstallerId, onInstallerCardClick, isPublicView = false, searchRadius, distanceUnit }) => {
+const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCode, selectedInstallerId, onInstallerCardClick, isPublicView = false, searchRadius, distanceUnit, onViewCoverage, activeCoverageInstallerId }) => {
   const displayRadius = distanceUnit === 'km' ? Math.round(searchRadius * 1.60934) : searchRadius;
 
   if (installers.length === 0 && searchedZipCode) {
@@ -42,6 +46,8 @@ const InstallerList: React.FC<InstallerListProps> = ({ installers, searchedZipCo
           onInstallerCardClick={onInstallerCardClick}
           isPublicView={isPublicView}
           searchedZipCode={searchedZipCode}
+          onViewCoverage={onViewCoverage}
+          activeCoverageInstallerId={activeCoverageInstallerId}
         />
       ))}
     </div>

@@ -1,5 +1,5 @@
 import React from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, X } from "lucide-react";
 import { COVERAGE_COLORS } from "@/lib/coverageStyle";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +8,11 @@ interface CoverageLegendProps {
   onToggle: () => void;
   // Optional: rendered loading state, e.g. while RPC is in flight.
   isLoading?: boolean;
+  // When set, indicates the overlay is currently scoped to a single
+  // installer (or small subset). Rendered as a removable chip with an
+  // 'X' that fires onClearFilter.
+  filterLabel?: string | null;
+  onClearFilter?: () => void;
   className?: string;
 }
 
@@ -47,6 +52,8 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
   visible,
   onToggle,
   isLoading,
+  filterLabel,
+  onClearFilter,
   className,
 }) => {
   return (
@@ -72,6 +79,28 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
           <span className="text-[10px] text-gray-500 ml-1">loading…</span>
         )}
       </div>
+      {visible && filterLabel && (
+        <div className="px-2 pb-1.5 -mt-0.5">
+          <div
+            className="inline-flex items-center gap-1 max-w-[220px] rounded-full bg-blue-50 text-blue-800 border border-blue-200 pl-2 pr-1 py-0.5"
+            title={`Coverage scoped to: ${filterLabel}`}
+          >
+            <span className="truncate text-[11px] font-medium">
+              Showing: {filterLabel}
+            </span>
+            {onClearFilter && (
+              <button
+                type="button"
+                onClick={onClearFilter}
+                aria-label="Clear coverage filter"
+                className="inline-flex items-center justify-center h-4 w-4 rounded-full hover:bg-blue-100 text-blue-700"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {visible && (
         <ul className="px-2 pb-2 pt-0 space-y-1 text-gray-700">
           <li className="flex items-center gap-2">

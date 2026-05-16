@@ -36,6 +36,10 @@ const Locator: React.FC = () => {
   const [filterAcceptsShipments, setFilterAcceptsShipments] = useState<'any' | 'yes' | 'no'>(() => (searchParams.get('shipments') as 'any' | 'yes' | 'no') || 'any');
 
   const [selectedInstallerId, setSelectedInstallerId] = useState<string | null>(null);
+  // Per-installer coverage filter — populated when an admin clicks the
+  // "View coverage" map icon on a card. Null means the overlay shows
+  // every matching installer (the default).
+  const [coverageInstallerId, setCoverageInstallerId] = useState<string | null>(null);
   const [allStatesProvinces, setAllStatesProvinces] = useState<string[]>([]);
   const navigate = useNavigate();
   const { isCanada, distanceUnit, toggleCountry } = useCountrySettings();
@@ -188,6 +192,31 @@ const Locator: React.FC = () => {
     navigate(`/installers/edit/${installerId}`);
   }, [navigate]);
 
+  const handleViewCoverage = useCallback((installerId: string) => {
+    setCoverageInstallerId(prev => (prev === installerId ? null : installerId));
+  }, []);
+
+  const handleClearCoverageFilter = useCallback(() => {
+    setCoverageInstallerId(null);
+  }, []);
+
+  // Resolve the human-readable label for the active filter chip. We pull
+  // from the (already-loaded) installers list so we don't need an extra
+  // round trip — if the user switches search location and the installer
+  // drops off the list, the label gracefully falls back to "Installer".
+  const coverageFilterLabel = useMemo(() => {
+    if (!coverageInstallerId) return null;
+    const match = installers.find(i => i.id === coverageInstallerId);
+    return match?.name ?? "Installer";
+  }, [coverageInstallerId, installers]);
+
+  // Auto-clear the per-installer coverage filter whenever the user
+  // changes the active filter set, since the chosen installer may no
+  // longer match (and the visible cards reset accordingly).
+  useEffect(() => {
+    setCoverageInstallerId(null);
+  }, [filterBrands, filterProductSkills, filterCertifications, filterStates, filterAcceptsShipments]);
+
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingUserLocation || loadingOrs;
 
@@ -266,6 +295,8 @@ const Locator: React.FC = () => {
                 onInstallerCardClick={handleInstallerCardClick}
                 searchRadius={searchRadius}
                 distanceUnit={distanceUnit}
+                onViewCoverage={handleViewCoverage}
+                activeCoverageInstallerId={coverageInstallerId}
               />
             )}
             {searchedZipCode && (!userLocation || userLocation.lat === null) && !loadingUserLocation && (!showAdditionalFilters || filterStates.length === 0) && (
@@ -293,6 +324,9 @@ const Locator: React.FC = () => {
                   skills: filterProductSkills,
                   certifications: filterCertifications,
                   acceptsShipments: filterAcceptsShipments === 'yes',
+                  installerIds: coverageInstallerId ? [coverageInstallerId] : null,
+                  filterLabel: coverageFilterLabel,
+                  onClearFilter: handleClearCoverageFilter,
                 }}
               />
             </div>

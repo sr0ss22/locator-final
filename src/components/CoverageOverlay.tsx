@@ -53,6 +53,10 @@ interface CoverageOverlayProps {
   certifications: InstallerCertification[];
   acceptsShipments: boolean;
   enabled: boolean;
+  // When non-null/non-empty, restricts the aggregate to JUST these
+  // installers. Powers the per-card "View coverage" mode on the
+  // internal locator.
+  installerIds?: string[] | null;
   onZipClick?: (zip: string, counts: CoverageCounts) => void;
   // Optional callback so the parent can surface a "loading coverage"
   // indicator next to its existing search/loading state.
@@ -94,6 +98,7 @@ const CoverageOverlayInner: React.FC<CoverageOverlayProps> = ({
   skills,
   certifications,
   acceptsShipments,
+  installerIds,
   onZipClick,
   onLoadingChange,
 }) => {
@@ -117,6 +122,7 @@ const CoverageOverlayInner: React.FC<CoverageOverlayProps> = ({
     skills,
     certifications,
     acceptsShipments,
+    installerIds,
   });
 
   const usGeo = useUsZipGeometries({

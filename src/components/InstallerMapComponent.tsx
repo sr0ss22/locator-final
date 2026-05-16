@@ -50,6 +50,14 @@ interface CoverageOverlayConfig {
   skills: InstallerSkill[];
   certifications: InstallerCertification[];
   acceptsShipments: boolean;
+  // When non-null/empty, scopes the aggregate to JUST these installers.
+  // Backs the per-card "View coverage" mode on the internal locator.
+  installerIds?: string[] | null;
+  // Optional label rendered next to the legend (e.g. "Acme Installs")
+  // when the overlay is scoped to a single installer.
+  filterLabel?: string | null;
+  // Called when the user clicks the "X" on the filter chip.
+  onClearFilter?: () => void;
   onZipClick?: (zip: string, counts: CoverageCounts) => void;
 }
 
@@ -70,6 +78,17 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
   // the overlay isn't configured at all so this hook always runs.
   const [coverageVisible, setCoverageVisible] = useState<boolean>(coverageOverlay?.defaultVisible ?? false);
   const [coverageLoading, setCoverageLoading] = useState<boolean>(false);
+
+  // When the parent activates a per-installer filter, auto-show the
+  // overlay so the user actually sees the result of the action. We
+  // intentionally don't force-hide it again when the filter clears —
+  // leaving the toggle in whatever state the user prefers.
+  const hasInstallerFilter = !!(coverageOverlay?.installerIds && coverageOverlay.installerIds.length > 0);
+  useEffect(() => {
+    if (hasInstallerFilter && !coverageVisible) {
+      setCoverageVisible(true);
+    }
+  }, [hasInstallerFilter, coverageVisible]);
 
   // Gesture-handling plugin is mount-time-only: Leaflet wires the
   // handler when the map is constructed, so we sample the pointer kind
@@ -190,6 +209,7 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
           skills={coverageOverlay.skills}
           certifications={coverageOverlay.certifications}
           acceptsShipments={coverageOverlay.acceptsShipments}
+          installerIds={coverageOverlay.installerIds}
           enabled={coverageVisible}
           onZipClick={coverageOverlay.onZipClick}
           onLoadingChange={setCoverageLoading}
@@ -306,6 +326,8 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
           visible={coverageVisible}
           onToggle={() => setCoverageVisible((v) => !v)}
           isLoading={coverageLoading}
+          filterLabel={coverageOverlay?.filterLabel ?? null}
+          onClearFilter={coverageOverlay?.onClearFilter}
           className="top-3 right-3"
         />
       )}
