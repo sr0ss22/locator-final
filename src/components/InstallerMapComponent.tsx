@@ -63,6 +63,10 @@ interface CoverageOverlayConfig {
     counts: CoverageCounts,
     meta: { country: "USA" | "Canada"; totalPostalCodes: number | null },
   ) => void;
+  // Fired when the user clicks the search-icon button in the legend
+  // (opens the coverage detail panel in "search mode"). Optional;
+  // when omitted the legend hides the button.
+  onSearchClick?: () => void;
 }
 
 interface InstallerMapProps {
@@ -366,6 +370,7 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
           isLoading={coverageLoading}
           filterLabel={coverageOverlay?.filterLabel ?? null}
           onClearFilter={coverageOverlay?.onClearFilter}
+          onSearchClick={coverageOverlay?.onSearchClick}
           className="top-3 right-3"
         />
       )}

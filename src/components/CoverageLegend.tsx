@@ -1,5 +1,5 @@
 import React from "react";
-import { Eye, EyeOff, Wrench, X } from "lucide-react";
+import { Eye, EyeOff, Search, Wrench, X } from "lucide-react";
 import { COVERAGE_COLORS } from "@/lib/coverageStyle";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,11 @@ interface CoverageLegendProps {
   // 'X' that fires onClearFilter.
   filterLabel?: string | null;
   onClearFilter?: () => void;
+  // When set, the legend renders an extra search-icon button next to
+  // the eye toggle. Clicking it opens the coverage detail panel in
+  // "search mode" so an admin can look up a specific ZIP / FSA /
+  // postal code without first finding it on the map.
+  onSearchClick?: () => void;
   className?: string;
 }
 
@@ -68,6 +73,7 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
   isLoading,
   filterLabel,
   onClearFilter,
+  onSearchClick,
   className,
 }) => {
   return (
@@ -78,7 +84,7 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
         className,
       )}
     >
-      <div className="flex items-center gap-2 px-2 py-1.5">
+      <div className="flex items-center gap-1.5 px-2 py-1.5">
         <button
           type="button"
           onClick={onToggle}
@@ -89,6 +95,17 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
           {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
         </button>
         <span className="font-semibold text-gray-800">Coverage</span>
+        {onSearchClick && (
+          <button
+            type="button"
+            onClick={onSearchClick}
+            title="Search by ZIP, FSA, or postal code"
+            aria-label="Search coverage by ZIP, FSA, or postal code"
+            className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-gray-100 text-gray-700"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+        )}
         {isLoading && visible && (
           <Wrench
             // Matches the LoadingSayings spinner the rest of the app

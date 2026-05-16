@@ -268,6 +268,21 @@ const Locator: React.FC = () => {
     setCoverageDetailTarget(null);
   }, []);
 
+  const handleOpenCoverageSearch = useCallback(() => {
+    // Empty zipOrFsa = search mode. The panel renders the search input
+    // and a hint instead of running a query until the user submits one.
+    setCoverageDetailTarget((prev) =>
+      prev ? prev : { country: isCanada ? "Canada" : "USA", zipOrFsa: "" },
+    );
+  }, [isCanada]);
+
+  const handleTargetChange = useCallback(
+    (next: CoverageDetailPanelTarget | null) => {
+      setCoverageDetailTarget(next);
+    },
+    [],
+  );
+
   // Resolve the human-readable label for the active filter chip. We pull
   // from the (already-loaded) installers list so we don't need an extra
   // round trip — if the user switches search location and the installer
@@ -463,6 +478,7 @@ const Locator: React.FC = () => {
                   filterLabel: coverageFilterLabel,
                   onClearFilter: handleClearCoverageFilter,
                   onZipClick: handleZipClick,
+                  onSearchClick: handleOpenCoverageSearch,
                 }}
               />
             </div>
@@ -493,6 +509,8 @@ const Locator: React.FC = () => {
       </div>
       <CoverageDetailPanel
         target={coverageDetailTarget}
+        onTargetChange={handleTargetChange}
+        country={isCanada ? "Canada" : "USA"}
         onClose={handleCloseDetailPanel}
         installerIds={overlayInstallerIds}
       />

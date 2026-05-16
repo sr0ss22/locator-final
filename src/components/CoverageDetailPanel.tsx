@@ -1,34 +1,45 @@
-import React, { useEffect, useMemo } from "react";
-import { Loader2, MapPin, X } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, MapPin, Search, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useCoverageDetail, type CoverageDetailRow } from "@/hooks/useInstallerData";
 
 /**
  * Slide-in side panel that shows the per-postal-code coverage breakdown
- * for a single ZIP (USA) or FSA (Canada). Opened by clicking a coverage
- * polygon on the internal locator's map. Admin only — exposes installer
- * names and so is gated by the underlying `get_coverage_detail` RPC,
- * which itself enforces `public.is_admin()`.
+ * for a ZIP (USA), FSA (Canada), or a full 6-character Canadian postal
+ * code. Opened either by clicking a coverage polygon on the internal
+ * locator's map OR by clicking the search-coverage button in the
+ * coverage legend (which opens the panel in "search mode" — empty
+ * results, focused search input).
+ *
+ * Admin only — exposes installer names and so the underlying
+ * get_coverage_detail RPC enforces public.is_admin().
  *
  * Implemented as a NON-MODAL slide-out (not the shadcn `<Sheet>` /
  * Radix Dialog) so the map, filters, and installer list all remain
- * fully visible and interactive while the panel is open. The previous
- * Sheet implementation dimmed the page with a dark overlay which
- * defeated the whole point of letting an admin compare the panel
- * against the polygon they just clicked.
+ * fully visible and interactive while the panel is open.
  */
 
 export interface CoverageDetailPanelTarget {
   country: "USA" | "Canada";
+  // For Canada this is either a 3-char FSA (lookup the whole FSA) or
+  // a 6-char normalized postal code (lookup that one postal). For US
+  // it's the 5-digit ZIP. Empty string = search mode (panel renders
+  // the input but no results).
   zipOrFsa: string;
   totalPostalCodes?: number | null;
 }
 
 interface CoverageDetailPanelProps {
   target: CoverageDetailPanelTarget | null;
+  onTargetChange: (target: CoverageDetailPanelTarget | null) => void;
+  // The current country toggle on the map. Used as the default for
+  // user-typed searches so an admin in Canada mode doesn't have to
+  // restate it.
+  country: "USA" | "Canada";
   onClose: () => void;
   // The same installer filter the overlay is currently using. Passed
   // through to the RPC so the panel only shows postal codes covered by
@@ -38,10 +49,33 @@ interface CoverageDetailPanelProps {
 
 const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
   target,
+  onTargetChange,
+  country,
   onClose,
   installerIds,
 }) => {
   const open = target != null;
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Controlled search input. Re-syncs whenever the target changes so
+  // clicking a polygon updates the visible text and a fresh "search
+  // mode" open clears it.
+  const [searchValue, setSearchValue] = useState<string>(target?.zipOrFsa ?? "");
+  useEffect(() => {
+    setSearchValue(target?.zipOrFsa ?? "");
+  }, [target]);
+
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  // Auto-focus the input the first time the panel opens — covers both
+  // polygon clicks (so the input is ready for a follow-up search) and
+  // the search-mode entry (where it's the only thing to interact with).
+  useEffect(() => {
+    if (open) {
+      const id = window.setTimeout(() => inputRef.current?.focus(), 100);
+      return () => window.clearTimeout(id);
+    }
+  }, [open]);
 
   // ESC to close — matches the affordance the dialog version had for
   // free, since we no longer get it from Radix.
@@ -54,11 +88,14 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // Only fetch when we have a concrete lookup target (empty zipOrFsa
+  // means we're sitting in search mode with no query yet).
+  const enabled = open && !!target?.zipOrFsa;
   const { data, isLoading, error } = useCoverageDetail({
-    country: target?.country ?? "USA",
-    zipOrFsa: target?.zipOrFsa ?? null,
+    country: target?.country ?? country,
+    zipOrFsa: enabled ? target!.zipOrFsa : null,
     installerIds,
-    enabled: open,
+    enabled,
   });
 
   // Group rows by postal code so each postal renders as a small section
@@ -85,24 +122,47 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
     return ids.size;
   }, [data]);
 
-  const title = target
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseSearchInput(searchValue, country);
+    if (!parsed) {
+      setSearchError("Enter a 5-digit US ZIP, a Canadian FSA (e.g. V0X), or a full Canadian postal code (e.g. V0X 1T0).");
+      return;
+    }
+    setSearchError(null);
+    onTargetChange({
+      country: parsed.country,
+      zipOrFsa: parsed.normalized,
+      totalPostalCodes: null,
+    });
+  };
+
+  const handleClearSearch = () => {
+    setSearchValue("");
+    setSearchError(null);
+    onTargetChange({ country, zipOrFsa: "" });
+    inputRef.current?.focus();
+  };
+
+  const title = target?.zipOrFsa
     ? target.country === "USA"
       ? `ZIP ${target.zipOrFsa}`
-      : `FSA ${target.zipOrFsa}`
-    : "";
+      : target.zipOrFsa.length === 6
+        ? `Postal ${formatPostal(target.zipOrFsa, "Canada")}`
+        : `FSA ${target.zipOrFsa}`
+    : "Coverage lookup";
 
-  const ratioText = (() => {
-    if (target?.country !== "Canada") return null;
-    if (totalPostalCount == null || totalPostalCount <= 0) {
-      return coveredPostalCount > 0
-        ? `${coveredPostalCount} postal code${coveredPostalCount === 1 ? "" : "s"} covered`
-        : null;
-    }
-    const pct = Math.round((coveredPostalCount / totalPostalCount) * 100);
-    const displayPct =
-      pct === 0 && coveredPostalCount > 0 ? "<1" : `${pct}`;
-    return `${coveredPostalCount} / ${totalPostalCount} postal codes covered (${displayPct}%)`;
-  })();
+  const subtitle = !target?.zipOrFsa
+    ? "Search by ZIP, FSA, or full postal code"
+    : target.country === "Canada" && target.zipOrFsa.length === 3
+      ? canadaFsaSubtitle({
+          coveredPostalCount,
+          totalPostalCount,
+          installerCount,
+        })
+      : installerCount > 0
+        ? `${installerCount} installer${installerCount === 1 ? "" : "s"} covering this area`
+        : "Coverage breakdown";
 
   return (
     <aside
@@ -126,14 +186,9 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-base font-semibold text-gray-900">
             <MapPin className="h-4 w-4 text-sky-500" aria-hidden="true" />
-            {title}
+            <span className="truncate">{title}</span>
           </div>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {ratioText ??
-              (installerCount > 0
-                ? `${installerCount} installer${installerCount === 1 ? "" : "s"} covering this area`
-                : "Coverage breakdown")}
-          </p>
+          <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
         </div>
         <button
           type="button"
@@ -145,18 +200,55 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
         </button>
       </div>
 
+      <form onSubmit={handleSubmit} className="px-5 pb-3" role="search">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" aria-hidden="true" />
+          <Input
+            ref={inputRef}
+            type="text"
+            inputMode="text"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            placeholder={country === "Canada" ? "FSA or postal (V0X 1T0)" : "US ZIP (12345)"}
+            aria-label="Search by ZIP, FSA, or postal code"
+            className="h-9 pl-8 pr-8 text-sm"
+          />
+          {searchValue && (
+            <button
+              type="button"
+              onClick={handleClearSearch}
+              aria-label="Clear search"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        {searchError && (
+          <p className="text-[11px] text-red-600 mt-1.5 leading-snug">{searchError}</p>
+        )}
+      </form>
+
       <Separator />
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        {isLoading ? (
+        {!enabled ? (
+          <div className="text-sm text-gray-500 py-6 text-center space-y-1">
+            <p>Type a ZIP, FSA, or full postal code above and press enter.</p>
+            <p className="text-xs text-gray-400">
+              Tip: click any coverage polygon on the map to inspect it directly.
+            </p>
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center gap-2 text-sm text-gray-500 py-6 justify-center">
             <Loader2 className="h-4 w-4 animate-spin text-sky-500" />
             Loading coverage details…
           </div>
         ) : error ? (
-          <div className="text-sm text-red-600">
-            Failed to load coverage details.
-          </div>
+          <div className="text-sm text-red-600">Failed to load coverage details.</div>
         ) : coveredPostalCount === 0 ? (
           <div className="text-sm text-gray-500 py-6 text-center">
             No coverage from the currently visible installers.
@@ -164,10 +256,7 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
         ) : (
           <ul className="space-y-3">
             {Array.from(grouped.entries()).map(([postal, rows]) => (
-              <li
-                key={postal}
-                className="rounded-md border border-gray-200 p-3 bg-white"
-              >
+              <li key={postal} className="rounded-md border border-gray-200 p-3 bg-white">
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <span className="text-sm font-mono font-semibold text-gray-900">
                     {formatPostal(postal, target?.country ?? "USA")}
@@ -182,9 +271,7 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
                       key={`${row.installer_id}-${row.status}`}
                       className="flex items-center justify-between gap-2 text-xs"
                     >
-                      <span className="text-gray-800 truncate">
-                        {row.installer_name}
-                      </span>
+                      <span className="text-gray-800 truncate">{row.installer_name}</span>
                       <StatusBadge status={row.status} />
                     </li>
                   ))}
@@ -239,6 +326,63 @@ function formatPostal(postal: string, country: "USA" | "Canada"): string {
     return `${cleaned.slice(0, 3)} ${cleaned.slice(3)}`;
   }
   return cleaned;
+}
+
+// Parses a free-form search input and normalizes it for the RPC.
+// Returns null if the input doesn't match any known format. Country
+// is auto-detected from the format itself — a 5-digit input is always
+// a US ZIP, a 3- or 6-char alphanumeric (FSA pattern) is always Canada
+// — so admins don't have to flip the country toggle just to inspect
+// a coverage area across the border.
+function parseSearchInput(
+  raw: string,
+  defaultCountry: "USA" | "Canada",
+): { country: "USA" | "Canada"; normalized: string } | null {
+  const cleaned = raw.trim();
+  if (!cleaned) return null;
+
+  // US ZIP: 5 digits or 5-4. We strip the +4 (the RPC doesn't index it).
+  const zipMatch = /^(\d{5})(?:-?\d{4})?$/.exec(cleaned);
+  if (zipMatch) {
+    return { country: "USA", normalized: zipMatch[1] };
+  }
+
+  // Canadian FSA (A1A) — 3 chars, letter-digit-letter.
+  const fsaMatch = /^([A-Za-z]\d[A-Za-z])$/.exec(cleaned);
+  if (fsaMatch) {
+    return { country: "Canada", normalized: fsaMatch[1].toUpperCase() };
+  }
+
+  // Canadian full postal (A1A 1A1 or A1A1A1).
+  const postalMatch = /^([A-Za-z]\d[A-Za-z])\s*(\d[A-Za-z]\d)$/.exec(cleaned);
+  if (postalMatch) {
+    return {
+      country: "Canada",
+      normalized: `${postalMatch[1]}${postalMatch[2]}`.toUpperCase(),
+    };
+  }
+
+  // Fall back to the current country toggle so a stray short input
+  // doesn't silently jump countries.
+  void defaultCountry;
+  return null;
+}
+
+function canadaFsaSubtitle(args: {
+  coveredPostalCount: number;
+  totalPostalCount: number | null;
+  installerCount: number;
+}): string {
+  const { coveredPostalCount, totalPostalCount, installerCount } = args;
+  if (totalPostalCount == null || totalPostalCount <= 0) {
+    if (coveredPostalCount > 0) {
+      return `${coveredPostalCount} postal code${coveredPostalCount === 1 ? "" : "s"} covered · ${installerCount} installer${installerCount === 1 ? "" : "s"}`;
+    }
+    return "Coverage breakdown";
+  }
+  const pct = Math.round((coveredPostalCount / totalPostalCount) * 100);
+  const displayPct = pct === 0 && coveredPostalCount > 0 ? "<1" : `${pct}`;
+  return `${coveredPostalCount} / ${totalPostalCount} postal codes covered (${displayPct}%)`;
 }
 
 export default CoverageDetailPanel;
