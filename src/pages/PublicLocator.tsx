@@ -220,11 +220,18 @@ const PublicLocator: React.FC = () => {
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
 
-    // NOTE: deliberately no country-boundary filter here. We previously
-    // gated on the app's isCanada toggle, but that hides Canadian
-    // installers from any unintended-US-mode Canadian search and the
-    // installers.country column is too inconsistent ("USA" / "US" /
-    // "United States" / blank) to be a reliable filter anyway.
+    // Country filter — only show installers whose country matches the
+    // active isCanada toggle. The DB column is inconsistent so we
+    // normalise: "Canada"/"CA" → Canadian, everything else → US.
+    const isInstallerCanadian = (raw: any): boolean => {
+      const c = (raw?.country ?? '').trim().toLowerCase();
+      return c === 'canada' || c === 'ca';
+    };
+    currentInstallers = currentInstallers.filter(i =>
+      isCanada
+        ? isInstallerCanadian(i.rawSupabaseData)
+        : !isInstallerCanadian(i.rawSupabaseData),
+    );
 
     if (selectedBrands.length > 0) currentInstallers = currentInstallers.filter(i => selectedBrands.every(b => (i.brands ?? []).includes(b)));
     if (selectedProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => selectedProductSkills.every(s => (i.skills ?? []).includes(s)));
@@ -232,7 +239,7 @@ const PublicLocator: React.FC = () => {
     if (filterAcceptsShipments) currentInstallers = currentInstallers.filter(i => i.acceptsShipments === true);
     if (filterMileageCovered) currentInstallers = currentInstallers.filter(i => i.is_local_service_area === true);
     return currentInstallers;
-  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications, filterAcceptsShipments, filterMileageCovered]);
+  }, [installers, isCanada, selectedBrands, selectedProductSkills, selectedCertifications, filterAcceptsShipments, filterMileageCovered]);
 
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingLocation;

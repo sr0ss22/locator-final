@@ -179,15 +179,19 @@ const Locator: React.FC = () => {
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
 
-    // NOTE: deliberately no country-boundary filter here. We previously
-    // gated on the app's isCanada toggle, but that hides Canadian
-    // installers from any unintended-US-mode Canadian search (e.g.
-    // typing "toronto" without flipping the toggle first) and the
-    // installers.country column is too inconsistent ("USA" / "US" /
-    // "United States" / blank) to be a reliable filter anyway.
-    // Coverage now also reuses the visible installer list (see
-    // installerIds below), so cross-border leakage naturally limits
-    // itself to what the radius actually reaches.
+    // Country filter — only show installers whose country matches the
+    // current toggle. The DB column is inconsistent, so we normalise:
+    //   Canadian = "Canada" or "CA" (case-insensitive)
+    //   US       = everything else (including blank / null)
+    const isInstallerCanadian = (raw: any): boolean => {
+      const c = (raw?.country ?? '').trim().toLowerCase();
+      return c === 'canada' || c === 'ca';
+    };
+    currentInstallers = currentInstallers.filter(i =>
+      isCanada
+        ? isInstallerCanadian(i.rawSupabaseData)
+        : !isInstallerCanadian(i.rawSupabaseData),
+    );
 
     if (filterBrands.length > 0) currentInstallers = currentInstallers.filter(i => filterBrands.every(b => (i.brands ?? []).includes(b)));
     if (filterProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => filterProductSkills.every(s => (i.skills ?? []).includes(s)));
