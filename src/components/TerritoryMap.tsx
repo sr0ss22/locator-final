@@ -898,58 +898,59 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     };
   }, [fsaEditTarget]);
 
-  // Derive bounds from the FSA polygon geometry once we have it.
-  // Doing this off the polygon (not the postals) means the user
-  // sees the actual FSA boundary, not just the bounding box of the
-  // postal-code centroids.
+  // Fit the map to the FSA polygon plus every postal coordinate so
+  // edge postals (coords outside the StatsCan boundary) are in view.
   useEffect(() => {
-    if (!fsaEditTarget || !fsaEditFeature) {
+    if (!fsaEditTarget) {
       setFsaEditBounds(null);
       return;
     }
     try {
-      const layer = L.geoJSON(fsaEditFeature);
-      const bounds = layer.getBounds();
-      if (bounds.isValid()) {
-        setFsaEditBounds(bounds);
-      } else {
-        setFsaEditBounds(null);
+      let bounds: L.LatLngBounds | null = null;
+      if (fsaEditFeature) {
+        const layer = L.geoJSON(fsaEditFeature);
+        const polyBounds = layer.getBounds();
+        if (polyBounds.isValid()) bounds = polyBounds;
       }
+      for (const p of fsaEditPostals) {
+        if (p.latitude == null || p.longitude == null) continue;
+        const ll = L.latLng(p.latitude, p.longitude);
+        if (bounds) bounds.extend(ll);
+        else bounds = L.latLngBounds(ll, ll);
+      }
+      setFsaEditBounds(bounds?.isValid() ? bounds : null);
     } catch (err) {
       console.error('Failed to compute FSA edit bounds:', err);
       setFsaEditBounds(null);
     }
-  }, [fsaEditTarget, fsaEditFeature]);
+  }, [fsaEditTarget, fsaEditFeature, fsaEditPostals]);
 
-  // Clip the FSA's postals to those whose coordinates actually fall
-  // inside the FSA polygon. The Canadian postal-code table includes
-  // PO-Box / business-delivery postals whose lat/lng is the central
-  // post office that handles them — for a rural FSA like T3R that
-  // means a handful of "T3R …" postals end up plotted in downtown
-  // Calgary even though they belong to T3R. Rendering them as
-  // floating dots in another city is just confusing. They still
-  // exist; they still get hit by the bulk-action paths; we just
-  // don't draw them on this map. The banner reports how many.
-  const fsaEditPostalsOnMap = useMemo(() => {
-    if (!fsaEditTarget || fsaEditPostals.length === 0) return fsaEditPostals;
-    if (!fsaEditFeature?.geometry) return fsaEditPostals;
+  // Postals whose Canada Post coordinate sits outside the StatsCan FSA
+  // polygon — still valid T3Z codes, drawn with a dashed ring so they
+  // read as "edge" without hiding them.
+  const fsaEditEdgePostalCodes = useMemo(() => {
+    const edge = new Set<string>();
+    if (!fsaEditTarget || fsaEditPostals.length === 0 || !fsaEditFeature?.geometry) {
+      return edge;
+    }
     try {
       const polygon = fsaEditFeature as any;
-      return fsaEditPostals.filter((p) => {
-        if (p.latitude == null || p.longitude == null) return false;
+      for (const p of fsaEditPostals) {
+        if (p.latitude == null || p.longitude == null) continue;
+        const key = (p.postal_code ?? '').toUpperCase().replace(/\s+/g, '');
+        if (!key) continue;
         const pt = turf.point([p.longitude, p.latitude]);
         try {
-          return turf.booleanPointInPolygon(pt, polygon);
+          if (!turf.booleanPointInPolygon(pt, polygon)) edge.add(key);
         } catch {
-          return false;
+          edge.add(key);
         }
-      });
+      }
     } catch (err) {
-      console.error('Failed to clip FSA postals to polygon:', err);
-      return fsaEditPostals;
+      console.error('Failed to classify edge FSA postals:', err);
     }
+    return edge;
   }, [fsaEditTarget, fsaEditPostals, fsaEditFeature]);
-  const fsaEditOffMapCount = Math.max(0, fsaEditPostals.length - fsaEditPostalsOnMap.length);
 
   // Live aggregate of THIS FSA's currently-selected postals — drives
   // the count in the focus banner so it stays accurate as the user
@@ -1582,11 +1583,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           renderer={svgPolygonRenderer}
         />
       )}
-      {fsaEditTarget && fsaEditPostalsOnMap.length > 0 && fsaEditPostalsOnMap.map(point => {
+      {fsaEditTarget && fsaEditPostals.length > 0 && fsaEditPostals.map(point => {
         if (point.latitude == null || point.longitude == null) return null;
-        const status = highlightedZipCodes.get(
-          (point.postal_code ?? '').toUpperCase().replace(/\s+/g, ''),
-        );
+        const postalKey = (point.postal_code ?? '').toUpperCase().replace(/\s+/g, '');
+        const isEdge = fsaEditEdgePostalCodes.has(postalKey);
+        const status = highlightedZipCodes.get(postalKey);
         // Larger dots than the radius-fetch postal mode (we're zoomed
         // into a single FSA so there's room) and grey-by-default so
         // unassigned postals are still discoverable.
@@ -1596,17 +1597,34 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         let weight = 1;
         if (status === 'green') { color = '#16a34a'; fillOpacity = 0.85; pointRadius = 6; weight = 1.5; }
         else if (status === 'orange') { color = '#ea580c'; fillOpacity = 0.85; pointRadius = 6; weight = 1.5; }
+        const pathOptions = isEdge
+          ? {
+              color,
+              fillColor: '#ffffff',
+              fillOpacity: 0.92,
+              weight: 2,
+              dashArray: '4,3',
+              opacity: 0.9,
+            }
+          : { color, fillColor: color, fillOpacity, weight };
         return (
           <CircleMarker
             key={`fsa-edit-${point.postal_code}`}
             center={[point.latitude, point.longitude]}
-            radius={pointRadius}
-            pathOptions={{ color, fillColor: color, fillOpacity, weight }}
+            radius={isEdge ? pointRadius + 1 : pointRadius}
+            pathOptions={pathOptions}
             eventHandlers={{
               click: () => onZipCodeClick(point.postal_code, point.province_abbr || fsaEditTarget.stateProvince),
             }}
           >
-            <Tooltip>{point.postal_code}</Tooltip>
+            <Tooltip>
+              {point.postal_code}
+              {isEdge && (
+                <span className="block text-[10px] text-gray-500 font-normal mt-0.5">
+                  Edge — coordinate outside FSA boundary
+                </span>
+              )}
+            </Tooltip>
           </CircleMarker>
         );
       })}
@@ -1644,11 +1662,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         onBulkSelectionComplete={onBulkSelectionComplete}
         isCanada={isCanada}
         publicAuth={publicAuth}
-        // The lasso always works against the dots the user can
-        // actually see, so feed it the clipped list (postals whose
-        // lat/lng falls inside the FSA polygon) rather than the raw
-        // RPC response.
-        fsaEditPostals={fsaEditTarget ? fsaEditPostalsOnMap : undefined}
+        fsaEditPostals={fsaEditTarget ? fsaEditPostals : undefined}
       />
       {fsaBulkPopup && onFsaBulkAction && (
         <Popup
@@ -1851,22 +1865,6 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
                       <>
                         <span className="text-gray-300 mx-1">·</span>
                         <span className="text-gray-500">{fsaEditCounts.unassigned.toLocaleString()} unassigned</span>
-                      </>
-                    )}
-                    {/* PO-box / business-delivery postals whose
-                        coordinates fall outside the FSA polygon and
-                        aren't drawn as dots. Reported so admins
-                        know nothing is silently missing — bulk
-                        actions still affect them. */}
-                    {fsaEditOffMapCount > 0 && (
-                      <>
-                        <span className="text-gray-300 mx-1">·</span>
-                        <span
-                          className="text-gray-400"
-                          title={`${fsaEditOffMapCount.toLocaleString()} postals (likely PO boxes) have coordinates outside this FSA's polygon and aren't shown on the map.`}
-                        >
-                          {fsaEditOffMapCount.toLocaleString()} off-map
-                        </span>
                       </>
                     )}
                   </>
