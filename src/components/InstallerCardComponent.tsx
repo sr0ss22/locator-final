@@ -107,7 +107,13 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
                     strokeWidth={1.25}
                     aria-hidden="true"
                   />
-                  <span className="absolute top-0.5 left-1/2 -translate-x-1/2 text-[10px] font-bold leading-none text-white">
+                  {/* The lucide MapPin head circle is centered around
+                      y≈10 in a 24px viewBox; on a 28px (h-7) render
+                      that's ~11–12px from the top. Pinning the number
+                      via top-[8px] + auto-centering via inset-x-0
+                      keeps it dead-centered in the head for 1- and
+                      2-digit values alike. */}
+                  <span className="absolute inset-x-0 top-[8px] text-center text-[10px] font-bold leading-none text-white">
                     {pinNumber}
                   </span>
                 </span>

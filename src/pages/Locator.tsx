@@ -161,18 +161,24 @@ const Locator: React.FC = () => {
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
 
-    // Country boundary filter — admins use a country toggle to switch the
-    // search basemap and distance units; we shouldn't surface cross-border
-    // installers (e.g. Detroit installers showing up for a Windsor, ON
-    // search) since the locator's country is the source of truth for the
-    // session. Installers with a NULL country are treated as USA so we
-    // don't accidentally drop legacy rows from the default-US view.
-    const expectedCountry = isCanada ? "Canada" : "USA";
-    currentInstallers = currentInstallers.filter((i) => {
-      const c = i.rawSupabaseData?.country;
-      if (!c) return !isCanada;
-      return c === expectedCountry;
-    });
+    // Country boundary filter — admins use a country toggle to switch
+    // the search basemap and distance units; we shouldn't surface
+    // cross-border installers (e.g. Detroit installers showing up for
+    // a Windsor, ON search). The installers.country column is messy
+    // in production ("USA" / "US" / "United States" / blank), so we
+    // treat Canada as the strict whitelist (only explicitly-Canadian
+    // values count as Canadian) and USA as "anything not explicitly
+    // Canadian". This keeps the much larger US installer pool intact
+    // regardless of which legacy value the country field holds.
+    const c = (i: typeof installers[number]) =>
+      (i.rawSupabaseData?.country || "").trim().toLowerCase();
+    const isCanadianInstaller = (i: typeof installers[number]) => {
+      const v = c(i);
+      return v === "canada" || v === "ca" || v === "can" || v === "canadian";
+    };
+    currentInstallers = currentInstallers.filter((i) =>
+      isCanada ? isCanadianInstaller(i) : !isCanadianInstaller(i),
+    );
 
     if (filterBrands.length > 0) currentInstallers = currentInstallers.filter(i => filterBrands.every(b => (i.brands ?? []).includes(b)));
     if (filterProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => filterProductSkills.every(s => (i.skills ?? []).includes(s)));

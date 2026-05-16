@@ -169,14 +169,21 @@ const PublicLocator: React.FC = () => {
     // controls the basemap, distance units, and now also which
     // installers can appear. Without this, e.g. a Windsor, ON search
     // would surface Detroit installers (they're well within the
-    // haversine radius). Null country defaults to USA so legacy rows
-    // don't disappear from US searches.
-    const expectedCountry = isCanada ? "Canada" : "USA";
-    currentInstallers = currentInstallers.filter((i) => {
-      const c = i.rawSupabaseData?.country;
-      if (!c) return !isCanada;
-      return c === expectedCountry;
-    });
+    // haversine radius). The installers.country column is messy in
+    // production ("USA" / "US" / "United States" / blank), so we
+    // treat Canada as the strict whitelist (only explicitly-Canadian
+    // values count as Canadian) and USA as "anything not explicitly
+    // Canadian". This keeps the much larger US pool intact regardless
+    // of which legacy value the country field holds.
+    const c = (i: typeof installers[number]) =>
+      (i.rawSupabaseData?.country || "").trim().toLowerCase();
+    const isCanadianInstaller = (i: typeof installers[number]) => {
+      const v = c(i);
+      return v === "canada" || v === "ca" || v === "can" || v === "canadian";
+    };
+    currentInstallers = currentInstallers.filter((i) =>
+      isCanada ? isCanadianInstaller(i) : !isCanadianInstaller(i),
+    );
 
     if (selectedBrands.length > 0) currentInstallers = currentInstallers.filter(i => selectedBrands.every(b => (i.brands ?? []).includes(b)));
     if (selectedProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => selectedProductSkills.every(s => (i.skills ?? []).includes(s)));
