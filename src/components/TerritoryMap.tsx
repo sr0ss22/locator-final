@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo, memo, startTr
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, GeoJSON, Pane, Tooltip, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import { cn } from '@/lib/utils';
-import { Star, Loader2 } from 'lucide-react';
+import { Star, Loader2, Pencil, X } from 'lucide-react';
 import { calculateDistance } from '@/utils/distance';
 import { TerritoryStatus } from '@/types/territory';
 import { toast } from 'sonner';
@@ -10,6 +10,10 @@ import * as turf from '@turf/turf';
 import proj4 from 'proj4';
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
+import {
+  fetchCanadianPostalsForFsa,
+  type CanadianPostalForFsa,
+} from "@/hooks/useInstallerData";
 import usGeoJsonData from '@/data/us-zip-codes.json' with { type: 'json' };
 import canadaGeoJsonData from '@/data/canada-postal-codes.json' with { type: 'json' };
 
@@ -141,28 +145,65 @@ function MapUpdater({ centerLocation, isOpen, country }: {
   return null;
 }
 
+// Fits the map to a target LatLngBoundsExpression whenever it changes
+// AND fires once on the first non-null bounds. Used by the FSA edit
+// mode to zoom into the focused FSA when the user opens it. The
+// boundsKey lets the caller force a re-fit (e.g. re-clicking the same
+// FSA from a different vantage point) without unmounting the
+// component.
+function MapBoundsFitter({
+  bounds,
+  boundsKey,
+  padding,
+}: {
+  bounds: L.LatLngBoundsExpression | null;
+  boundsKey: string | number;
+  padding?: [number, number];
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!bounds) return;
+    try {
+      map.fitBounds(bounds, { padding: padding ?? [40, 40], animate: true });
+    } catch {
+      // Bounds may be degenerate (single-point FSA, missing geometry); ignore.
+    }
+  }, [map, bounds, boundsKey, padding]);
+  return null;
+}
+
 function MapInteractionHandler({
   isBulkSelecting,
   geoJsonData,
   onBulkSelectionComplete,
   isCanada,
   publicAuth,
+  fsaEditPostals,
 }: {
   isBulkSelecting: boolean;
   geoJsonData: any;
   onBulkSelectionComplete: ((selectedZips: Array<{ zipCode: string, stateProvince: string }>) => void) | undefined;
   isCanada: boolean;
   publicAuth?: { installerId: string; token: string };
+  // When set (FSA edit mode is active), the bulk-lasso intersects
+  // against this in-memory list instead of calling the heavyweight
+  // radius RPC. Lets the user lasso a subset of an FSA without
+  // paying for a 160k-point radius scan.
+  fsaEditPostals?: CanadianPostalForFsa[];
 }) {
   const map = useMap();
   const isDrawingRef = useRef(false);
   const drawStartLatLngRef = useRef<L.LatLng | null>(null);
   const currentDrawCircleRef = useRef<L.Circle | null>(null);
   const onBulkSelectionCompleteRef = useRef(onBulkSelectionComplete);
+  const fsaEditPostalsRef = useRef(fsaEditPostals);
 
   useEffect(() => {
     onBulkSelectionCompleteRef.current = onBulkSelectionComplete;
   }, [onBulkSelectionComplete]);
+  useEffect(() => {
+    fsaEditPostalsRef.current = fsaEditPostals;
+  }, [fsaEditPostals]);
 
   useEffect(() => {
     const handleMouseDown = (e: L.LeafletMouseEvent) => {
@@ -196,7 +237,41 @@ function MapInteractionHandler({
       if (isDrawingRef.current && drawStartLatLngRef.current && currentDrawCircleRef.current && onBulkSelectionCompleteRef.current) {
         const finalCenter = drawStartLatLngRef.current;
         const finalRadiusMeters = currentDrawCircleRef.current.getRadius();
-        
+
+        // FSA edit mode fast path: we already have the FSA's ~50–200
+        // postals in memory, so the lasso is just a point-in-circle
+        // filter against that small array. Skips the radius RPC
+        // entirely (which would also pull every other installer's
+        // postals in the area).
+        const fsaPostals = fsaEditPostalsRef.current;
+        if (isCanada && fsaPostals && fsaPostals.length > 0) {
+          const selectedZips = fsaPostals
+            .filter(
+              (p) =>
+                p.latitude != null &&
+                p.longitude != null &&
+                isPointInCircle(
+                  p.latitude,
+                  p.longitude,
+                  finalCenter.lat,
+                  finalCenter.lng,
+                  finalRadiusMeters,
+                ),
+            )
+            .map((p) => ({
+              zipCode: p.postal_code,
+              stateProvince: p.province_abbr || 'Unknown',
+            }));
+          onBulkSelectionCompleteRef.current(selectedZips);
+          if (currentDrawCircleRef.current) {
+            map.removeLayer(currentDrawCircleRef.current);
+            currentDrawCircleRef.current = null;
+          }
+          isDrawingRef.current = false;
+          drawStartLatLngRef.current = null;
+          return;
+        }
+
         if (isCanada) {
           const loadingToastId = toast.loading("Fetching all postal codes in selected area...");
           try {
@@ -363,7 +438,12 @@ const FsaBulkActionPopupContents: React.FC<{
   total: number | undefined;
   onAction: (action: 'free' | 'paid' | 'remove') => Promise<void>;
   onClose: () => void;
-}> = ({ fsa, stateProvince, free, paid, total, onAction, onClose }) => {
+  // Optional escape hatch into per-postal editing scoped to this FSA.
+  // When set, surfaces an extra button below the bulk actions that
+  // (a) closes the popup and (b) drops the map into "edit this FSA"
+  // mode (TerritoryMap manages the actual state).
+  onEnterEdit?: () => void;
+}> = ({ fsa, stateProvince, free, paid, total, onAction, onClose, onEnterEdit }) => {
   const assigned = free + paid;
   const missing = total != null ? Math.max(0, total - assigned) : null;
 
@@ -489,6 +569,24 @@ const FsaBulkActionPopupContents: React.FC<{
           >
             Set all {targetCount > 0 ? targetCount.toLocaleString() : ''} to Paid
           </button>
+          {/* Per-postal editor entry — only shown when the parent
+              wired up onEnterEdit. Closes the popup and lets the
+              parent take over (zoom to FSA, render postal dots, show
+              focus banner). Useful when the FSA is mixed (some Free,
+              some Paid) and bulk-overwriting would destroy that. */}
+          {onEnterEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                onEnterEdit();
+                onClose();
+              }}
+              className="w-full px-2.5 py-1.5 rounded text-xs font-semibold bg-sky-50 text-sky-800 border border-sky-200 hover:bg-sky-100 inline-flex items-center justify-center gap-1.5"
+            >
+              <Pencil className="h-3 w-3" aria-hidden="true" />
+              Edit individual postals
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setPending('remove')}
@@ -721,6 +819,118 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
       setFsaBulkPopup({ fsa, stateProvince, latlng });
     };
   }, []);
+
+  // FSA edit mode — when the user picks "Edit individual postals" on
+  // the bulk-action popup, we switch the map into a focused mode that
+  // shows ONLY this FSA's postals as colored dots, dims the rest of
+  // the country, and surfaces a banner with the per-status counts +
+  // an exit affordance. Per-dot clicks reuse the normal
+  // onZipCodeClick path so the Free → Paid → removed cycle and the
+  // bottom Save button behave identically to the postal-codes view.
+  const [fsaEditTarget, setFsaEditTarget] = useState<{
+    fsa: string;
+    stateProvince: string;
+  } | null>(null);
+  const [fsaEditPostals, setFsaEditPostals] = useState<CanadianPostalForFsa[]>([]);
+  const [fsaEditLoading, setFsaEditLoading] = useState(false);
+  // Bounds for the focused FSA polygon, derived from the GeoJSON
+  // feature on entry. Drives MapBoundsFitter so the map snaps to the
+  // FSA on entry.
+  const [fsaEditBounds, setFsaEditBounds] = useState<L.LatLngBoundsExpression | null>(null);
+  // GeoJSON feature for the focused FSA only — used to render an
+  // emphasized outline while the dots take over the body of the map.
+  const fsaEditFeature = useMemo(() => {
+    if (!fsaEditTarget || !allCanadaGeoJsonData) return null;
+    const target = fsaEditTarget.fsa.toUpperCase();
+    return (allCanadaGeoJsonData.features || []).find(
+      (f: any) => (f?.properties?.CFSAUID || '').toUpperCase() === target,
+    ) || null;
+  }, [fsaEditTarget, allCanadaGeoJsonData]);
+
+  // Load this FSA's postals + bounds when entering edit mode. Caches
+  // nothing on its own (fetchCanadianPostalsForFsa already hits an
+  // RPC and is fast) but resets cleanly when the target changes or
+  // is cleared.
+  useEffect(() => {
+    if (!fsaEditTarget) {
+      setFsaEditPostals([]);
+      setFsaEditBounds(null);
+      setFsaEditLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setFsaEditLoading(true);
+    (async () => {
+      try {
+        const postals = await fetchCanadianPostalsForFsa(fsaEditTarget.fsa);
+        if (cancelled) return;
+        setFsaEditPostals(postals);
+      } catch (err: any) {
+        if (cancelled) return;
+        console.error('Failed to load FSA postals for edit mode:', err);
+        toast.error(`Could not load postals for ${fsaEditTarget.fsa}: ${err?.message ?? 'unknown error'}`);
+        setFsaEditPostals([]);
+      } finally {
+        if (!cancelled) setFsaEditLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fsaEditTarget]);
+
+  // Derive bounds from the FSA polygon geometry once we have it.
+  // Doing this off the polygon (not the postals) means the user
+  // sees the actual FSA boundary, not just the bounding box of the
+  // postal-code centroids.
+  useEffect(() => {
+    if (!fsaEditTarget || !fsaEditFeature) {
+      setFsaEditBounds(null);
+      return;
+    }
+    try {
+      const layer = L.geoJSON(fsaEditFeature);
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) {
+        setFsaEditBounds(bounds);
+      } else {
+        setFsaEditBounds(null);
+      }
+    } catch (err) {
+      console.error('Failed to compute FSA edit bounds:', err);
+      setFsaEditBounds(null);
+    }
+  }, [fsaEditTarget, fsaEditFeature]);
+
+  // Live aggregate of THIS FSA's currently-selected postals — drives
+  // the count in the focus banner so it stays accurate as the user
+  // clicks dots.
+  const fsaEditCounts = useMemo(() => {
+    if (!fsaEditTarget) return { free: 0, paid: 0, unassigned: 0, total: 0 };
+    const target = fsaEditTarget.fsa.toUpperCase();
+    let free = 0;
+    let paid = 0;
+    for (const sel of selectedZipCodes) {
+      const z = (sel.zipCode ?? '').toUpperCase().replace(/\s+/g, '');
+      if (!z.startsWith(target)) continue;
+      if (sel.assignedStatus === 'Approved') free++;
+      else if (sel.assignedStatus === 'Needs Approval') paid++;
+    }
+    const total = fsaEditPostals.length || fsaTotalPostalCounts?.get(target) || 0;
+    const unassigned = Math.max(0, total - free - paid);
+    return { free, paid, unassigned, total };
+  }, [fsaEditTarget, fsaEditPostals, fsaTotalPostalCounts, selectedZipCodes]);
+
+  // ESC closes FSA edit mode — matches the rest of the app's modal/
+  // sheet conventions.
+  useEffect(() => {
+    if (!fsaEditTarget) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFsaEditTarget(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fsaEditTarget]);
 
   // Process the static Canada FSA GeoJSON once. Used by both display modes,
   // so it runs independently of the postal-code DB fetch.
@@ -1262,7 +1472,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           }
         />
       )}
-      {isCanada && canadaDisplayMode === 'postal-codes' && renderedCanadaPoints.length > 0 && (
+      {isCanada && canadaDisplayMode === 'postal-codes' && !fsaEditTarget && renderedCanadaPoints.length > 0 && (
         renderedCanadaPoints.map(point => {
           const postalCode = point.POSTAL_CODE;
           // Normalize for the highlight lookup so a stored "T4X2J3" matches
@@ -1282,7 +1492,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           );
         })
       )}
-      {filteredGeoJsonData && !(isCanada && canadaDisplayMode === 'postal-codes') && (
+      {filteredGeoJsonData && !(isCanada && canadaDisplayMode === 'postal-codes') && !fsaEditTarget && (
         <GeoJSON
           key={geoJsonStyleKey}
           ref={geoJsonLayerRef}
@@ -1296,6 +1506,59 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           // ride the MapContainer's default canvas renderer, which is faster.
           {...(isCanada ? { renderer: svgPolygonRenderer } : {})}
         />
+      )}
+      {/* FSA edit mode — render only the focused FSA polygon as an
+          emphasized outline (no fill, no click handler) so the user
+          can see the boundary they're editing inside, then render
+          the per-postal dots on top. The normal polygon layer is
+          suppressed via the `!fsaEditTarget` gate above so nothing
+          else competes for the click. */}
+      {fsaEditTarget && fsaEditFeature && (
+        <GeoJSON
+          key={`fsa-edit-outline-${fsaEditTarget.fsa}`}
+          data={fsaEditFeature as any}
+          style={() => ({
+            color: '#0ea5e9',
+            weight: 3,
+            opacity: 0.95,
+            fillColor: '#0ea5e9',
+            fillOpacity: 0.05,
+            interactive: false,
+          })}
+          pane="polygons"
+          renderer={svgPolygonRenderer}
+        />
+      )}
+      {fsaEditTarget && fsaEditPostals.length > 0 && fsaEditPostals.map(point => {
+        if (point.latitude == null || point.longitude == null) return null;
+        const status = highlightedZipCodes.get(
+          (point.postal_code ?? '').toUpperCase().replace(/\s+/g, ''),
+        );
+        // Larger dots than the radius-fetch postal mode (we're zoomed
+        // into a single FSA so there's room) and grey-by-default so
+        // unassigned postals are still discoverable.
+        let color = '#94a3b8'; // slate-400 for unassigned
+        let fillOpacity = 0.7;
+        let pointRadius = 5;
+        let weight = 1;
+        if (status === 'green') { color = '#16a34a'; fillOpacity = 0.85; pointRadius = 6; weight = 1.5; }
+        else if (status === 'orange') { color = '#ea580c'; fillOpacity = 0.85; pointRadius = 6; weight = 1.5; }
+        return (
+          <CircleMarker
+            key={`fsa-edit-${point.postal_code}`}
+            center={[point.latitude, point.longitude]}
+            radius={pointRadius}
+            pathOptions={{ color, fillColor: color, fillOpacity, weight }}
+            eventHandlers={{
+              click: () => onZipCodeClick(point.postal_code, point.province_abbr || fsaEditTarget.stateProvince),
+            }}
+          >
+            <Tooltip>{point.postal_code}</Tooltip>
+          </CircleMarker>
+        );
+      })}
+      {fsaEditTarget && fsaEditBounds && (
+        <MapBoundsFitter bounds={fsaEditBounds} boundsKey={fsaEditTarget.fsa} />
       )}
       {centerLocation?.lat != null && centerLocation?.lng != null && (
         <Marker position={[centerLocation.lat, centerLocation.lng]} icon={createStarIcon()}><Popup>Installer Location</Popup></Marker>
@@ -1315,8 +1578,21 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           );
         })
       )}
-      <MapUpdater centerLocation={centerLocation} isOpen={isOpen} country={country} />
-      <MapInteractionHandler isBulkSelecting={isBulkSelecting} geoJsonData={allGeoJsonData} onBulkSelectionComplete={onBulkSelectionComplete} isCanada={isCanada} publicAuth={publicAuth} />
+      {/* MapUpdater snaps the view to the installer location on
+          mount/changes. Suppress it while in FSA edit mode so the
+          MapBoundsFitter's fitBounds isn't immediately stomped on
+          by a re-centre. */}
+      {!fsaEditTarget && (
+        <MapUpdater centerLocation={centerLocation} isOpen={isOpen} country={country} />
+      )}
+      <MapInteractionHandler
+        isBulkSelecting={isBulkSelecting}
+        geoJsonData={allGeoJsonData}
+        onBulkSelectionComplete={onBulkSelectionComplete}
+        isCanada={isCanada}
+        publicAuth={publicAuth}
+        fsaEditPostals={fsaEditTarget ? fsaEditPostals : undefined}
+      />
       {fsaBulkPopup && onFsaBulkAction && (
         <Popup
           position={fsaBulkPopup.latlng}
@@ -1341,11 +1617,17 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
               );
             }}
             onClose={() => setFsaBulkPopup(null)}
+            onEnterEdit={() => {
+              setFsaEditTarget({
+                fsa: fsaBulkPopup.fsa,
+                stateProvince: fsaBulkPopup.stateProvince,
+              });
+            }}
           />
         </Popup>
       )}
     </MapContainer>
-    {isCanada && canadaDisplayMode === 'fsa' && fsaTotalPostalCountsLoading && (
+    {isCanada && canadaDisplayMode === 'fsa' && !fsaEditTarget && fsaTotalPostalCountsLoading && (
       <div
         className="absolute inset-0 z-[1000] flex items-center justify-center pointer-events-none"
         role="status"
@@ -1371,7 +1653,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         </div>
       </div>
     )}
-    {isCanada && canadaDisplayMode === 'fsa' && hasAggregateColoredFsas && (
+    {isCanada && canadaDisplayMode === 'fsa' && !fsaEditTarget && hasAggregateColoredFsas && (
       <div
         className="absolute bottom-3 left-3 z-[1000] bg-white/95 backdrop-blur-sm rounded-md shadow-md border border-gray-200 px-3 py-2 text-xs text-gray-800 max-w-xs"
         role="note"
@@ -1440,7 +1722,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         </ul>
       </div>
     )}
-    {isCanada && (
+    {isCanada && !fsaEditTarget && (
       <div
         className="absolute top-3 right-3 z-[1000] bg-white rounded-md shadow-md border border-gray-200 p-1 flex gap-1 text-xs"
         role="group"
@@ -1474,6 +1756,84 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         >
           Postal codes
         </button>
+      </div>
+    )}
+    {/* FSA edit-mode focus banner. Pins to the top of the map and
+        gives the user (a) a live read-out of their selections inside
+        this FSA, (b) an escape hatch back to the bulk popup, and (c)
+        a one-click exit. The whole banner is pointer-events-auto so
+        clicks inside don't fall through to the map below. */}
+    {fsaEditTarget && (
+      <div
+        className="absolute top-3 left-1/2 -translate-x-1/2 z-[1100] max-w-[calc(100%-1.5rem)]"
+        role="region"
+        aria-label={`Editing FSA ${fsaEditTarget.fsa}`}
+      >
+        <div className="bg-white rounded-md shadow-lg border border-sky-300 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center gap-3 text-xs sm:text-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <Pencil className="h-4 w-4 text-sky-600 flex-shrink-0" aria-hidden="true" />
+            <div className="min-w-0">
+              <div className="font-semibold text-gray-900 leading-tight">
+                Editing FSA {fsaEditTarget.fsa}
+                {fsaEditTarget.stateProvince && fsaEditTarget.stateProvince !== 'Unknown' && (
+                  <span className="text-gray-500 font-normal"> · {fsaEditTarget.stateProvince}</span>
+                )}
+              </div>
+              <div className="text-[11px] sm:text-xs text-gray-600 mt-0.5 leading-tight">
+                {fsaEditLoading ? (
+                  <span className="inline-flex items-center gap-1 text-gray-500">
+                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                    Loading postals…
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-emerald-700 font-medium">{fsaEditCounts.free.toLocaleString()}</span> free
+                    <span className="text-gray-300 mx-1">·</span>
+                    <span className="text-orange-700 font-medium">{fsaEditCounts.paid.toLocaleString()}</span> paid
+                    {fsaEditCounts.total > 0 && (
+                      <>
+                        <span className="text-gray-300 mx-1">·</span>
+                        <span className="text-gray-500">{fsaEditCounts.unassigned.toLocaleString()} unassigned</span>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Reopens the bulk-action popup at the FSA centroid so a
+                user who lands here by mistake can still flip to bulk
+                Free / Paid / Remove without leaving edit mode. */}
+            {onFsaBulkAction && fsaEditFeature?.properties?.calculated_centroid && (
+              <button
+                type="button"
+                onClick={() => {
+                  const c = fsaEditFeature.properties.calculated_centroid;
+                  setFsaEditTarget(null);
+                  setFsaBulkPopup({
+                    fsa: fsaEditTarget.fsa,
+                    stateProvince: fsaEditTarget.stateProvince,
+                    latlng: L.latLng(c.lat, c.lng),
+                  });
+                }}
+                className="hidden sm:inline-flex h-7 px-2.5 items-center rounded text-xs font-medium text-gray-700 border border-gray-200 hover:bg-gray-100"
+                title="Switch to bulk add/remove for this FSA"
+              >
+                Bulk actions…
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setFsaEditTarget(null)}
+              className="h-7 px-2.5 inline-flex items-center gap-1 rounded text-xs font-semibold bg-sky-600 text-white hover:bg-sky-700"
+              title="Exit FSA edit mode (Esc)"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+              Done
+            </button>
+          </div>
+        </div>
       </div>
     )}
     </div>
