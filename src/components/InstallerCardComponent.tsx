@@ -87,36 +87,35 @@ const InstallerCardComponent: React.FC<InstallerCardComponentProps> = ({
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 flex-1 min-w-0">
             <div className="flex items-baseline gap-2 min-w-0">
               {showPinBadge && (
-                <span
-                  // MapPin glyph + number — visually mirrors the map marker
-                  // so an admin scanning the list can match card → pin at
-                  // a glance. Inactive cards mirror the gray pin color
-                  // from InstallerMapComponent for visual consistency.
-                  className={cn(
-                    "relative inline-flex items-center justify-center flex-shrink-0",
-                    "h-7 w-7 self-center",
-                  )}
+                // Inline SVG mirrors the exact map-marker design
+                // (solid teardrop + white number on top, no inner
+                // circle), so card-to-pin matching is visually
+                // unambiguous. Inactive rows render gray to match
+                // the gray map pin.
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-7 w-7 self-center flex-shrink-0"
                   aria-label={`Map pin ${pinNumber}`}
-                  title={`Map pin ${pinNumber}`}
+                  role="img"
                 >
-                  <MapPin
-                    className={cn(
-                      "h-7 w-7",
-                      isInactiveInstaller ? "text-gray-400 fill-gray-400" : "text-black fill-black",
-                    )}
-                    strokeWidth={1.25}
-                    aria-hidden="true"
+                  <title>{`Map pin ${pinNumber}`}</title>
+                  <path
+                    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+                    fill={isInactiveInstaller ? "#9CA3AF" : "#000000"}
                   />
-                  {/* The lucide MapPin head circle is centered around
-                      y≈10 in a 24px viewBox; on a 28px (h-7) render
-                      that's ~11–12px from the top. Pinning the number
-                      via top-[8px] + auto-centering via inset-x-0
-                      keeps it dead-centered in the head for 1- and
-                      2-digit values alike. */}
-                  <span className="absolute inset-x-0 top-[8px] text-center text-[10px] font-bold leading-none text-white">
+                  <text
+                    x="12"
+                    y="9.4"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={String(pinNumber).length >= 3 ? 6 : String(pinNumber).length === 2 ? 7 : 8}
+                    fontWeight={700}
+                    fontFamily="system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+                    fill="#ffffff"
+                  >
                     {pinNumber}
-                  </span>
-                </span>
+                  </text>
+                </svg>
               )}
               <h3 className="font-semibold text-lg leading-tight">{installer.name}</h3>
               {formattedDistance && (

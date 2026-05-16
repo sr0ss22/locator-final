@@ -161,24 +161,15 @@ const Locator: React.FC = () => {
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
 
-    // Country boundary filter — admins use a country toggle to switch
-    // the search basemap and distance units; we shouldn't surface
-    // cross-border installers (e.g. Detroit installers showing up for
-    // a Windsor, ON search). The installers.country column is messy
-    // in production ("USA" / "US" / "United States" / blank), so we
-    // treat Canada as the strict whitelist (only explicitly-Canadian
-    // values count as Canadian) and USA as "anything not explicitly
-    // Canadian". This keeps the much larger US installer pool intact
-    // regardless of which legacy value the country field holds.
-    const c = (i: typeof installers[number]) =>
-      (i.rawSupabaseData?.country || "").trim().toLowerCase();
-    const isCanadianInstaller = (i: typeof installers[number]) => {
-      const v = c(i);
-      return v === "canada" || v === "ca" || v === "can" || v === "canadian";
-    };
-    currentInstallers = currentInstallers.filter((i) =>
-      isCanada ? isCanadianInstaller(i) : !isCanadianInstaller(i),
-    );
+    // NOTE: deliberately no country-boundary filter here. We previously
+    // gated on the app's isCanada toggle, but that hides Canadian
+    // installers from any unintended-US-mode Canadian search (e.g.
+    // typing "toronto" without flipping the toggle first) and the
+    // installers.country column is too inconsistent ("USA" / "US" /
+    // "United States" / blank) to be a reliable filter anyway.
+    // Coverage now also reuses the visible installer list (see
+    // installerIds below), so cross-border leakage naturally limits
+    // itself to what the radius actually reaches.
 
     if (filterBrands.length > 0) currentInstallers = currentInstallers.filter(i => filterBrands.every(b => (i.brands ?? []).includes(b)));
     if (filterProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => filterProductSkills.every(s => (i.skills ?? []).includes(s)));
@@ -202,7 +193,7 @@ const Locator: React.FC = () => {
     let installersWithDistance = currentInstallers.map(i => ({ ...i, distance: installerDistancesMap?.get(i.id) ?? Infinity }));
     installersWithDistance.sort((a, b) => a.distance - b.distance);
     return installersWithDistance.filter(i => i.distance <= searchRadius);
-  }, [installers, filterBrands, filterProductSkills, filterCertifications, installerDistancesMap, searchRadius, showAdditionalFilters, filterStates, filterAcceptsShipments, isCanada]);
+  }, [installers, filterBrands, filterProductSkills, filterCertifications, installerDistancesMap, searchRadius, showAdditionalFilters, filterStates, filterAcceptsShipments]);
 
   const handleBrandChange = (brand: InstallerBrand, checked: boolean) => setFilterBrands(p => checked ? [...p, brand] : p.filter(b => b !== brand));
   const handleProductSkillChange = (skill: InstallerSkill, checked: boolean) => setFilterProductSkills(p => checked ? [...p, skill] : p.filter(s => s !== skill));

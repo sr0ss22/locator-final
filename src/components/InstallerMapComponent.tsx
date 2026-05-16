@@ -134,16 +134,16 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
     } else if (isInactive) {
       fillColor = '#9CA3AF';
     }
-    // Scale text down slightly for two- and three-digit numbers so the
-    // glyphs continue to fit inside the head circle.
+    // Solid teardrop in the active color, with the number painted
+    // directly on top in white. Scale text down for 2-/3-digit values
+    // so the glyphs continue to fit inside the head circle.
     const label = String(number);
-    const fontSize = label.length >= 3 ? 5 : label.length === 2 ? 6 : 7;
+    const fontSize = label.length >= 3 ? 6 : label.length === 2 ? 7 : 8;
     return L.divIcon({
       html: `<div style="width: 48px; height: 48px;">
               <svg viewBox="0 0 24 24" height="48" width="48" xmlns="http://www.w3.org/2000/svg" aria-label="Map pin ${label}">
                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="${fillColor}"/>
-                <circle cx="12" cy="9.2" r="4.6" fill="#ffffff"/>
-                <text x="12" y="9.2" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-weight="700" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="${fillColor}">${label}</text>
+                <text x="12" y="9.4" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-weight="700" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" fill="#ffffff">${label}</text>
               </svg>
             </div>`,
       className: 'custom-div-icon',

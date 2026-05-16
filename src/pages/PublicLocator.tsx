@@ -165,25 +165,11 @@ const PublicLocator: React.FC = () => {
   const filteredAndSortedInstallers = useMemo(() => {
     let currentInstallers = installers;
 
-    // Country boundary filter — the public locator's country toggle
-    // controls the basemap, distance units, and now also which
-    // installers can appear. Without this, e.g. a Windsor, ON search
-    // would surface Detroit installers (they're well within the
-    // haversine radius). The installers.country column is messy in
-    // production ("USA" / "US" / "United States" / blank), so we
-    // treat Canada as the strict whitelist (only explicitly-Canadian
-    // values count as Canadian) and USA as "anything not explicitly
-    // Canadian". This keeps the much larger US pool intact regardless
-    // of which legacy value the country field holds.
-    const c = (i: typeof installers[number]) =>
-      (i.rawSupabaseData?.country || "").trim().toLowerCase();
-    const isCanadianInstaller = (i: typeof installers[number]) => {
-      const v = c(i);
-      return v === "canada" || v === "ca" || v === "can" || v === "canadian";
-    };
-    currentInstallers = currentInstallers.filter((i) =>
-      isCanada ? isCanadianInstaller(i) : !isCanadianInstaller(i),
-    );
+    // NOTE: deliberately no country-boundary filter here. We previously
+    // gated on the app's isCanada toggle, but that hides Canadian
+    // installers from any unintended-US-mode Canadian search and the
+    // installers.country column is too inconsistent ("USA" / "US" /
+    // "United States" / blank) to be a reliable filter anyway.
 
     if (selectedBrands.length > 0) currentInstallers = currentInstallers.filter(i => selectedBrands.every(b => (i.brands ?? []).includes(b)));
     if (selectedProductSkills.length > 0) currentInstallers = currentInstallers.filter(i => selectedProductSkills.every(s => (i.skills ?? []).includes(s)));
@@ -191,7 +177,7 @@ const PublicLocator: React.FC = () => {
     if (filterAcceptsShipments) currentInstallers = currentInstallers.filter(i => i.acceptsShipments === true);
     if (filterMileageCovered) currentInstallers = currentInstallers.filter(i => i.is_local_service_area === true);
     return currentInstallers;
-  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications, filterAcceptsShipments, filterMileageCovered, isCanada]);
+  }, [installers, selectedBrands, selectedProductSkills, selectedCertifications, filterAcceptsShipments, filterMileageCovered]);
 
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingLocation;
