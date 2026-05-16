@@ -6,7 +6,9 @@ import type { Feature, FeatureCollection, Geometry } from "geojson";
 import { CoverageFillPatternDefs } from "@/components/CoverageFillPatternDefs";
 import {
   classifyCoverage,
+  classifyFsaCoverage,
   type CoverageCounts,
+  type CoverageState,
   styleForCoverageState,
 } from "@/lib/coverageStyle";
 import {
@@ -15,6 +17,7 @@ import {
 } from "@/hooks/useCoverageAggregate";
 import { useUsZipGeometries } from "@/hooks/useUsZipGeometries";
 import { useCanadaFsaGeometries } from "@/hooks/useCanadaFsaGeometries";
+import { useCanadianFsaPostalCounts } from "@/hooks/useInstallerData";
 import type {
   InstallerBrand,
   InstallerCertification,
@@ -148,6 +151,12 @@ const CoverageOverlayInner: React.FC<CoverageOverlayProps> = ({
     enabled: country === "Canada",
   });
 
+  // Total postal codes per FSA, used by the partial-coverage
+  // classifier so an FSA where only a handful of postal codes are
+  // covered no longer paints as solid free. Lazy — only fetched in
+  // Canada mode (matches caGeo gating).
+  const { data: fsaTotalPostalCounts } = useCanadianFsaPostalCounts(country === "Canada");
+
   const isLoading =
     aggregate.isLoading ||
     (country === "USA" ? usGeo.isLoading : caGeo.isLoading);
@@ -187,13 +196,16 @@ const CoverageOverlayInner: React.FC<CoverageOverlayProps> = ({
 
   const interactive = typeof onZipClick === "function";
 
-  // Force GeoJSON re-mount whenever the input feature set changes; the
-  // react-leaflet GeoJSON layer otherwise caches the first batch of
-  // features and ignores prop updates.
+  // Force GeoJSON re-mount whenever the input feature set OR the FSA
+  // total-postal lookup changes. The react-leaflet GeoJSON layer
+  // otherwise caches the first batch of features and ignores prop
+  // updates, which would freeze partial-coverage FSAs as solid green
+  // when totals arrive a moment after the aggregate.
+  const totalsTag = country === "Canada" ? (fsaTotalPostalCounts ? "t1" : "t0") : "us";
   const geoJsonKey = useMemo(() => {
     if (!visibleGeoJson) return "empty";
-    return `${country}:${visibleGeoJson.features.length}:${[...coverageByZip.keys()].sort().join(",").slice(0, 200)}`;
-  }, [visibleGeoJson, country, coverageByZip]);
+    return `${country}:${totalsTag}:${visibleGeoJson.features.length}:${[...coverageByZip.keys()].sort().join(",").slice(0, 200)}`;
+  }, [visibleGeoJson, country, totalsTag, coverageByZip]);
 
   if (zoom < MIN_ZOOM || !visibleGeoJson || visibleGeoJson.features.length === 0) {
     return (
@@ -218,7 +230,24 @@ const CoverageOverlayInner: React.FC<CoverageOverlayProps> = ({
             if (!counts) {
               return styleForCoverageState("none");
             }
-            return styleForCoverageState(classifyCoverage(counts));
+            // US ZIPs are atomic (one polygon = one postal code), so
+            // the installer-count classifier is correct. Canadian
+            // FSAs need the postal-code-aware classifier so partial
+            // coverage paints with the striped pattern instead of
+            // solid green.
+            let state: CoverageState;
+            if (country === "Canada") {
+              state = classifyFsaCoverage({
+                free: counts.free,
+                paid: counts.paid,
+                freePostalCodes: counts.free_postal_codes ?? counts.free,
+                paidPostalCodes: counts.paid_postal_codes ?? counts.paid,
+                totalPostalCodes: fsaTotalPostalCounts?.get(zip!) ?? null,
+              });
+            } else {
+              state = classifyCoverage(counts);
+            }
+            return styleForCoverageState(state);
           }}
           onEachFeature={(feature, layer) => {
             const zip = getFeatureZip(feature, country);

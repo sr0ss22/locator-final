@@ -60,6 +60,79 @@ export const CoverageFillPatternDefs: React.FC = () => (
           strokeOpacity={0.25}
         />
       </pattern>
+
+      {/* Partial-coverage variants: transparent base + colored
+          diagonal stripes. Reads as "we're only here in some of this
+          FSA's postal codes" vs the solid look of fully-covered ones.
+          Stripe opacity is intentionally a hair higher than the
+          full-coverage patterns so partial polygons stay legible
+          against the basemap when they're surrounded by solid ones. */}
+      <pattern
+        id={COVERAGE_PATTERN_IDS.partialFree}
+        patternUnits="userSpaceOnUse"
+        width="10"
+        height="10"
+        patternTransform="rotate(45)"
+      >
+        <rect width="10" height="10" fill="#ffffff" fillOpacity={0.0} />
+        <line
+          x1="0"
+          y1="0"
+          x2="0"
+          y2="10"
+          stroke={COVERAGE_COLORS.free.fill}
+          strokeWidth={4}
+          strokeOpacity={0.45}
+        />
+      </pattern>
+      <pattern
+        id={COVERAGE_PATTERN_IDS.partialPaid}
+        patternUnits="userSpaceOnUse"
+        width="10"
+        height="10"
+        patternTransform="rotate(45)"
+      >
+        <rect width="10" height="10" fill="#ffffff" fillOpacity={0.0} />
+        <line
+          x1="0"
+          y1="0"
+          x2="0"
+          y2="10"
+          stroke={COVERAGE_COLORS.paid.fill}
+          strokeWidth={4}
+          strokeOpacity={0.45}
+        />
+      </pattern>
+      <pattern
+        id={COVERAGE_PATTERN_IDS.partialMixed}
+        patternUnits="userSpaceOnUse"
+        width="10"
+        height="10"
+        patternTransform="rotate(45)"
+      >
+        <rect width="10" height="10" fill="#ffffff" fillOpacity={0.0} />
+        {/* Two stripes per cycle: green + orange, alternating, so the
+            partial-AND-mixed case reads as both "partial" and
+            "mixed status" at a glance. */}
+        <line
+          x1="0"
+          y1="0"
+          x2="0"
+          y2="10"
+          stroke={COVERAGE_COLORS.free.fill}
+          strokeWidth={3}
+          strokeOpacity={0.45}
+        />
+        <line
+          x1="5"
+          y1="0"
+          x2="5"
+          y2="10"
+          stroke={COVERAGE_COLORS.paid.fill}
+          strokeWidth={3}
+          strokeOpacity={0.45}
+        />
+      </pattern>
     </defs>
   </svg>
 );

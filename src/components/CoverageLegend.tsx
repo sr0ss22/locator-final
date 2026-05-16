@@ -1,5 +1,5 @@
 import React from "react";
-import { Eye, EyeOff, X } from "lucide-react";
+import { Eye, EyeOff, Wrench, X } from "lucide-react";
 import { COVERAGE_COLORS } from "@/lib/coverageStyle";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +48,20 @@ const SwatchStriped: React.FC<{ base: string; stripe: string }> = ({ base, strip
   />
 );
 
+// Partial-coverage swatch: transparent (white) base with colored
+// diagonal stripes — mirrors the partial-free / partial-paid SVG
+// patterns rendered on the map for Canadian FSAs that aren't fully
+// covered.
+const SwatchPartial: React.FC<{ color: string }> = ({ color }) => (
+  <span
+    className="inline-block w-3.5 h-3.5 rounded-sm border border-black/10 bg-white"
+    aria-hidden="true"
+    style={{
+      backgroundImage: `repeating-linear-gradient(45deg, transparent 0 3px, ${color} 3px 5px)`,
+    }}
+  />
+);
+
 export const CoverageLegend: React.FC<CoverageLegendProps> = ({
   visible,
   onToggle,
@@ -76,7 +90,14 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
         </button>
         <span className="font-semibold text-gray-800">Coverage</span>
         {isLoading && visible && (
-          <span className="text-[10px] text-gray-500 ml-1">loading…</span>
+          <Wrench
+            // Matches the LoadingSayings spinner the rest of the app
+            // uses, just sized for the legend pill and tinted blue to
+            // match the sky-500 accent used by the selected pin and
+            // other primary actions.
+            className="h-3.5 w-3.5 animate-spin text-sky-500 ml-0.5"
+            aria-label="Loading coverage"
+          />
         )}
       </div>
       {visible && filterLabel && (
@@ -118,6 +139,18 @@ export const CoverageLegend: React.FC<CoverageLegendProps> = ({
           <li className="flex items-center gap-2">
             <SwatchStriped base={COVERAGE_COLORS.paid.fill} stripe={COVERAGE_COLORS.free.fill} />
             <span>Mostly paid, some free</span>
+          </li>
+          {/* Partial-coverage variants only ever paint for Canadian
+              FSAs (US ZIPs are atomic). Showing them in the legend
+              unconditionally keeps the legend self-documenting for
+              admins switching between countries. */}
+          <li className="flex items-center gap-2">
+            <SwatchPartial color={COVERAGE_COLORS.free.fill} />
+            <span>Partial free (FSA)</span>
+          </li>
+          <li className="flex items-center gap-2">
+            <SwatchPartial color={COVERAGE_COLORS.paid.fill} />
+            <span>Partial paid (FSA)</span>
           </li>
         </ul>
       )}

@@ -19,6 +19,14 @@ export interface CoverageAggregateItem extends CoverageCounts {
   state_province: string | null;
   centroid_lat: number;
   centroid_lng: number;
+  // Distinct postal codes covered, split by status. For US ZIPs each
+  // polygon IS one postal code so these are effectively 0/1 and the
+  // overlay ignores them. For Canadian FSAs (which contain many
+  // postal codes), these power the partial-coverage visualization.
+  // Optional so the type is forward-compatible with any RPC version
+  // that predates migration 0177.
+  free_postal_codes?: number;
+  paid_postal_codes?: number;
 }
 
 export interface CoverageAggregateResponse {
