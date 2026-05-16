@@ -17,6 +17,11 @@ interface CountryFlagToggleProps {
   isCanada: boolean;
   onChange: (isCanada: boolean) => void;
   className?: string;
+  // When true, hides the "US" / "CA" text labels and renders just the
+  // flag glyphs as small square pills. Used in tight mobile headers
+  // where the surrounding "Find Installers" + chevron + filter-count
+  // badge are already eating the row.
+  iconOnly?: boolean;
 }
 
 const UsFlag: React.FC<{ className?: string }> = ({ className }) => (
@@ -61,26 +66,36 @@ const Pill: React.FC<{
   label: string;
   onClick: () => void;
   flag: React.ReactNode;
-}> = ({ active, label, onClick, flag }) => (
+  iconOnly?: boolean;
+}> = ({ active, label, onClick, flag, iconOnly }) => (
   <button
     type="button"
     onClick={onClick}
     aria-pressed={active}
     aria-label={`Search ${label} installers`}
+    title={label}
     className={cn(
       // Match the distance/brand pill aesthetic the locator already
       // uses (h-[30px], rounded-full, sky-50 selected state) so this
       // doesn't introduce a third button style.
-      "h-[30px] inline-flex items-center gap-1.5 rounded-full border px-2.5 text-[13.5px] font-medium transition-colors",
+      "h-[30px] inline-flex items-center rounded-full border transition-colors",
+      iconOnly
+        ? "w-[30px] justify-center p-0"
+        : "gap-1.5 px-2.5 text-[13.5px] font-medium",
       active
         ? "border-sky-300 bg-sky-50 text-sky-700"
         : "border-input bg-transparent text-gray-700 hover:bg-gray-50",
     )}
   >
-    <span className="block w-5 h-3 overflow-hidden rounded-sm ring-1 ring-black/10 flex-shrink-0">
+    <span
+      className={cn(
+        "block overflow-hidden rounded-sm ring-1 ring-black/10 flex-shrink-0",
+        iconOnly ? "w-5 h-3.5" : "w-5 h-3",
+      )}
+    >
       {flag}
     </span>
-    <span className="leading-none">{label}</span>
+    {!iconOnly && <span className="leading-none">{label}</span>}
   </button>
 );
 
@@ -88,14 +103,27 @@ const CountryFlagToggle: React.FC<CountryFlagToggleProps> = ({
   isCanada,
   onChange,
   className,
+  iconOnly,
 }) => (
   <div
     className={cn("inline-flex items-center gap-1.5", className)}
     role="group"
     aria-label="Country"
   >
-    <Pill active={!isCanada} label="US" onClick={() => onChange(false)} flag={<UsFlag className="w-full h-full" />} />
-    <Pill active={isCanada} label="CA" onClick={() => onChange(true)} flag={<CaFlag className="w-full h-full" />} />
+    <Pill
+      active={!isCanada}
+      label="US"
+      onClick={() => onChange(false)}
+      flag={<UsFlag className="w-full h-full" />}
+      iconOnly={iconOnly}
+    />
+    <Pill
+      active={isCanada}
+      label="CA"
+      onClick={() => onChange(true)}
+      flag={<CaFlag className="w-full h-full" />}
+      iconOnly={iconOnly}
+    />
   </div>
 );
 

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
+import { ChevronDown } from "lucide-react";
 import InstallerSearch from "@/components/InstallerSearch";
 import PublicBrandSkillFilter from "@/components/PublicBrandSkillFilter";
 import InstallerList from "@/components/InstallerList";
 import InstallerMapComponent from "@/components/InstallerMapComponent";
 import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { run as getCoordinates } from "@/functions/getCoordinates";
@@ -322,45 +324,146 @@ const Locator: React.FC = () => {
   const handleRadiusChange = (radius: number) => setSearchRadius(radius);
   const isLoadingData = loadingInstallers || loadingUserLocation || loadingOrs;
 
+  // Mobile: collapse the whole filter body behind the header so the
+  // map and the installer list aren't pushed off-screen. Default to
+  // open if the user hasn't typed a search yet (they need the input
+  // and country toggle exposed), default to collapsed if they've
+  // already loaded a search from the URL.
+  const [isFiltersOpen, setIsFiltersOpen] = useState<boolean>(
+    () => !searchParams.get('q'),
+  );
+
+  const activeFilterCount =
+    filterBrands.length +
+    filterProductSkills.length +
+    filterCertifications.length +
+    (filterAcceptsShipments === 'yes' ? 1 : 0) +
+    (showAdditionalFilters && filterStates.length > 0 ? 1 : 0);
+
+  // 1-line summary of the current filter state. Shown next to the
+  // collapsed mobile header so the user can see what they've set
+  // without expanding.
+  const collapsedFilterSummary = useMemo(() => {
+    const displayedRadius = isCanada
+      ? distanceOptions.find((o) => o.miles === searchRadius)?.km ?? searchRadius
+      : searchRadius;
+    const parts: string[] = [`${displayedRadius} ${distanceUnit}`];
+    if (activeFilterCount > 0) {
+      parts.push(`${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'}`);
+    }
+    return parts.join(' · ');
+  }, [isCanada, distanceOptions, searchRadius, distanceUnit, activeFilterCount]);
+
   return (
     <div className="flex flex-col min-h-screen">
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex-grow">
         {/* Page header — logo + title on the left, action buttons on
-            the right. Moved out of the grid (was previously a row 2
-            cell) so the map and the installer list can stack
-            directly under each other in the right column with no
-            dead vertical space waiting on the buttons to clear. */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6 text-center sm:text-left">
-          <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-3">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg" alt="Hunter Douglas Logo" className="h-10 sm:h-12" />
+            the right. The "Installer Locator" text is hidden on mobile
+            (matches /public-locator) so the header collapses to just
+            the logo + action buttons, leaving more vertical space for
+            the filters and map below. Action buttons sit here instead
+            of in a dedicated grid row so the map and installer list
+            can stack directly under each other with no dead vertical
+            space waiting on the buttons to clear. */}
+        <div className="flex flex-row items-center justify-between gap-3 mb-4 sm:mb-6">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg"
+              alt="Hunter Douglas Logo"
+              className="h-8 sm:h-12 flex-shrink-0"
+            />
             <h1
-              className="text-2xl sm:text-3xl font-bold text-[#5b676f]"
+              className="hidden sm:block text-2xl sm:text-3xl font-bold text-[#5b676f]"
               style={{ fontFamily: 'Lato, system-ui, sans-serif' }}
             >
               Installer Locator
             </h1>
           </div>
-          <div className="flex flex-wrap justify-center sm:justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <Button onClick={() => navigate("/public-locator")} variant="outline" size="sm">Public Locator View</Button>
             <Button onClick={() => navigate("/installers")} size="sm">Installer Management</Button>
           </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-4 lg:auto-rows-min">
           {/* 1. Filters card — mobile #1, desktop col 1 row 1.
-              Pill-button styling matches /public-locator so admins and
-              end users see the same filter aesthetic. Section labels
-              use the same small uppercase treatment; the pill class
-              itself is reused from PublicBrandSkillFilter and the
-              public locator's inline distance/other pill rows. */}
+              Mirrors /public-locator's mobile pattern: on small
+              screens the card body collapses behind the header so the
+              map and the summary aren't pushed off-screen. On lg+ the
+              chevron / collapsed-summary chrome is hidden and the body
+              is always visible.
+              Pill-button styling and the small uppercase section
+              labels also match /public-locator so the two pages
+              feel like the same product. */}
           <div className="lg:col-start-1 lg:col-span-1 lg:row-start-1">
-            <div className="p-4 border rounded-lg shadow-sm bg-card space-y-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <h2 className="text-xl font-semibold">Find Installers</h2>
-                <CountryFlagToggle isCanada={isCanada} onChange={setIsCanada} />
+            <Card className="flex flex-col">
+              <CardHeader className="pb-2 pt-4">
+                {/* Mobile header: title (+ summary when collapsed) on the
+                    left, icon-only country toggle + filter-count badge
+                    + chevron on the right. The wrapping flex container
+                    intercepts pointer events so tapping the country
+                    flags doesn't also toggle the collapse. */}
+                <div className="lg:hidden w-full flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsFiltersOpen((o) => !o)}
+                    aria-expanded={isFiltersOpen}
+                    aria-controls="locator-filters"
+                    className="flex-1 min-w-0 flex items-baseline gap-2 text-left"
+                  >
+                    <CardTitle className="text-xl font-semibold whitespace-nowrap">
+                      Find Installers
+                    </CardTitle>
+                    {!isFiltersOpen && (
+                      <span className="text-xs text-gray-500 truncate">
+                        {collapsedFilterSummary}
+                      </span>
+                    )}
+                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <CountryFlagToggle
+                      isCanada={isCanada}
+                      onChange={setIsCanada}
+                      iconOnly
+                    />
+                    {activeFilterCount > 0 && !isFiltersOpen && (
+                      <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-sky-500 text-white text-xs font-semibold">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsFiltersOpen((o) => !o)}
+                      aria-label={isFiltersOpen ? "Collapse filters" : "Expand filters"}
+                      className="p-1"
+                    >
+                      <ChevronDown
+                        className={`h-5 w-5 text-gray-500 transition-transform duration-200 ${isFiltersOpen ? 'rotate-180' : ''}`}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </div>
+                </div>
+                {/* Desktop header: title + full-width country toggle. */}
+                <div className="hidden lg:flex items-center justify-between gap-2">
+                  <CardTitle className="text-xl font-semibold">Find Installers</CardTitle>
+                  <CountryFlagToggle isCanada={isCanada} onChange={setIsCanada} />
+                </div>
+              </CardHeader>
+              {/* Search input stays outside the collapsible body so it's
+                  always reachable on mobile (matches /public-locator). */}
+              <div className="px-6 pt-1 pb-1">
+                <InstallerSearch
+                  value={inputValue}
+                  onChange={setInputValue}
+                  onSearch={handleSearch}
+                  iconOnly
+                />
               </div>
-              {!showAdditionalFilters && (
-                <>
-                  <InstallerSearch value={inputValue} onChange={setInputValue} onSearch={handleSearch} />
+              <CardContent
+                id="locator-filters"
+                className={`space-y-3 pt-2 pb-4 lg:block ${isFiltersOpen ? 'block' : 'hidden'}`}
+              >
+                {!showAdditionalFilters && (
                   <div>
                     <div className="text-[13px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
                       Distance ({distanceUnit})
@@ -385,54 +488,54 @@ const Locator: React.FC = () => {
                       ))}
                     </ToggleGroup>
                   </div>
-                </>
-              )}
-              <PublicBrandSkillFilter
-                selectedBrands={filterBrands}
-                selectedProductSkills={filterProductSkills}
-                selectedCertifications={filterCertifications}
-                onBrandsChange={handleBrandsChange}
-                onProductSkillsChange={handleProductSkillsChange}
-                onCertificationsChange={handleCertificationsChange}
-                brandsToShow={["Hunter Douglas", "Alta"]}
-              />
-              <div>
-                <div className="text-[13px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
-                  Other
-                </div>
-                <ToggleGroup
-                  type="multiple"
-                  value={filterAcceptsShipments === 'yes' ? ['shipments'] : []}
-                  onValueChange={(value) =>
-                    setFilterAcceptsShipments(value.includes('shipments') ? 'yes' : 'any')
-                  }
-                  className="flex flex-wrap items-center justify-start gap-1.5"
-                >
-                  <ToggleGroupItem
-                    value="shipments"
-                    aria-label="Accepts Shipments"
-                    className="h-[30px] px-[11px] text-[13.5px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
-                  >
-                    Accepts Shipments
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-              <Separator />
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">Additional Filters</h3>
-                  <Switch id="additional-filters-toggle" checked={showAdditionalFilters} onCheckedChange={setShowAdditionalFilters} />
-                </div>
-                {showAdditionalFilters && (
-                  <div className="space-y-4 mt-2">
-                    <div>
-                      <Label htmlFor="state-province-select">State / Province</Label>
-                      <MultiSelect options={allStatesProvinces} selectedValues={filterStates} onValueChange={setFilterStates} placeholder="Select States/Provinces" />
-                    </div>
-                  </div>
                 )}
-              </div>
-            </div>
+                <PublicBrandSkillFilter
+                  selectedBrands={filterBrands}
+                  selectedProductSkills={filterProductSkills}
+                  selectedCertifications={filterCertifications}
+                  onBrandsChange={handleBrandsChange}
+                  onProductSkillsChange={handleProductSkillsChange}
+                  onCertificationsChange={handleCertificationsChange}
+                  brandsToShow={["Hunter Douglas", "Alta"]}
+                />
+                <div>
+                  <div className="text-[13px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+                    Other
+                  </div>
+                  <ToggleGroup
+                    type="multiple"
+                    value={filterAcceptsShipments === 'yes' ? ['shipments'] : []}
+                    onValueChange={(value) =>
+                      setFilterAcceptsShipments(value.includes('shipments') ? 'yes' : 'any')
+                    }
+                    className="flex flex-wrap items-center justify-start gap-1.5"
+                  >
+                    <ToggleGroupItem
+                      value="shipments"
+                      aria-label="Accepts Shipments"
+                      className="h-[30px] px-[11px] text-[13.5px] rounded-full border border-input bg-transparent text-gray-700 hover:bg-gray-50 data-[state=on]:bg-sky-50 data-[state=on]:text-sky-700 data-[state=on]:border-sky-300"
+                    >
+                      Accepts Shipments
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+                <Separator />
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">Additional Filters</h3>
+                    <Switch id="additional-filters-toggle" checked={showAdditionalFilters} onCheckedChange={setShowAdditionalFilters} />
+                  </div>
+                  {showAdditionalFilters && (
+                    <div className="space-y-4 mt-2">
+                      <div>
+                        <Label htmlFor="state-province-select">State / Province</Label>
+                        <MultiSelect options={allStatesProvinces} selectedValues={filterStates} onValueChange={setFilterStates} placeholder="Select States/Provinces" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* 2. Map — mobile #2, desktop col 2-3 row 1.

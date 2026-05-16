@@ -310,10 +310,13 @@ const PublicLocator: React.FC = () => {
           <img
             src="https://upload.wikimedia.org/wikipedia/commons/a/aa/Hunter_Douglas_Logo.svg"
             alt="Hunter Douglas Logo"
-            className="h-7 sm:h-9 flex-shrink-0"
+            className="h-8 sm:h-9 flex-shrink-0"
           />
+          {/* Hidden on mobile to save vertical space — the logo is
+              enough branding for the small viewport, and getting to
+              the filters / map faster matters more than a title bar. */}
           <h1
-            className="text-lg sm:text-2xl font-bold text-[#5b676f] whitespace-nowrap"
+            className="hidden sm:block text-lg sm:text-2xl font-bold text-[#5b676f] whitespace-nowrap"
             style={{ fontFamily: 'Lato, system-ui, sans-serif' }}
           >
             Installer Locator
