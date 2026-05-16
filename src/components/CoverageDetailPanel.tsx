@@ -1,15 +1,9 @@
-import React, { useMemo } from "react";
-import { Loader2, MapPin } from "lucide-react";
+import React, { useEffect, useMemo } from "react";
+import { Loader2, MapPin, X } from "lucide-react";
 
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import { useCoverageDetail, type CoverageDetailRow } from "@/hooks/useInstallerData";
 
 /**
@@ -19,10 +13,12 @@ import { useCoverageDetail, type CoverageDetailRow } from "@/hooks/useInstallerD
  * names and so is gated by the underlying `get_coverage_detail` RPC,
  * which itself enforces `public.is_admin()`.
  *
- * The Canadian "partial coverage" striped polygons are the primary reason
- * this panel exists: they're a great at-a-glance signal but say nothing
- * about WHICH of the FSA's postal codes are covered. Clicking the polygon
- * lists them.
+ * Implemented as a NON-MODAL slide-out (not the shadcn `<Sheet>` /
+ * Radix Dialog) so the map, filters, and installer list all remain
+ * fully visible and interactive while the panel is open. The previous
+ * Sheet implementation dimmed the page with a dark overlay which
+ * defeated the whole point of letting an admin compare the panel
+ * against the polygon they just clicked.
  */
 
 export interface CoverageDetailPanelTarget {
@@ -46,6 +42,17 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
   installerIds,
 }) => {
   const open = target != null;
+
+  // ESC to close — matches the affordance the dialog version had for
+  // free, since we no longer get it from Radix.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   const { data, isLoading, error } = useCoverageDetail({
     country: target?.country ?? "USA",
@@ -98,80 +105,96 @@ const CoverageDetailPanel: React.FC<CoverageDetailPanelProps> = ({
   })();
 
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
+    <aside
+      // Anchored to the LEFT edge of the viewport — small enough that
+      // the map (in the centre column of the locator layout) is still
+      // visible to its right, but tall enough to scroll a long postal-
+      // code list. `pointer-events-none` when closed so clicks pass
+      // through to anything underneath.
+      aria-hidden={!open}
+      aria-label="Coverage details"
+      className={cn(
+        "fixed left-0 top-0 bottom-0 z-[1100]",
+        "w-[min(380px,92vw)] sm:w-[380px]",
+        "bg-white border-r border-gray-200 shadow-xl",
+        "flex flex-col",
+        "transform-gpu transition-transform duration-300 ease-out",
+        open ? "translate-x-0" : "-translate-x-full pointer-events-none",
+      )}
     >
-      <SheetContent
-        side="right"
-        className="w-[min(420px,100vw)] sm:max-w-md flex flex-col p-0"
-      >
-        <SheetHeader className="px-6 pt-6 pb-3">
-          <SheetTitle className="flex items-center gap-2 text-lg">
+      <div className="flex items-start justify-between gap-2 px-5 pt-5 pb-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-base font-semibold text-gray-900">
             <MapPin className="h-4 w-4 text-sky-500" aria-hidden="true" />
             {title}
-          </SheetTitle>
-          <SheetDescription className="text-xs">
+          </div>
+          <p className="text-xs text-gray-500 mt-0.5">
             {ratioText ??
               (installerCount > 0
                 ? `${installerCount} installer${installerCount === 1 ? "" : "s"} covering this area`
                 : "Coverage breakdown")}
-          </SheetDescription>
-        </SheetHeader>
-
-        <Separator />
-
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-gray-500 py-6 justify-center">
-              <Loader2 className="h-4 w-4 animate-spin text-sky-500" />
-              Loading coverage details…
-            </div>
-          ) : error ? (
-            <div className="text-sm text-red-600">
-              Failed to load coverage details.
-            </div>
-          ) : coveredPostalCount === 0 ? (
-            <div className="text-sm text-gray-500 py-6 text-center">
-              No coverage from the currently visible installers.
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {Array.from(grouped.entries()).map(([postal, rows]) => (
-                <li
-                  key={postal}
-                  className="rounded-md border border-gray-200 p-3 bg-white"
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className="text-sm font-mono font-semibold text-gray-900">
-                      {formatPostal(postal, target?.country ?? "USA")}
-                    </span>
-                    <span className="text-[10px] uppercase tracking-wide text-gray-400">
-                      {rows.length} installer{rows.length === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                  <ul className="space-y-1">
-                    {rows.map((row) => (
-                      <li
-                        key={`${row.installer_id}-${row.status}`}
-                        className="flex items-center justify-between gap-2 text-xs"
-                      >
-                        <span className="text-gray-800 truncate">
-                          {row.installer_name}
-                        </span>
-                        <StatusBadge status={row.status} />
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          )}
+          </p>
         </div>
-      </SheetContent>
-    </Sheet>
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+          aria-label="Close coverage details"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <Separator />
+
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-500 py-6 justify-center">
+            <Loader2 className="h-4 w-4 animate-spin text-sky-500" />
+            Loading coverage details…
+          </div>
+        ) : error ? (
+          <div className="text-sm text-red-600">
+            Failed to load coverage details.
+          </div>
+        ) : coveredPostalCount === 0 ? (
+          <div className="text-sm text-gray-500 py-6 text-center">
+            No coverage from the currently visible installers.
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {Array.from(grouped.entries()).map(([postal, rows]) => (
+              <li
+                key={postal}
+                className="rounded-md border border-gray-200 p-3 bg-white"
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="text-sm font-mono font-semibold text-gray-900">
+                    {formatPostal(postal, target?.country ?? "USA")}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wide text-gray-400">
+                    {rows.length} installer{rows.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <ul className="space-y-1">
+                  {rows.map((row) => (
+                    <li
+                      key={`${row.installer_id}-${row.status}`}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="text-gray-800 truncate">
+                        {row.installer_name}
+                      </span>
+                      <StatusBadge status={row.status} />
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </aside>
   );
 };
 
