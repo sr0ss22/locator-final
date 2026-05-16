@@ -249,10 +249,13 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
               pinNumber,
               installer.id,
               selectedInstallerId,
-              // Public locator already excludes inactive installers via the
-              // server-side RPC, so isInactive only ever flips true on the
-              // internal locator. Safe to evaluate either way.
-              installer.rawSupabaseData?.is_active !== 1,
+              // Only consider an installer "inactive" on the internal
+              // locator. The public RPC excludes inactive installers
+              // server-side AND doesn't return the is_active column at
+              // all, so testing `is_active !== 1` would default every
+              // public-view pin to gray. Gating on !isPublicView keeps
+              // public pins black.
+              !isPublicView && installer.rawSupabaseData?.is_active !== 1,
             )}
           >
             {isPublicView ? (
