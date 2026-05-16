@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { GestureHandling } from 'leaflet-gesture-handling';
 import { Installer, InstallerBrand, InstallerCertification, InstallerSkill } from '@/types/installer';
 import { useCountrySettings } from "@/hooks/useCountrySettings";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -14,12 +15,31 @@ import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
+// Mobile gesture-handling plugin: makes single-finger touches scroll
+// the page (not the map) and shows a "Use two fingers to move the map"
+// overlay until the user does. The plugin's own CSS is imported in
+// src/main.tsx so it loads once for the app.
+import 'leaflet-gesture-handling/dist/leaflet-gesture-handling.css';
+
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl,
   iconUrl,
   shadowUrl,
 });
+
+// Register the gesture-handling plugin once at module load. Safe to
+// call repeatedly; Leaflet de-dupes the handler under the same key.
+(L.Map as any).addInitHook('addHandler', 'gestureHandling', GestureHandling);
+
+// Reads coarse-pointer (touch) capability at component-mount time.
+// Avoided a viewport-width media query because tablets are wide enough
+// to behave like desktop but still want two-finger pan, and a hover-
+// capable laptop in tablet mode should keep desktop scroll-zoom.
+function detectCoarsePointer(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(pointer: coarse)').matches;
+}
 
 interface CoverageOverlayConfig {
   enabled: boolean;
@@ -50,6 +70,12 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
   // the overlay isn't configured at all so this hook always runs.
   const [coverageVisible, setCoverageVisible] = useState<boolean>(coverageOverlay?.defaultVisible ?? false);
   const [coverageLoading, setCoverageLoading] = useState<boolean>(false);
+
+  // Gesture-handling plugin is mount-time-only: Leaflet wires the
+  // handler when the map is constructed, so we sample the pointer kind
+  // once and pass it through. A desktop user resizing to mobile won't
+  // hot-swap behavior, which is fine (and matches Google Maps).
+  const [isTouchDevice] = useState<boolean>(detectCoarsePointer);
 
   useEffect(() => {
     setMounted(true);
@@ -133,7 +159,21 @@ const InstallerMapComponent: React.FC<InstallerMapProps> = ({ userLocation, inst
       center={userLocation?.lat && userLocation?.lng ? [userLocation.lat, userLocation.lng] : (isCanada ? [56.1304, -106.3468] : [39.8283, -98.5795])}
       zoom={userLocation?.lat && userLocation?.lng ? 10 : 4}
       scrollWheelZoom={true}
-
+      // Plugin reads this option at construction time and registers
+      // its own touch handler when true. We pass it only on coarse-
+      // pointer devices so desktop scroll-to-zoom + click-drag stay
+      // unchanged. Cast through `any` because react-leaflet's prop
+      // types don't know about the plugin option.
+      {...({
+        gestureHandling: isTouchDevice,
+        gestureHandlingOptions: {
+          text: {
+            touch: 'Use two fingers to move the map',
+            scroll: 'Use ctrl + scroll to zoom',
+            scrollMac: 'Use \u2318 + scroll to zoom',
+          },
+        },
+      } as any)}
       className="h-full w-full"
       ref={mapRef}
     >
