@@ -10,27 +10,30 @@
 -- green, which reads as "fully covered" even though 95% of the FSA has
 -- no service.
 --
--- This migration adds two new fields to the per-FSA aggregate so the
--- frontend can distinguish "fully covered" from "partial coverage":
---
+-- This migration adds two new fields per FSA row:
 --   * free_postal_codes  -- distinct postals in this FSA covered as Approved
---                           by ANY matching installer
 --   * paid_postal_codes  -- distinct postals in this FSA covered as
---                           Needs Approval by ANY matching installer
+--                           Needs Approval
+-- so the frontend can compare (free + paid)/total and pick a partial-
+-- coverage pattern instead of solid green when ratio < 0.99.
 --
--- IMPORTANT: We keep the original join order from migration 0175
--- (fsa_centroids -> installer_zip_codes) instead of pre-aggregating
--- the entire installer_zip_codes table. A blanket pre-aggregate of
--- every row (millions across US + CA) blew the statement-timeout
--- budget on production — the join-from-fsa_centroids approach lets
--- the planner restrict the scan to just the postal codes that share
--- a 3-char prefix with the in-radius FSAs, which is dramatically
--- cheaper.
---
--- For US ZIPs the same two fields are returned for shape consistency
--- (effectively 0/1 per row since each zip IS one postal code), so
--- nothing about US rendering changes.
+-- Performance notes:
+--   1. We add a functional B-tree index on the FSA prefix of
+--      installer_zip_codes — mirrors the existing one on
+--      canadian_postal_codes (migration 0173). Without it the join
+--      `... = f.fsa` requires a full table scan + per-row function
+--      evaluation, which doubled+ the aggregate's runtime once we
+--      added the two new count(DISTINCT) calls and tripped the 30s
+--      statement timeout in production.
+--   2. We pre-normalize zip_code in a CTE so count(DISTINCT) operates
+--      on a plain column instead of `upper(replace(...))`. This lets
+--      Postgres use hash aggregation instead of sort+unique.
 -- =============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_installer_zip_codes_fsa_prefix
+  ON public.installer_zip_codes (
+    (upper(left(replace(zip_code, ' ', ''), 3)))
+  );
 
 CREATE OR REPLACE FUNCTION public.get_zip_coverage_aggregate(
   p_country            text,
@@ -158,13 +161,12 @@ BEGIN
     WHERE a.free_count + a.paid_count > 0;
 
   ELSE
-    -- Canada path. The join order here is critical: fsa_centroids is
-    -- ~thousands of rows (only the FSAs whose postals fall within
-    -- p_radius_miles of the search point), so joining FROM that side
-    -- into installer_zip_codes lets the planner constrain the scan
-    -- to a handful of FSA prefixes. Flipping the order (pre-aggregating
-    -- the entire installer_zip_codes table by FSA prefix first) blows
-    -- the 30s statement-timeout budget in production. Keep it this way.
+    -- Canada path. The izc_normalized CTE applies all string
+    -- normalization once and is filtered by the FSA-prefix index
+    -- created above. Aggregation then operates on plain columns
+    -- (installer_id, zip_norm) so the planner can hash-aggregate
+    -- instead of falling back to sort+unique on a functional
+    -- expression for every group.
     WITH matching_installers AS (
       SELECT i.id
       FROM public.installers i
@@ -230,24 +232,36 @@ BEGIN
       FROM candidate_postals
       GROUP BY fsa
     ),
+    fsa_keys AS (
+      SELECT fsa FROM fsa_centroids
+    ),
+    -- Pre-normalize zip_code once per row + pre-filter by the in-radius
+    -- FSAs (using the new idx_installer_zip_codes_fsa_prefix index).
+    -- After this CTE every downstream aggregate operates on plain
+    -- columns, which is dramatically cheaper than count(DISTINCT
+    -- functional-expression).
+    izc_normalized AS (
+      SELECT
+        upper(left(replace(izc.zip_code, ' ', ''), 3)) AS fsa,
+        upper(replace(izc.zip_code, ' ', ''))          AS zip_norm,
+        izc.installer_id,
+        izc.status
+      FROM public.installer_zip_codes izc
+      WHERE upper(left(replace(izc.zip_code, ' ', ''), 3)) IN (SELECT fsa FROM fsa_keys)
+    ),
     aggregated AS (
       SELECT
         f.fsa            AS zip_code,
         f.province_abbr  AS state_province,
         f.lat,
         f.lng,
-        count(DISTINCT izc.installer_id)
-          FILTER (WHERE izc.status = 'Approved')                                AS free_count,
-        count(DISTINCT izc.installer_id)
-          FILTER (WHERE izc.status = 'Needs Approval')                          AS paid_count,
-        count(DISTINCT upper(replace(izc.zip_code, ' ', '')))
-          FILTER (WHERE izc.status = 'Approved')                                AS free_postal_codes,
-        count(DISTINCT upper(replace(izc.zip_code, ' ', '')))
-          FILTER (WHERE izc.status = 'Needs Approval')                          AS paid_postal_codes
+        count(DISTINCT n.installer_id) FILTER (WHERE n.status = 'Approved')      AS free_count,
+        count(DISTINCT n.installer_id) FILTER (WHERE n.status = 'Needs Approval') AS paid_count,
+        count(DISTINCT n.zip_norm)     FILTER (WHERE n.status = 'Approved')      AS free_postal_codes,
+        count(DISTINCT n.zip_norm)     FILTER (WHERE n.status = 'Needs Approval') AS paid_postal_codes
       FROM fsa_centroids f
-      JOIN public.installer_zip_codes izc
-             ON upper(left(replace(izc.zip_code, ' ', ''), 3)) = f.fsa
-      JOIN matching_installers mi ON mi.id = izc.installer_id
+      JOIN izc_normalized n        ON n.fsa = f.fsa
+      JOIN matching_installers mi  ON mi.id = n.installer_id
       GROUP BY f.fsa, f.province_abbr, f.lat, f.lng
     )
     SELECT jsonb_build_object(
