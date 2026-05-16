@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Map as MapIcon, Settings } from "lucide-react";
 import InstallerSearch from "@/components/InstallerSearch";
 import PublicBrandSkillFilter from "@/components/PublicBrandSkillFilter";
 import InstallerList from "@/components/InstallerList";
@@ -379,9 +379,46 @@ const Locator: React.FC = () => {
               Installer Locator
             </h1>
           </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button onClick={() => navigate("/public-locator")} variant="outline" size="sm">Public Locator View</Button>
-            <Button onClick={() => navigate("/installers")} size="sm">Installer Management</Button>
+          {/* Action buttons. On mobile they collapse to square icon
+              buttons (map / settings) so the whole header stays on
+              one row next to the logo. On sm+ they fan out to the
+              full-text buttons so admins still see the labels on
+              larger screens. */}
+          <div className="flex justify-end gap-2 flex-shrink-0">
+            <Button
+              onClick={() => navigate("/public-locator")}
+              variant="outline"
+              size="sm"
+              className="sm:hidden h-9 w-9 p-0"
+              aria-label="Public Locator View"
+              title="Public Locator View"
+            >
+              <MapIcon className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            <Button
+              onClick={() => navigate("/installers")}
+              size="sm"
+              className="sm:hidden h-9 w-9 p-0"
+              aria-label="Installer Management"
+              title="Installer Management"
+            >
+              <Settings className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            <Button
+              onClick={() => navigate("/public-locator")}
+              variant="outline"
+              size="sm"
+              className="hidden sm:inline-flex"
+            >
+              Public Locator View
+            </Button>
+            <Button
+              onClick={() => navigate("/installers")}
+              size="sm"
+              className="hidden sm:inline-flex"
+            >
+              Installer Management
+            </Button>
           </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-4 lg:auto-rows-min">
