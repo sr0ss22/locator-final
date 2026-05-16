@@ -902,6 +902,36 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     }
   }, [fsaEditTarget, fsaEditFeature]);
 
+  // Clip the FSA's postals to those whose coordinates actually fall
+  // inside the FSA polygon. The Canadian postal-code table includes
+  // PO-Box / business-delivery postals whose lat/lng is the central
+  // post office that handles them — for a rural FSA like T3R that
+  // means a handful of "T3R …" postals end up plotted in downtown
+  // Calgary even though they belong to T3R. Rendering them as
+  // floating dots in another city is just confusing. They still
+  // exist; they still get hit by the bulk-action paths; we just
+  // don't draw them on this map. The banner reports how many.
+  const fsaEditPostalsOnMap = useMemo(() => {
+    if (!fsaEditTarget || fsaEditPostals.length === 0) return fsaEditPostals;
+    if (!fsaEditFeature?.geometry) return fsaEditPostals;
+    try {
+      const polygon = fsaEditFeature as any;
+      return fsaEditPostals.filter((p) => {
+        if (p.latitude == null || p.longitude == null) return false;
+        const pt = turf.point([p.longitude, p.latitude]);
+        try {
+          return turf.booleanPointInPolygon(pt, polygon);
+        } catch {
+          return false;
+        }
+      });
+    } catch (err) {
+      console.error('Failed to clip FSA postals to polygon:', err);
+      return fsaEditPostals;
+    }
+  }, [fsaEditTarget, fsaEditPostals, fsaEditFeature]);
+  const fsaEditOffMapCount = Math.max(0, fsaEditPostals.length - fsaEditPostalsOnMap.length);
+
   // Live aggregate of THIS FSA's currently-selected postals — drives
   // the count in the focus banner so it stays accurate as the user
   // clicks dots.
@@ -1529,7 +1559,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
           renderer={svgPolygonRenderer}
         />
       )}
-      {fsaEditTarget && fsaEditPostals.length > 0 && fsaEditPostals.map(point => {
+      {fsaEditTarget && fsaEditPostalsOnMap.length > 0 && fsaEditPostalsOnMap.map(point => {
         if (point.latitude == null || point.longitude == null) return null;
         const status = highlightedZipCodes.get(
           (point.postal_code ?? '').toUpperCase().replace(/\s+/g, ''),
@@ -1591,7 +1621,11 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
         onBulkSelectionComplete={onBulkSelectionComplete}
         isCanada={isCanada}
         publicAuth={publicAuth}
-        fsaEditPostals={fsaEditTarget ? fsaEditPostals : undefined}
+        // The lasso always works against the dots the user can
+        // actually see, so feed it the clipped list (postals whose
+        // lat/lng falls inside the FSA polygon) rather than the raw
+        // RPC response.
+        fsaEditPostals={fsaEditTarget ? fsaEditPostalsOnMap : undefined}
       />
       {fsaBulkPopup && onFsaBulkAction && (
         <Popup
@@ -1794,6 +1828,22 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
                       <>
                         <span className="text-gray-300 mx-1">·</span>
                         <span className="text-gray-500">{fsaEditCounts.unassigned.toLocaleString()} unassigned</span>
+                      </>
+                    )}
+                    {/* PO-box / business-delivery postals whose
+                        coordinates fall outside the FSA polygon and
+                        aren't drawn as dots. Reported so admins
+                        know nothing is silently missing — bulk
+                        actions still affect them. */}
+                    {fsaEditOffMapCount > 0 && (
+                      <>
+                        <span className="text-gray-300 mx-1">·</span>
+                        <span
+                          className="text-gray-400"
+                          title={`${fsaEditOffMapCount.toLocaleString()} postals (likely PO boxes) have coordinates outside this FSA's polygon and aren't drawn. Use "Bulk actions…" to include them.`}
+                        >
+                          {fsaEditOffMapCount.toLocaleString()} off-map
+                        </span>
                       </>
                     )}
                   </>
