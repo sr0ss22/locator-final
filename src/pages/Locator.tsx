@@ -331,7 +331,7 @@ const Locator: React.FC = () => {
                 selectedInstallerId={selectedInstallerId}
                 coverageOverlay={{
                   enabled: true,
-                  defaultVisible: false,
+                  defaultVisible: true,
                   searchCenter: userLocation,
                   searchRadiusMiles: searchRadius,
                   brands: filterBrands,
