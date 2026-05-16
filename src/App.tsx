@@ -3,10 +3,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
 import { CountrySettingsProvider } from "./hooks/useCountrySettings";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 import LoadingSayings from "./components/LoadingSayings";
+import Footer from "./components/Footer";
 
 // Eagerly load public-facing and essential components
 import PublicLocator from "./pages/PublicLocator";
@@ -32,6 +33,17 @@ const LoadingFallback = () => (
   </div>
 );
 
+// Wraps every route: page content grows to fill remaining viewport
+// height, footer sticks to the bottom.
+const Layout = () => (
+  <div className="flex flex-col min-h-screen">
+    <div className="flex-1">
+      <Outlet />
+    </div>
+    <Footer />
+  </div>
+);
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -42,28 +54,27 @@ const App = () => (
           <SessionContextProvider>
             <Suspense fallback={<LoadingFallback />}>
               <Routes>
-                {/* Public Routes */}
-                <Route path="/" element={<PublicLocator />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/public-locator" element={<PublicLocator />} />
-                <Route path="/update-password" element={<UpdatePassword />} />
-                <Route path="/territory-editor/:installerId/:token" element={<PublicTerritoryEditor />} />
+                <Route element={<Layout />}>
+                  {/* Public Routes */}
+                  <Route path="/" element={<PublicLocator />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/public-locator" element={<PublicLocator />} />
+                  <Route path="/update-password" element={<UpdatePassword />} />
+                  <Route path="/territory-editor/:installerId/:token" element={<PublicTerritoryEditor />} />
+                  <Route path="/claim-profile" element={<ClaimProfilePage />} />
 
-                {/* Special route for installers to claim their profile */}
-                <Route path="/claim-profile" element={<ClaimProfilePage />} />
+                  {/* Protected Routes */}
+                  <Route element={<ProtectedRoute />}>
+                    <Route path="/locator" element={<Locator />} />
+                    <Route path="/installers" element={<InstallerManagement />} />
+                    <Route path="/installers/edit/:installerId" element={<EditInstallerPage />} />
+                    <Route path="/territories" element={<TerritoryManagement />} />
+                    <Route path="/admin-tools" element={<AdminToolsPage />} />
+                  </Route>
 
-                {/* Protected Routes - All routes within this element require authentication and role check */}
-                <Route element={<ProtectedRoute />}>
-                  {/* These are the actual protected routes */}
-                  <Route path="/locator" element={<Locator />} />
-                  <Route path="/installers" element={<InstallerManagement />} />
-                  <Route path="/installers/edit/:installerId" element={<EditInstallerPage />} />
-                  <Route path="/territories" element={<TerritoryManagement />} />
-                  <Route path="/admin-tools" element={<AdminToolsPage />} />
+                  {/* Catch-all Not Found Route */}
+                  <Route path="*" element={<NotFound />} />
                 </Route>
-
-                {/* Catch-all Not Found Route */}
-                <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
           </SessionContextProvider>
