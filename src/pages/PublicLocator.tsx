@@ -10,7 +10,7 @@ import { run as getIpLocation } from "@/functions/getIpLocation";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useCountrySettings } from "@/hooks/useCountrySettings";
-import { detectCountryFromPostalCode } from "@/lib/detectCountry";
+import CountryFlagToggle from "@/components/CountryFlagToggle";
 import InstallerSummary from "@/components/InstallerSummary";
 import { Installer, InstallerCertification, InstallerBrand, InstallerSkill } from "@/types/installer";
 import { useNavigate } from "react-router-dom";
@@ -33,7 +33,7 @@ const PublicLocator: React.FC = () => {
   const [filterAcceptsShipments, setFilterAcceptsShipments] = useState<boolean>(() => searchParams.get('shipments') === 'yes');
   const [filterMileageCovered, setFilterMileageCovered] = useState<boolean>(() => searchParams.get('mileage') === 'yes');
 
-  const { isCanada, distanceUnit, toggleCountry, setIsCanada } = useCountrySettings();
+  const { isCanada, distanceUnit, setIsCanada } = useCountrySettings();
   const navigate = useNavigate();
   const { user, loading: sessionLoading } = useSession();
 
@@ -91,19 +91,6 @@ const PublicLocator: React.FC = () => {
   }), [locationData]);
 
   const searchedZipCode = useMemo(() => locationData?.zipCode || "", [locationData]);
-
-  // Auto-switch country based on the geocoded postal code so a search
-  // for a Canadian city/postal flips the app into Canada mode (and
-  // surfaces FSA polygons, km units, etc.) without the user having
-  // to hit the manual toggle first.
-  useEffect(() => {
-    const detected = detectCountryFromPostalCode(locationData?.zipCode ?? null);
-    if (!detected) return;
-    const detectedIsCanada = detected === "Canada";
-    if (detectedIsCanada !== isCanada) {
-      setIsCanada(detectedIsCanada);
-    }
-  }, [locationData?.zipCode, isCanada, setIsCanada]);
 
   const { data: rawInstallers, isLoading: loadingInstallers } = usePublicInstallers(
     userSearchLocation,
@@ -289,34 +276,54 @@ const PublicLocator: React.FC = () => {
               <Card className="h-full flex flex-col">
                 <CardHeader className="pb-2 pt-4">
                   {/* Mobile: clickable header acts as the collapse toggle and
-                      shows a 1-line summary of the current filter state. */}
-                  <button
-                    type="button"
-                    onClick={() => setIsFiltersOpen((o) => !o)}
-                    aria-expanded={isFiltersOpen}
-                    aria-controls="public-locator-filters"
-                    className="lg:hidden w-full flex items-center justify-between gap-3 text-left"
-                  >
-                    <div className="min-w-0 flex items-baseline gap-2">
+                      shows a 1-line summary of the current filter state.
+                      Country flag toggle sits between the title and the
+                      filter-count badge so the user can switch countries
+                      without expanding the filters first. The wrapping
+                      <div> intercepts pointer events so tapping a flag
+                      doesn't also toggle the collapse. */}
+                  <div className="lg:hidden w-full flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsFiltersOpen((o) => !o)}
+                      aria-expanded={isFiltersOpen}
+                      aria-controls="public-locator-filters"
+                      className="flex-1 min-w-0 flex items-baseline gap-2 text-left"
+                    >
                       <CardTitle className="text-xl font-semibold whitespace-nowrap">Find Installers</CardTitle>
                       {!isFiltersOpen && (
                         <span className="text-xs text-gray-500 truncate">{collapsedSummary}</span>
                       )}
-                    </div>
+                    </button>
                     <div className="flex items-center gap-2 flex-shrink-0">
+                      <CountryFlagToggle isCanada={isCanada} onChange={setIsCanada} />
                       {activeFilterCount > 0 && !isFiltersOpen && (
                         <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-sky-500 text-white text-xs font-semibold">
                           {activeFilterCount}
                         </span>
                       )}
-                      <ChevronDown
-                        className={`h-5 w-5 text-gray-500 transition-transform duration-200 ${isFiltersOpen ? 'rotate-180' : ''}`}
-                        aria-hidden="true"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsFiltersOpen((o) => !o)}
+                        aria-label={isFiltersOpen ? "Collapse filters" : "Expand filters"}
+                        className="p-1"
+                      >
+                        <ChevronDown
+                          className={`h-5 w-5 text-gray-500 transition-transform duration-200 ${isFiltersOpen ? 'rotate-180' : ''}`}
+                          aria-hidden="true"
+                        />
+                      </button>
                     </div>
-                  </button>
-                  {/* Desktop: static title, no toggle. */}
-                  <CardTitle className="hidden lg:block text-xl font-semibold">Find Installers</CardTitle>
+                  </div>
+                  {/* Desktop: static title + the country flag toggle inline
+                      to the right. Replaces the previous auto-detect logic
+                      with an explicit, always-visible choice so border
+                      cities (Niagara, Detroit/Windsor, etc.) and bare
+                      city-name searches both behave predictably. */}
+                  <div className="hidden lg:flex items-center justify-between gap-2">
+                    <CardTitle className="text-xl font-semibold">Find Installers</CardTitle>
+                    <CountryFlagToggle isCanada={isCanada} onChange={setIsCanada} />
+                  </div>
                 </CardHeader>
                 {/* Search bar lives outside the collapsible body so it stays
                     accessible on mobile even when filters are collapsed. */}
