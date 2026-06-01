@@ -1,24 +1,21 @@
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
-import { supabase } from '@/integrations/supabase/client'; // Import the Supabase client
+import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
-import { toast } from 'sonner';
+import { useSession } from '@/components/SessionContextProvider';
 
 function Login() {
   const navigate = useNavigate();
+  const { user, profile, loading } = useSession();
 
+  // Wait until the profile is loaded before entering protected routes.
+  // ProtectedRoute uses profile.role for routing; navigating earlier caused a
+  // race where the user was authenticated but role was still unknown.
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        // After sign-in, the ProtectedRoute component will handle the redirection
-        // based on the user's role. We just need to navigate to a protected area.
-        navigate('/installers');
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+    if (loading || !user || !profile) return;
+    navigate('/installers', { replace: true });
+  }, [loading, user, profile, navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -28,7 +25,7 @@ function Login() {
         </h2>
         <Auth
           supabaseClient={supabase}
-          providers={[]} // No third-party providers for now
+          providers={[]}
           appearance={{
             theme: ThemeSupa,
             variables: {

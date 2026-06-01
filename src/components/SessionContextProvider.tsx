@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-// Removed useLocation and useNavigate as redirects are now handled by ProtectedRoute
-// Removed toast import as ProtectedRoute will handle user experience for auth issues
 import { UserProfile } from '@/types/territory';
 
 interface SessionContextType {
@@ -15,6 +13,21 @@ interface SessionContextType {
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
+async function fetchProfileForUser(userId: string): Promise<UserProfile | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching user profile:', error);
+    return null;
+  }
+
+  return data as UserProfile;
+}
+
 export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -22,58 +35,35 @@ export const SessionContextProvider: React.FC<{ children: ReactNode }> = ({ chil
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchSessionAndProfile = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      setUser(session?.user || null);
+    let mounted = true;
 
-      if (session?.user) {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-
-        if (profileError) {
-          console.error("Error fetching user profile:", profileError);
-          setProfile(null);
-        } else {
-          setProfile(profileData as UserProfile);
-        }
-      } else {
-        setProfile(null);
-      }
+    const syncProfile = async (sessionUser: User) => {
+      setLoading(true);
+      const profileData = await fetchProfileForUser(sessionUser.id);
+      if (!mounted) return;
+      setProfile(profileData);
       setLoading(false);
     };
 
-    fetchSessionAndProfile();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user || null);
-      // Do not set loading to true here, as this is for background updates.
-
-      if (session?.user) {
-        // Fetch profile on sign-in or user update
-        supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single()
-          .then(({ data: profileData, error: profileError }) => {
-            if (profileError) {
-              console.error("Error fetching user profile on auth state change:", profileError);
-              setProfile(null);
-            } else {
-              setProfile(profileData as UserProfile);
-            }
-          });
+      if (nextSession?.user) {
+        // Defer the profile fetch so we don't block the auth callback (Supabase recommendation).
+        setTimeout(() => {
+          void syncProfile(nextSession.user);
+        }, 0);
       } else {
         setProfile(null);
+        setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const value = { session, user, profile, loading, supabase };
