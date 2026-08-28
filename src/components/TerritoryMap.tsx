@@ -1511,7 +1511,7 @@ const TerritoryMap: React.FC<TerritoryMapProps> = ({
     >
       <TileLayer
         attribution='&copy; CARTO'
-        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        url={`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${import.meta.env.VITE_CARTO_API_KEY}`}
       />
       <Pane name="polygons" style={{ zIndex: 450 }} />
       {(loadingStage === 'counting' || loadingStage === 'fetching') && (
