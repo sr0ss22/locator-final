@@ -14,7 +14,7 @@ interface BrandSkillFilterProps {
   brandsToShow?: InstallerBrand[];
 }
 
-const allBrands: InstallerBrand[] = ["Hunter Douglas", "Alta", "Carole", "Architectural", "Levolor", "Three Day Blinds"];
+const allBrands: InstallerBrand[] = ["Hunter Douglas", "Alta", "Carole", "Architectural", "Levolor", "Three Day Blinds", "RLN"];
 const allProductSkills: InstallerSkill[] = ["Blinds & Shades", "Shutters", "Drapery", "Automation", "Tall Window"];
 const allCertifications: InstallerCertification[] = ["Motorization Pro", "Certified Installer", "Master Installer", "Shutter Pro", "Drapery Pro"];
 

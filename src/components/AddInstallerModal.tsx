@@ -36,6 +36,7 @@ const contactAddressFields = [
 const brandCheckboxes = [
   { key: "hunter_douglas", label: "Hunter Douglas" }, { key: "alta", label: "Alta" }, { key: "carole", label: "Carole" },
   { key: "architectural", label: "Architectural" }, { key: "levolor", label: "Levolor" }, { key: "three_day_blinds", label: "Three Day Blinds" },
+  { key: "rln", label: "RLN" },
 ];
 
 const productSkillCheckboxes = [
@@ -58,7 +59,7 @@ const textAreaFields = ["comments", "specialnote"];
 
 const defaultFormState = {
   name: "", email: "", primary_phone: "", secondary_phone: "", address1: "", add2: "", city: "", state: "", postalcode: "", country: "USA",
-  hunter_douglas: false, alta: false, carole: false, architectural: false, levolor: false, three_day_blinds: false,
+  hunter_douglas: false, alta: false, carole: false, architectural: false, levolor: false, three_day_blinds: false, rln: false,
   blinds_and_shades: false, power_view: false, service_call: false, shutters: false, draperies: false,
   tall_window: false, fixture_displays: false, outdoor: false, high_voltage_hardwired: false,
   pip_certification_level: "", shutter_certification_level: "", powerview_certification: "", draperies_certification_level: "",
@@ -75,7 +76,7 @@ const AddInstallerModal: React.FC<AddInstallerModalProps> = ({ isOpen, onClose, 
     name: "Name", email: "Email", primary_phone: "Phone", secondary_phone: "Secondary Phone", address1: "Address Line 1",
     add2: "Address Line 2", city: "City", state: "State", postalcode: postalCodeLabel, country: "Country",
     hunter_douglas: "Hunter Douglas", alta: "Alta", carole: "Carole", architectural: "Architectural", levolor: "Levolor",
-    three_day_blinds: "Three Day Blinds", blinds_and_shades: "Blinds & Shades", power_view: "Automation",
+    three_day_blinds: "Three Day Blinds", rln: "RLN", blinds_and_shades: "Blinds & Shades", power_view: "Automation",
     service_call: "Service Call", shutters: "Shutters", draperies: "Drapery", alta_motorization: "Alta Motorization",
     tall_window: "Tall Window", fixture_displays: "Fixture Displays", outdoor: "Outdoor", high_voltage_hardwired: "High Voltage Hardwired",
     pip_certification_level: "PIP Certification", shutter_certification_level: "Shutter Certification Level",

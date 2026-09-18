@@ -1,5 +1,5 @@
 export type InstallerSkill = "Blinds & Shades" | "Shutters" | "Drapery" | "Automation" | "Service Call" | "Tall Window" | "Fixture Displays" | "Outdoor" | "High Voltage Hardwired";
-export type InstallerBrand = "Hunter Douglas" | "Alta" | "Carole" | "Architectural" | "Levolor" | "Three Day Blinds";
+export type InstallerBrand = "Hunter Douglas" | "Alta" | "Carole" | "Architectural" | "Levolor" | "Three Day Blinds" | "RLN";
 export type InstallerCertification = "Motorization Pro" | "Certified Installer" | "Master Installer" | "Shutter Pro" | "Drapery Pro" | "PIP Certified";
 
 export interface Installer {
@@ -34,6 +34,7 @@ export interface Installer {
   architectural_raw?: number;
   levolor_raw?: number;
   three_day_blinds_raw?: number;
+  rln_raw?: number;
   // New raw fields for Product Skills
   tall_window_raw?: number;
   fixture_displays_raw?: number;

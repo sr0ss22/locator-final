@@ -50,6 +50,7 @@ const contactAddressFields = ["name", "email", "primary_phone", "secondary_phone
 const brandCheckboxes = [
   { key: "hunter_douglas", label: "Hunter Douglas" }, { key: "alta", label: "Alta" }, { key: "carole", label: "Carole" },
   { key: "architectural", label: "Architectural" }, { key: "levolor", label: "Levolor" }, { key: "three_day_blinds", label: "Three Day Blinds" },
+  { key: "rln", label: "RLN" },
 ];
 const productSkillCheckboxes = [
   { key: "blinds_and_shades", label: "Blinds & Shades" }, { key: "shutters", label: "Shutters" }, { key: "draperies", label: "Drapery" },
@@ -198,7 +199,7 @@ const EditInstallerPage: React.FC = () => {
     name: "Name", email: "Email", primary_phone: "Phone", secondary_phone: "Secondary Phone", address1: "Address Line 1",
     add2: "Address Line 2", city: "City", state: "State", postalcode: installerCountry === 'Canada' ? 'Postal Code' : 'Zip Code',
     country: "Country", hunter_douglas: "Hunter Douglas", alta: "Alta", carole: "Carole", architectural: "Architectural",
-    levolor: "Levolor", three_day_blinds: "Three Day Blinds", blinds_and_shades: "Blinds & Shades", power_view: "Automation",
+    levolor: "Levolor", three_day_blinds: "Three Day Blinds", rln: "RLN", blinds_and_shades: "Blinds & Shades", power_view: "Automation",
     service_call: "Service Call", shutters: "Shutters", draperies: "Drapery", alta_motorization: "Alta Motorization",
     tall_window: "Tall Window", fixture_displays: "Fixture Displays", outdoor: "Outdoor", high_voltage_hardwired: "High Voltage Hardwired",
     pip_certification_level: "PIP Certification", shutter_certification_level: "Shutter Certification Level",

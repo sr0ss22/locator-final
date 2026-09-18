@@ -48,7 +48,7 @@ import InstallerFilterModal from "@/components/InstallerFilterModal";
 import LoadingSayings from "@/components/LoadingSayings";
 
 interface TableColumn {
-  key: keyof Installer | 'actions' | 'city' | 'state' | 'blindsAndShades' | 'pipCertification' | 'motorization' | 'motorizationCertification' | 'draperies' | 'draperiesCertification' | 'shutters' | 'shutterCertificationLevel' | 'alta' | 'altaMotorization' | 'hunterDouglas' | 'carole' | 'architectural' | 'levolor' | 'threeDayBlinds' | 'tallWindow' | 'fixtureDisplays' | 'outdoor' | 'highVoltageHardwired';
+  key: keyof Installer | 'actions' | 'city' | 'state' | 'blindsAndShades' | 'pipCertification' | 'motorization' | 'motorizationCertification' | 'draperies' | 'draperiesCertification' | 'shutters' | 'shutterCertificationLevel' | 'alta' | 'altaMotorization' | 'hunterDouglas' | 'carole' | 'architectural' | 'levolor' | 'threeDayBlinds' | 'rln' | 'tallWindow' | 'fixtureDisplays' | 'outdoor' | 'highVoltageHardwired';
   header: string;
   accessor?: (installer: Installer) => React.ReactNode;
   exportKey?: string;
@@ -77,6 +77,7 @@ const getColumns = (postalCodeLabel: string): TableColumn[] => [
   { key: "architectural", header: "Architectural", accessor: (installer) => toBoolean(installer.architectural_raw) ? "Yes" : "No", exportKey: "architectural", dbColumn: "architectural" },
   { key: "levolor", header: "Levolor", accessor: (installer) => toBoolean(installer.levolor_raw) ? "Yes" : "No", exportKey: "levolor", dbColumn: "levolor" },
   { key: "threeDayBlinds", header: "Three Day Blinds", accessor: (installer) => toBoolean(installer.three_day_blinds_raw) ? "Yes" : "No", exportKey: "three_day_blinds", dbColumn: "three_day_blinds" },
+  { key: "rln", header: "RLN", accessor: (installer) => toBoolean(installer.rln_raw) ? "Yes" : "No", exportKey: "rln", dbColumn: "rln" },
   { key: "blindsAndShades", header: "Blinds & Shades", accessor: (installer) => toBoolean(installer.blinds_and_shades_raw) ? "Yes" : "No", exportKey: "blinds_and_shades", dbColumn: "blinds_and_shades" },
   { key: "shutters", header: "Shutters", accessor: (installer) => toBoolean(installer.shutters_raw) ? "Yes" : "No", exportKey: "shutters", dbColumn: "shutters" },
   { key: "draperies", header: "Draperies", accessor: (installer) => toBoolean(installer.draperies_raw) ? "Yes" : "No", exportKey: "draperies", dbColumn: "draperies" },
@@ -98,7 +99,7 @@ const getColumns = (postalCodeLabel: string): TableColumn[] => [
 
 const defaultVisibleColumnKeys = new Set([
   "actions", "name", "email", "phone", "address", "city", "state", "zipCode",
-  "hunterDouglas", "alta", "carole", "architectural", "levolor", "threeDayBlinds",
+  "hunterDouglas", "alta", "carole", "architectural", "levolor", "threeDayBlinds", "rln",
   "blindsAndShades", "shutters", "draperies", "motorization", "altaMotorization", "tallWindow", "fixtureDisplays", "outdoor", "highVoltageHardwired",
   "pipCertification", "motorizationCertification", "draperiesCertification", "shutterCertificationLevel",
 ]);
@@ -106,7 +107,7 @@ const defaultVisibleColumnKeys = new Set([
 const csvHeaderToDbColumnMap: { [key: string]: string } = {
   "Name": "name", "Address1": "address1", "Add2": "add2", "City": "city", "State": "state", "Postalcode": "postalcode",
   "Primary_Phone": "primary_phone", "Secondary_Phone": "secondary_phone", "Country": "country", "Hunter_Douglas": "hunter_douglas",
-  "Alta": "alta", "Carole": "carole", "Architectural": "architectural", "Levolor": "levolor", "Three_Day_Blinds": "three_day_blinds",
+  "Alta": "alta", "Carole": "carole", "Architectural": "architectural", "Levolor": "levolor", "Three_Day_Blinds": "three_day_blinds", "RLN": "rln",
   "Blinds_and_Shades": "blinds_and_shades", "PowerView": "power_view", "Service_Call": "service_call", "Shutters": "shutters",
   "Draperies": "draperies", "Alta_Motorization": "alta_motorization", "Tall_Window": "tall_window", "Fixture_Displays": "fixture_displays",
   "Outdoor": "outdoor", "High_Voltage_Hardwired": "high_voltage_hardwired", "Shipment": "shipment", "Email": "email",
@@ -188,6 +189,7 @@ const InstallerManagement: React.FC = () => {
         else if (brand === "Architectural") query = query.filter("architectural", "eq", 1);
         else if (brand === "Levolor") query = query.filter("levolor", "eq", 1);
         else if (brand === "Three Day Blinds") query = query.filter("three_day_blinds", "eq", 1);
+        else if (brand === "RLN") query = query.filter("rln", "eq", 1);
       });
     }
 
@@ -258,6 +260,7 @@ const InstallerManagement: React.FC = () => {
         if (toBoolean(rawInstaller.architectural)) brands.push("Architectural");
         if (toBoolean(rawInstaller.levolor)) brands.push("Levolor");
         if (toBoolean(rawInstaller.three_day_blinds)) brands.push("Three Day Blinds");
+        if (toBoolean(rawInstaller.rln)) brands.push("RLN");
 
         const certifications: InstallerCertification[] = [];
         const pvCert = standardizeCertificationName(rawInstaller.powerview_certification);
@@ -287,7 +290,7 @@ const InstallerManagement: React.FC = () => {
           alta_raw: rawInstaller.alta, alta_motorization_raw: rawInstaller.alta_motorization,
           hunter_douglas_raw: rawInstaller.hunter_douglas, carole_raw: rawInstaller.carole,
           architectural_raw: rawInstaller.architectural, levolor_raw: rawInstaller.levolor,
-          three_day_blinds_raw: rawInstaller.three_day_blinds, tall_window_raw: rawInstaller.tall_window,
+          three_day_blinds_raw: rawInstaller.three_day_blinds, rln_raw: rawInstaller.rln, tall_window_raw: rawInstaller.tall_window,
           fixture_displays_raw: rawInstaller.fixture_displays, outdoor_raw: rawInstaller.outdoor,
           high_voltage_hardwired_raw: rawInstaller.high_voltage_hardwired,
           rawSupabaseData: rawInstaller,
@@ -380,6 +383,7 @@ const InstallerManagement: React.FC = () => {
           else if (brand === "Architectural") query = query.filter("architectural", "eq", 1);
           else if (brand === "Levolor") query = query.filter("levolor", "eq", 1);
           else if (brand === "Three Day Blinds") query = query.filter("three_day_blinds", "eq", 1);
+          else if (brand === "RLN") query = query.filter("rln", "eq", 1);
         });
       }
       if (filterProductSkills.length > 0) {
@@ -439,7 +443,7 @@ const InstallerManagement: React.FC = () => {
                 alta_raw: rawInstaller.alta, alta_motorization_raw: rawInstaller.alta_motorization,
                 hunter_douglas_raw: rawInstaller.hunter_douglas, carole_raw: rawInstaller.carole,
                 architectural_raw: rawInstaller.architectural, levolor_raw: rawInstaller.levolor,
-                three_day_blinds_raw: rawInstaller.three_day_blinds, tall_window_raw: rawInstaller.tall_window,
+                three_day_blinds_raw: rawInstaller.three_day_blinds, rln_raw: rawInstaller.rln, tall_window_raw: rawInstaller.tall_window,
                 fixture_displays_raw: rawInstaller.fixture_displays, outdoor_raw: rawInstaller.outdoor,
                 high_voltage_hardwired_raw: rawInstaller.high_voltage_hardwired,
                 rawSupabaseData: rawInstaller,
@@ -506,7 +510,7 @@ const InstallerManagement: React.FC = () => {
           const dbColumn = csvHeaderToDbColumnMap[csvHeader];
           if (dbColumn) {
             let value = row[csvHeader];
-            if (['blinds_and_shades', 'service_call', 'shutters', 'draperies', 'alta', 'alta_motorization', 'hunter_douglas', 'carole', 'architectural', 'levolor', 'three_day_blinds', 'tall_window', 'fixture_displays', 'outdoor', 'high_voltage_hardwired'].includes(dbColumn)) {
+            if (['blinds_and_shades', 'service_call', 'shutters', 'draperies', 'alta', 'alta_motorization', 'hunter_douglas', 'carole', 'architectural', 'levolor', 'three_day_blinds', 'rln', 'tall_window', 'fixture_displays', 'outdoor', 'high_voltage_hardwired'].includes(dbColumn)) {
               newInstallerData[dbColumn] = (value?.toLowerCase() === 'yes' || value === '1') ? 1 : 0;
             } else if (['power_view'].includes(dbColumn)) {
               newInstallerData[dbColumn] = (value?.toLowerCase() === 'yes' || value === '1') ? 1 : 0;
