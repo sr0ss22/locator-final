@@ -3,14 +3,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom";
 import { CountrySettingsProvider } from "./hooks/useCountrySettings";
 import { SessionContextProvider } from "./components/SessionContextProvider";
 import LoadingSayings from "./components/LoadingSayings";
 import Footer from "./components/Footer";
 
 // Eagerly load public-facing and essential components
-import PublicLocator from "./pages/PublicLocator";
 import Login from "./pages/Login";
 import UpdatePassword from "./pages/UpdatePassword";
 import NotFound from "./pages/NotFound";
@@ -55,10 +54,12 @@ const App = () => (
             <Suspense fallback={<LoadingFallback />}>
               <Routes>
                 <Route element={<Layout />}>
+                  {/* The locator is no longer public: old entry points go to login */}
+                  <Route path="/" element={<Navigate to="/login" replace />} />
+                  <Route path="/public-locator" element={<Navigate to="/login" replace />} />
+
                   {/* Public Routes */}
-                  <Route path="/" element={<PublicLocator />} />
                   <Route path="/login" element={<Login />} />
-                  <Route path="/public-locator" element={<PublicLocator />} />
                   <Route path="/update-password" element={<UpdatePassword />} />
                   <Route path="/territory-editor/:installerId/:token" element={<PublicTerritoryEditor />} />
                   <Route path="/claim-profile" element={<ClaimProfilePage />} />
